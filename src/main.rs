@@ -773,6 +773,16 @@ fn cmd_install(b: &dyn Backend, c: &Config) -> i32 {
         let _ = run(true, &[], "systemctl", &["start", "--no-block", "upd-auto.service"]);
         println!("\nПервая проверка обновлений запущена в фоне: journalctl -u upd-auto -f");
     }
+    // Garuda: в стандартных настройках fish/bash есть alias upd → garuda-update, он перехватывает команду
+    let shadowed = ["/usr/share/garuda/garuda-fish-config/config.fish", "/usr/share/garuda/garuda-bash-config/bashrc"]
+        .iter()
+        .any(|f| fs::read_to_string(f).map(|t| t.lines().any(|l| l.trim_start().starts_with("alias upd"))).unwrap_or(false));
+    if shadowed {
+        println!("\n\x1b[33m⚠ В Garuda команда `upd` занята алиасом на garuda-update. Сними его в своих настройках:\x1b[0m");
+        println!("   fish: добавь `functions -e upd` в ~/.config/fish/config.fish (ниже строки source …garuda-fish-config…)");
+        println!("   bash: добавь `unalias upd 2>/dev/null` в ~/.bashrc (ниже строки source …garuda-bash-config…)");
+        println!("   или запускай полным путём: {BIN}");
+    }
     println!("\nГотово. Запуск интерфейса: upd");
     0
 }
