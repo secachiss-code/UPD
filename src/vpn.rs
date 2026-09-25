@@ -150,7 +150,12 @@ pub fn pct_encode(s: &str) -> String {
 }
 
 fn agent(timeout: u64, via_proxy: Option<u16>) -> ureq::Agent {
-    let mut b = ureq::AgentBuilder::new().timeout_connect(Duration::from_secs(10)).timeout(Duration::from_secs(timeout)).user_agent(UA);
+    // timeout_read: если загрузка встала (сервер молчит 30 с), не ждать общий таймаут
+    let mut b = ureq::AgentBuilder::new()
+        .timeout_connect(Duration::from_secs(10))
+        .timeout_read(Duration::from_secs(30))
+        .timeout(Duration::from_secs(timeout))
+        .user_agent(UA);
     if let Some(p) = via_proxy {
         if let Ok(px) = ureq::Proxy::new(format!("http://127.0.0.1:{p}")) {
             b = b.proxy(px);
@@ -159,19 +164,82 @@ fn agent(timeout: u64, via_proxy: Option<u16>) -> ureq::Agent {
     b.build()
 }
 
-/// GET напрямую; если не вышло и VPN работает — через него.
+/// GET напрямую; если не вышло — через наш VPN (если работает), затем через прокси FlClash (если запущен).
 fn get(url: &str, timeout: u64, port: u16) -> Result<ureq::Response, String> {
-    match agent(timeout, None).get(url).call() {
-        Ok(r) => Ok(r),
-        Err(e) if running() => agent(timeout, Some(port)).get(url).call().map_err(|e2| format!("напрямую: {e}; через VPN: {e2}")),
-        Err(e) => Err(e.to_string()),
+    let mut errs = match agent(timeout, None).get(url).call() {
+        Ok(r) => return Ok(r),
+        Err(e) => vec![format!("напрямую: {e}")],
+    };
+    let mut via: Vec<(u16, &str)> = vec![];
+    if running() {
+        via.push((port, "через VPN"));
     }
+    via.extend(flclash_ports().into_iter().map(|p| (p, "через FlClash")));
+    for (p, what) in via {
+        match agent(timeout, Some(p)).get(url).call() {
+            Ok(r) => return Ok(r),
+            Err(e) => errs.push(format!("{what} :{p}: {e}")),
+        }
+    }
+    Err(errs.join("; "))
+}
+
+/// Порты, которые слушает FlClashCore на локальном адресе (его mixed-порт принимает HTTP-прокси).
+fn flclash_ports() -> Vec<u16> {
+    let mut inodes = std::collections::HashSet::new();
+    for e in fs::read_dir("/proc").into_iter().flatten().flatten() {
+        if fs::read_to_string(e.path().join("comm")).unwrap_or_default().trim() != "FlClashCore" {
+            continue;
+        }
+        for fd in fs::read_dir(e.path().join("fd")).into_iter().flatten().flatten() {
+            let l = fs::read_link(fd.path()).map(|l| l.to_string_lossy().into_owned()).unwrap_or_default();
+            if let Some(i) = l.strip_prefix("socket:[").and_then(|x| x.strip_suffix(']')) {
+                inodes.insert(i.to_string());
+            }
+        }
+    }
+    if inodes.is_empty() {
+        return vec![];
+    }
+    let mut ports = vec![];
+    for line in fs::read_to_string("/proc/net/tcp").unwrap_or_default().lines().skip(1) {
+        let f: Vec<&str> = line.split_whitespace().collect();
+        // локальный адрес 127.0.0.1 или 0.0.0.0, состояние 0A — LISTEN
+        let Some((addr, port)) = f.get(1).and_then(|a| a.split_once(':')) else { continue };
+        if f.get(3) != Some(&"0A") || !["0100007F", "00000000"].contains(&addr) || !f.get(9).map(|i| inodes.contains(*i)).unwrap_or(false) {
+            continue;
+        }
+        if let Ok(p) = u16::from_str_radix(port, 16) {
+            if p != 9090 && !ports.contains(&p) {
+                ports.push(p);
+            }
+        }
+    }
+    ports
 }
 
 fn read_limited(r: ureq::Response, max: u64) -> Result<Vec<u8>, String> {
     let mut b = vec![];
     r.into_reader().take(max).read_to_end(&mut b).map_err(|e| e.to_string())?;
     Ok(b)
+}
+
+/// Как read_limited, но пишет в лог прогресс каждые 10% (для больших файлов).
+fn read_progress(r: ureq::Response, max: u64, log: Log) -> Result<Vec<u8>, String> {
+    let total: u64 = r.header("content-length").and_then(|v| v.parse().ok()).unwrap_or(0);
+    let mut rd = r.into_reader().take(max);
+    let (mut b, mut buf, mut step) = (vec![], [0u8; 64 << 10], 1u64);
+    loop {
+        let n = rd.read(&mut buf).map_err(|e| format!("загрузка прервалась на {}: {e}", fmt_bytes(b.len() as u64)))?;
+        if n == 0 {
+            return Ok(b);
+        }
+        b.extend_from_slice(&buf[..n]);
+        if total > 0 && b.len() as u64 * 10 >= total * step {
+            log(&format!("  {}% ({} из {})", step * 10, fmt_bytes(b.len() as u64), fmt_bytes(total)));
+            step += 1;
+        }
+    }
 }
 
 fn parse_userinfo(h: &str) -> SubInfo {
@@ -751,11 +819,17 @@ pub fn service_active() -> bool {
     unit_state(SERVICE) == "active"
 }
 
+/// После серии неудачных запусков systemd блокирует службу на 10 минут (start-limit-hit) — снимаем блок.
+fn reset_failed() {
+    let _ = out("systemctl", &["reset-failed", SERVICE]);
+}
+
 pub fn start(c: &Config) -> Result<(), String> {
     if let Some(w) = flclash_running() {
         return Err(w);
     }
-    run(true, &[], "systemctl", &["start", SERVICE])?;
+    reset_failed();
+    run(true, &[], "systemctl", &["start", SERVICE]).map_err(|e| format!("{e}\n{}", journal_tail()))?;
     let _ = autostart(c.vpn_autostart);
     Ok(())
 }
@@ -768,7 +842,14 @@ pub fn restart() -> Result<(), String> {
     if let Some(w) = flclash_running() {
         return Err(w);
     }
-    run(true, &[], "systemctl", &["restart", SERVICE])
+    reset_failed();
+    run(true, &[], "systemctl", &["restart", SERVICE]).map_err(|e| format!("{e}\n{}", journal_tail()))
+}
+
+/// Последние строки журнала службы — чтобы причину сбоя было видно сразу, без journalctl.
+pub fn journal_tail() -> String {
+    let (s, _) = out("journalctl", &["-u", SERVICE, "-n", "8", "--no-pager", "-o", "cat"]);
+    s.lines().map(|l| format!("  {l}")).collect::<Vec<_>>().join("\n")
 }
 
 pub fn autostart(on: bool) -> Result<(), String> {
@@ -900,7 +981,7 @@ pub fn core_install(c: &Config, log: Log, force: bool) -> Result<bool, String> {
     let url = asset["browser_download_url"].as_str().ok_or("нет ссылки на файл")?;
     let digest = asset["digest"].as_str().and_then(|d| d.strip_prefix("sha256:")).map(str::to_lowercase);
     log(&format!("скачиваю {name}..."));
-    let gz = read_limited(get(url, 600, c.vpn_port)?, 200 << 20)?;
+    let gz = read_progress(get(url, 600, c.vpn_port)?, 200 << 20, log)?;
     match &digest {
         Some(d) => {
             use sha2::Digest;
@@ -975,11 +1056,8 @@ pub fn geo_update(c: &Config, log: Log, only_missing: bool) -> Result<(), String
 
 // ======================= подготовка к запуску и обслуживание =======================
 
-/// Вызывается службой перед стартом ядра (ExecStartPre).
-pub fn prepare(c: &Config, log: Log) -> Result<(), String> {
-    if let Some(w) = flclash_running() {
-        return Err(w);
-    }
+/// Скачать недостающее: ядро и геофайлы. Работает и при запущенном FlClash — тогда качает через его прокси.
+pub fn fetch_missing(c: &Config, log: Log) -> Result<(), String> {
     if core_version().is_none() {
         log("ядра ещё нет — ставлю mihomo");
         core_install(c, log, true)?;
@@ -987,6 +1065,15 @@ pub fn prepare(c: &Config, log: Log) -> Result<(), String> {
     if let Err(e) = geo_update(c, log, true) {
         log(&format!("геофайлы не скачались ({e}) — mihomo попробует сам"));
     }
+    Ok(())
+}
+
+/// Вызывается службой перед стартом ядра (ExecStartPre).
+pub fn prepare(c: &Config, log: Log) -> Result<(), String> {
+    if let Some(w) = flclash_running() {
+        return Err(w);
+    }
+    fetch_missing(c, log)?;
     write_config(c)?;
     let (msg, code) = out(&core_bin(), &["-t", "-d", &home(), "-f", &config_path()]);
     if code != 0 {

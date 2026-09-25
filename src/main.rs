@@ -575,9 +575,24 @@ fn cmd_vpn(c: &Config, pos: &[String]) -> i32 {
             apply(&c)
         }
         "start" => {
-            if let Err(e) = vpn::write_config(&c) {
+            // ядро, геофайлы и проверка конфига — здесь, с выводом на экран; иначе это молча
+            // делает ExecStartPre, а `systemctl start` висит без единой строки до конца загрузки
+            // пока FlClash работает, качаем через него — напрямую GitHub бывает недоступен
+            if let Err(e) = vpn::fetch_missing(&c, &stdlog) {
                 return err_code(Err(e));
             }
+            while let Some(w) = vpn::flclash_running() {
+                print!("⚠ {w}.\nЗакрой FlClash и нажми Enter (Ctrl+C — отмена) ");
+                let _ = std::io::Write::flush(&mut std::io::stdout());
+                let mut s = String::new();
+                if std::io::stdin().read_line(&mut s).unwrap_or(0) == 0 {
+                    return err_code(Err(w));
+                }
+            }
+            if let Err(e) = vpn::prepare(&c, &stdlog) {
+                return err_code(Err(e));
+            }
+            println!("запускаю службу...");
             let r = vpn::start(&c);
             if r.is_ok() {
                 std::thread::sleep(std::time::Duration::from_secs(2));
