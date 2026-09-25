@@ -1,2 +1,33 @@
-/target
-/dist
+# Сборка
+/target/
+/dist/
+*.pkg.tar.zst
+*.deb
+*.rpm
+*.gz
+
+# Rust
+**/*.rs.bk
+*.pdb
+
+# Локальные настройки и секреты — подписки VPN, ключи, окружение
+.env
+.env.*
+*.secret
+secret
+subs.json
+*.key
+*.pem
+
+# Логи и временные файлы
+*.log
+*.tmp
+*.swp
+*~
+.#*
+
+# Редакторы и ОС
+.idea/
+.vscode/
+*.code-workspace
+.DS_Store
