@@ -52,6 +52,18 @@ pub struct Config {
     pub firmware: bool,
     pub news: bool,
     pub snapshot: bool,
+    pub vpn_tun: bool,
+    pub vpn_autostart: bool,
+    pub vpn_direct_ru: bool,
+    pub vpn_direct_lan: bool,
+    pub vpn_auto_select: bool,
+    pub vpn_dns: bool,
+    pub vpn_ipv6: bool,
+    pub vpn_allow_lan: bool,
+    pub vpn_port: u16,
+    pub vpn_mode: u8,
+    pub vpn_sub_update_h: i64,
+    pub vpn_core_check_h: i64,
     pub mirrors: Vec<String>,
 }
 
@@ -76,6 +88,18 @@ const DOCS: &[(&str, &str)] = &[
     ("firmware", "Проверять прошивки через fwupd"),
     ("news", "Показывать новости Arch, требующие ручного вмешательства, перед обновлением"),
     ("snapshot", "Делать снапшот перед обновлением, если этого не делает snap-pac"),
+    ("vpn_tun", "VPN: режим TUN — весь трафик системы (0 — только прокси на vpn_port)"),
+    ("vpn_autostart", "VPN: запускать при загрузке"),
+    ("vpn_direct_ru", "VPN: российские сайты и IP — напрямую (по геофайлам)"),
+    ("vpn_direct_lan", "VPN: локальная сеть — напрямую"),
+    ("vpn_auto_select", "VPN: группа «⚡ Авто» — сама выбирает самый быстрый живой сервер"),
+    ("vpn_dns", "VPN: свой DNS (fake-ip, DoH через VPN); 0 — DNS из подписки"),
+    ("vpn_ipv6", "VPN: IPv6"),
+    ("vpn_allow_lan", "VPN: пускать другие устройства локальной сети через этот прокси"),
+    ("vpn_port", "VPN: порт прокси (HTTP+SOCKS)"),
+    ("vpn_mode", "VPN: маршрутизация: 0 — по правилам, 1 — всё через VPN, 2 — всё напрямую"),
+    ("vpn_sub_update_h", "VPN: обновлять подписки раз в N часов (если провайдер не указал сам)"),
+    ("vpn_core_check_h", "VPN: проверять новые релизы FlClash (сигнал обновить ядро mihomo) раз в N часов"),
 ];
 
 impl Config {
@@ -100,6 +124,18 @@ impl Config {
             firmware: true,
             news: true,
             snapshot: true,
+            vpn_tun: true,
+            vpn_autostart: true,
+            vpn_direct_ru: true,
+            vpn_direct_lan: true,
+            vpn_auto_select: true,
+            vpn_dns: true,
+            vpn_ipv6: false,
+            vpn_allow_lan: false,
+            vpn_port: 7897,
+            vpn_mode: 0,
+            vpn_sub_update_h: 12,
+            vpn_core_check_h: 24,
             mirrors,
         }
     }
@@ -143,6 +179,18 @@ impl Config {
                 "firmware" => c.firmware = b,
                 "news" => c.news = b,
                 "snapshot" => c.snapshot = b,
+                "vpn_tun" => c.vpn_tun = b,
+                "vpn_autostart" => c.vpn_autostart = b,
+                "vpn_direct_ru" => c.vpn_direct_ru = b,
+                "vpn_direct_lan" => c.vpn_direct_lan = b,
+                "vpn_auto_select" => c.vpn_auto_select = b,
+                "vpn_dns" => c.vpn_dns = b,
+                "vpn_ipv6" => c.vpn_ipv6 = b,
+                "vpn_allow_lan" => c.vpn_allow_lan = b,
+                "vpn_port" => c.vpn_port = n.clamp(1, 65535) as u16,
+                "vpn_mode" => c.vpn_mode = n.clamp(0, 2) as u8,
+                "vpn_sub_update_h" => c.vpn_sub_update_h = n.max(1),
+                "vpn_core_check_h" => c.vpn_core_check_h = n.max(1),
                 _ => {}
             }
         }
@@ -170,8 +218,24 @@ impl Config {
             "firmware" => self.firmware as i64,
             "news" => self.news as i64,
             "snapshot" => self.snapshot as i64,
+            "vpn_tun" => self.vpn_tun as i64,
+            "vpn_autostart" => self.vpn_autostart as i64,
+            "vpn_direct_ru" => self.vpn_direct_ru as i64,
+            "vpn_direct_lan" => self.vpn_direct_lan as i64,
+            "vpn_auto_select" => self.vpn_auto_select as i64,
+            "vpn_dns" => self.vpn_dns as i64,
+            "vpn_ipv6" => self.vpn_ipv6 as i64,
+            "vpn_allow_lan" => self.vpn_allow_lan as i64,
+            "vpn_port" => self.vpn_port as i64,
+            "vpn_mode" => self.vpn_mode as i64,
+            "vpn_sub_update_h" => self.vpn_sub_update_h as i64,
+            "vpn_core_check_h" => self.vpn_core_check_h as i64,
             _ => 0,
         }
+    }
+
+    pub fn vpn_mode_name(&self) -> &'static str {
+        ["rule", "global", "direct"][self.vpn_mode.min(2) as usize]
     }
 
     pub fn save(&self) -> std::io::Result<()> {

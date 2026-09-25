@@ -1,17 +1,23 @@
 # upd
 
 Обновление Linux одной командой: автоподбор зеркал, предзагрузка в фоне, снапшоты, Flatpak, AUR,
-прошивки, новости Arch и перезапуск служб. Один статический бинарник (Rust, musl, ~3 МБ) без зависимостей.
+прошивки, новости Arch и перезапуск служб. Плюс **VPN** на ядре mihomo (как FlClash, но в терминале):
+подписки, TUN или прокси, правила, геофайлы, автовыбор сервера. Один статический бинарник (Rust, musl, ~4 МБ).
 
 ## Установка
 
+Пакетом (рекомендуется) — службы, хуки и обновления через пакетный менеджер:
+
 ```sh
-sudo ./upd-linux-amd64 install
-upd                                # интерфейс
+sudo pacman -U upd-0.2.2-1-x86_64.pkg.tar.zst     # Arch / Garuda / CachyOS
+sudo apt install ./upd_0.2.2-1_amd64.deb          # Debian / Ubuntu
+sudo dnf install ./upd-0.2.2-1.x86_64.rpm         # Fedora / openSUSE (zypper install)
+upd                                               # интерфейс
 ```
 
-`install` копирует себя в `/usr/local/bin/upd`, создаёт `/etc/upd.conf`, ставит службы, подбирает зеркала
-и запускает первую проверку. `sudo upd uninstall` всё убирает и возвращает зеркала как было.
+Без пакета: `sudo ./upd-linux-amd64 install` — копирует себя в `/usr/local/bin/upd`, ставит службы,
+подбирает зеркала. Пакет при установке сам убирает следы такой установки.
+Удаление: пакетом или `sudo upd uninstall`; зеркала возвращаются как было, настройки и подписки остаются.
 
 ## Обновление (`upd update`, пункт 1 в меню)
 
@@ -43,6 +49,40 @@ upd                                # интерфейс
 ничего не качает и не замеряет (`prefetch_on_metered`). `upd-net.timer` + NetworkManager — смена сети.
 `upd-notify.timer` — уведомления: обновления, новости Arch, прошивки, перезагрузка, смена зеркал.
 
+## VPN (`upd vpn`, пункт 5 в меню)
+
+Ядро — [mihomo](https://github.com/MetaCubeX/mihomo) (то же, что внутри FlClash), работает службой `upd-vpn`
+от root: TUN без лишних прав и запуск до входа в систему.
+
+- **Подписки** — адрес вводится в терминале (`n` в TUI или `upd vpn add` без аргумента), хранится только в
+  `/etc/upd/vpn/subs.json` (0600) и нигде не показывается целиком. Форматы: Clash/mihomo YAML и списки ссылок
+  (vless/vmess/trojan/ss/hy2…). Обновляются раз в `vpn_sub_update_h` часов или как просит провайдер;
+  показываются трафик и срок, за 3 дня до конца — уведомление.
+- **Серверы** — группа «⚡ Авто» (url-test) каждые 5 минут сама выбирает самый быстрый живой сервер;
+  служебные «узлы» подписки (осталось/срок/трафик) в неё не попадают. Ручной выбор в любой группе — Enter,
+  замер задержки — `t`. Выбор переживает перезапуск.
+- **Режимы** — TUN (вся система, по умолчанию) или только прокси `127.0.0.1:vpn_port` (HTTP+SOCKS; в GNOME
+  системный прокси включается сам). Маршрутизация: по правилам / всё через VPN / всё напрямую.
+- **Правила** — свои (`upd vpn rules`, `/etc/upd/vpn/rules.txt`) → локальная сеть напрямую → Россия напрямую
+  (`GEOSITE,category-ru`, `.ru`, `.рф`, `GEOIP,RU`) → правила подписки.
+- **Геофайлы** — geoip.metadb, geosite.dat, geoip.dat, ASN из
+  [meta-rules-dat](https://github.com/MetaCubeX/meta-rules-dat); скачиваются при первом запуске, ядро
+  обновляет их раз в сутки, вручную — `upd vpn geo`.
+- **Ядро актуально** — `upd-auto` следит за релизами FlClash: вышел новый — ставится последний mihomo
+  (сборка под уровень CPU: v1/v2/v3, проверка sha256 из релиза, пробный запуск перед заменой).
+  Вручную: `upd vpn core update`.
+- **Автозапуск** — `vpn_autostart` (включён): служба стартует при загрузке, как только есть подписка.
+- FlClash и upd-vpn одновременно не работают (два TUN) — upd не запустится, пока открыт FlClash.
+
+```
+upd vpn                 состояние: сервер, маршрут, трафик
+upd vpn add | subs | use N | del N | update
+upd vpn start | stop | restart
+upd vpn tun | proxy     режим
+upd vpn rule | global | direct
+upd vpn servers | core [check|update] | geo | rules
+```
+
 ## Поддержка
 
 | | Arch / Garuda / EndeavourOS / CachyOS | Debian / Ubuntu | Fedora / RHEL | openSUSE |
@@ -64,6 +104,7 @@ upd mirrors [status|check|rescan|apply|add URL|del URL]
 upd snapshots       снапшоты и как откатиться
 upd restart         перезапустить службы со старыми библиотеками
 upd clean | merge   очистка / слияние .pacnew
+upd vpn ...          VPN: upd vpn help
 upd install | uninstall
 ```
 
@@ -72,3 +113,5 @@ upd install | uninstall
 ## Сборка
 
 Rust + цель `x86_64-unknown-linux-musl` (`rustup target add x86_64-unknown-linux-musl`), gcc: `./build.sh`.
+Пакеты всех трёх форматов: `./package.sh` → `dist/` (nfpm скачивается сам, с проверкой sha256;
+описание — `packaging/nfpm.yaml`, файлы служб генерирует `upd gen-files <каталог> <arch|deb|rpm>`).

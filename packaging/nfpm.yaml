@@ -1,0 +1,44 @@
+# Описание пакетов upd для nfpm: одно на все форматы (arch, deb, rpm).
+# Собирается через ./package.sh — он подставляет VERSION и STAGE (файлы от `upd gen-files`).
+name: upd
+arch: amd64
+platform: linux
+version: ${VERSION}
+release: 1
+section: admin
+priority: optional
+maintainer: somovas
+description: |
+  Обновление системы с автоподбором зеркал и VPN на ядре mihomo.
+  Один статический бинарник: pacman, apt, dnf, zypper; Flatpak, AUR, прошивки,
+  снапшоты; VPN с подписками, TUN, правилами и геофайлами — всё в TUI.
+license: MIT
+homepage: https://github.com/somovas/upd
+provides:
+  - upd
+contents:
+  - src: ${STAGE}/usr/bin/upd
+    dst: /usr/bin/upd
+    file_info:
+      mode: 0755
+  - src: ${STAGE}/usr/lib/systemd/
+    dst: /usr/lib/systemd/
+    type: tree
+  - src: ${STAGE}/usr/lib/NetworkManager/
+    dst: /usr/lib/NetworkManager/
+    type: tree
+  - src: ${STAGE}/extra/
+    dst: /
+    type: tree
+scripts:
+  postinstall: packaging/scripts/postinstall.sh
+  preremove: packaging/scripts/preremove.sh
+archlinux:
+  packager: somovas
+  scripts:
+    postupgrade: packaging/scripts/postinstall.sh
+overrides:
+  deb:
+    recommends: [flatpak, fwupd]
+  rpm:
+    recommends: [flatpak, fwupd]

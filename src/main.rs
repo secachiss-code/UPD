@@ -3,6 +3,7 @@ mod common;
 mod extras;
 mod mirrors;
 mod tui;
+mod vpn;
 
 use backend::Backend;
 use common::*;
@@ -27,6 +28,7 @@ const USAGE: &str = "upd — обновление Linux с автоподбор�
   upd restart             перезапустить службы со старыми библиотеками
   upd clean               очистить кэш и ненужные пакеты
   upd merge               слить новые файлы настроек (.pacnew)
+  upd vpn [...]           VPN (mihomo): upd vpn help
   upd install | uninstall установить в систему / удалить
   upd reconcile           сверить список обновлений с установленным (без сети; вызывается хуком pacman/apt)
   upd version
@@ -39,10 +41,15 @@ fn stdlog(s: &str) {
 }
 
 fn main() {
+    // `upd list | head` не должен падать с паникой на закрытом канале
+    unsafe {
+        libc::signal(libc::SIGPIPE, libc::SIG_DFL);
+    }
     let mut args: Vec<String> = std::env::args().skip(1).collect();
     let pause = args.iter().any(|a| a == "--pause");
     let no_download = args.iter().any(|a| a == "--no-download");
     let all = args.iter().any(|a| a == "--all");
+    let pkg_mode = args.iter().any(|a| a == "--package");
     args.retain(|a| !a.starts_with("--"));
     let cmd = args.first().cloned().unwrap_or_else(|| "tui".into());
     let pos: Vec<String> = args.iter().skip(1).cloned().collect();
@@ -59,7 +66,7 @@ fn main() {
             std::process::exit(1)
         }
     };
-    let user_cmd = matches!(cmd.as_str(), "status" | "list" | "notify" | "news") || (cmd == "mirrors" && pos.first().map(|s| s == "status").unwrap_or(true));
+    let user_cmd = matches!(cmd.as_str(), "status" | "list" | "notify" | "news" | "gen-files") || (cmd == "mirrors" && pos.first().map(|s| s == "status").unwrap_or(true));
     if !user_cmd {
         become_root();
     }
@@ -95,6 +102,7 @@ fn main() {
             0
         }
         "restart" => cmd_restart(),
+        "vpn" => cmd_vpn(&c, &pos),
         "reconcile" => cmd_reconcile(b),
         "news" => {
             if !b.arch_news() {
@@ -128,8 +136,9 @@ fn main() {
             cmd_notify();
             0
         }
-        "install" => cmd_install(b, &c),
-        "uninstall" => cmd_uninstall(b),
+        "install" => cmd_install(b, &c, pkg_mode),
+        "gen-files" => cmd_gen_files(b, &pos),
+        "uninstall" => cmd_uninstall(b, pkg_mode),
         _ => {
             eprint!("неизвестная команда: {cmd}\n\n{USAGE}");
             2
@@ -211,6 +220,7 @@ fn cmd_auto(b: &dyn Backend, c: &Config) -> i32 {
     if !changed && b.mirrors_managed() && now() - ms.checked > c.mirror_max_age_h * 3600 {
         check_mirrors(b, c, &stdlog, None, None);
     }
+    vpn::maintain(c, &stdlog);
     let mut st = gather(b, c, &stdlog, true);
     match (&block, c.prefetch && st.error.is_empty()) {
         (Some(why), true) => {
@@ -466,6 +476,188 @@ fn cmd_mirrors(b: &dyn Backend, c: &Config, pos: &[String]) -> i32 {
     }
 }
 
+// ---------- VPN ----------
+
+const VPN_USAGE: &str = "upd vpn — VPN на ядре mihomo (как в FlClash)
+
+  upd vpn                 состояние
+  upd vpn add [URL]       добавить подписку (без URL — спросит; так адрес не попадёт в историю шелла)
+  upd vpn subs            подписки
+  upd vpn use N | del N   сделать активной / удалить подписку номер N
+  upd vpn update          обновить подписки сейчас
+  upd vpn start | stop | restart
+  upd vpn tun | proxy     режим: вся система (TUN) / только прокси на vpn_port
+  upd vpn rule | global | direct   маршрутизация: по правилам / всё через VPN / всё напрямую
+  upd vpn servers         группы и серверы с задержками
+  upd vpn core [check|update|reinstall]  ядро mihomo (обновляется по релизам FlClash)
+  upd vpn geo             обновить геофайлы
+  upd vpn rules           править свои правила
+";
+
+fn cmd_vpn(c: &Config, pos: &[String]) -> i32 {
+    let sub = pos.first().map(String::as_str).unwrap_or("status");
+    let arg = pos.get(1).map(String::as_str);
+    let mut c = c.clone();
+    let apply = |c: &Config| err_code(vpn::apply(c, &stdlog));
+    match sub {
+        "help" => {
+            print!("{VPN_USAGE}");
+            0
+        }
+        "status" => {
+            let s = vpn::snapshot();
+            println!("VPN: {}", vpn_line());
+            if s.running {
+                println!("ядро {} · {} · маршрутизация: {}", s.version, if s.tun { "TUN (вся система)" } else { "только прокси" }, s.mode);
+                println!("цепочка: {}", s.chain().join(" → "));
+                println!("трафик: ↓ {} ↑ {} · соединений {}", fmt_bytes(s.down), fmt_bytes(s.up), s.conns);
+            }
+            if let Some(w) = vpn::flclash_running() {
+                println!("⚠ {w}");
+            }
+            0
+        }
+        "add" => {
+            let url = match arg {
+                Some(u) => u.to_string(),
+                None => {
+                    print!("адрес подписки: ");
+                    let _ = std::io::Write::flush(&mut std::io::stdout());
+                    let mut s = String::new();
+                    let _ = std::io::stdin().read_line(&mut s);
+                    s.trim().to_string()
+                }
+            };
+            let name = pos.get(2).cloned().unwrap_or_default();
+            if let Err(e) = vpn::add_sub(&url, &name, &c, &stdlog) {
+                eprintln!("ошибка: {e}");
+                return 1;
+            }
+            if vpn::service_active() {
+                apply(&c)
+            } else {
+                println!("подписка добавлена. Запуск VPN: upd vpn start");
+                0
+            }
+        }
+        "subs" | "list" => {
+            let s = vpn::load_subs();
+            if s.list.is_empty() {
+                println!("подписок нет — upd vpn add");
+            }
+            for (i, x) in s.list.iter().enumerate() {
+                let mark = if x.id == s.active { "●" } else { " " };
+                let info = x.info.as_ref().map(sub_info).unwrap_or_default();
+                let err = if x.error.is_empty() { String::new() } else { format!(" ⚠ {}", x.error) };
+                println!("{} {}. {} ({}) · серверов {} · обновлена {}{info}{err}", mark, i + 1, x.name, vpn::mask_url(&x.url), x.nodes, fmt_ago(x.updated));
+            }
+            0
+        }
+        "use" | "del" => {
+            let Some(n) = arg.and_then(|a| a.parse::<usize>().ok()).filter(|n| *n > 0) else {
+                println!("укажи номер подписки (upd vpn subs)");
+                return 2;
+            };
+            let r = if sub == "use" { vpn::use_sub(n - 1) } else { vpn::delete_sub(n - 1) };
+            match r {
+                Ok(name) => {
+                    println!("{}: «{name}»", if sub == "use" { "активна" } else { "удалена" });
+                    if vpn::service_active() && !vpn::load_subs().list.is_empty() {
+                        return apply(&c);
+                    }
+                    0
+                }
+                Err(e) => err_code(Err(e)),
+            }
+        }
+        "update" => {
+            vpn::update_subs(&c, &stdlog, true);
+            apply(&c)
+        }
+        "start" => {
+            if let Err(e) = vpn::write_config(&c) {
+                return err_code(Err(e));
+            }
+            let r = vpn::start(&c);
+            if r.is_ok() {
+                std::thread::sleep(std::time::Duration::from_secs(2));
+                vpn::sysproxy(&c);
+                println!("VPN: {}", vpn_line());
+            }
+            err_code(r)
+        }
+        "stop" => {
+            let r = vpn::stop();
+            vpn::sysproxy(&c);
+            err_code(r)
+        }
+        "restart" => err_code(vpn::restart()),
+        "tun" | "proxy" => {
+            c.vpn_tun = sub == "tun";
+            let _ = c.save();
+            apply(&c)
+        }
+        "rule" | "global" | "direct" => {
+            c.vpn_mode = ["rule", "global", "direct"].iter().position(|m| *m == sub).unwrap_or(0) as u8;
+            let _ = c.save();
+            let _ = vpn::write_config(&c);
+            if vpn::running() {
+                return err_code(vpn::set_mode(sub));
+            }
+            0
+        }
+        "servers" => {
+            let s = vpn::snapshot();
+            if !s.running {
+                println!("VPN не запущен");
+                return 1;
+            }
+            for g in &s.groups {
+                println!("[{}] {} → {}", g.kind, g.name, g.now);
+                for p in &g.all {
+                    let d = s.delay.get(p).map(|d| if *d == 0 { "✗".to_string() } else { format!("{d} мс") }).unwrap_or_default();
+                    println!("   {} {p:<40} {d}", if *p == g.now { "●" } else { " " });
+                }
+            }
+            0
+        }
+        "core" => match arg.unwrap_or("check") {
+            a @ ("update" | "reinstall") => {
+                let r = vpn::core_install(&c, &stdlog, a == "reinstall");
+                if matches!(r, Ok(true)) && vpn::service_active() {
+                    let _ = vpn::restart();
+                }
+                err_code(r.map(|_| ()))
+            }
+            _ => err_code(vpn::core_check(&c, &stdlog).map(|_| ())),
+        },
+        "geo" => err_code(vpn::geo_update(&c, &stdlog, false)),
+        "rules" => {
+            let r = vpn::edit_rules();
+            if r.is_ok() {
+                return apply(&c);
+            }
+            err_code(r)
+        }
+        "prepare" => err_code(vpn::prepare(&c, &stdlog)),
+        _ => {
+            print!("{VPN_USAGE}");
+            2
+        }
+    }
+}
+
+pub fn sub_info(i: &vpn::SubInfo) -> String {
+    let mut s = String::new();
+    if i.total > 0 {
+        s += &format!(" · трафик {} из {}", fmt_bytes(i.upload + i.download), fmt_bytes(i.total));
+    }
+    if i.expire > 0 {
+        s += &format!(" · до {}", fmt_time(i.expire).split(' ').next().unwrap_or(""));
+    }
+    s
+}
+
 // ---------- статус ----------
 
 #[derive(Clone, Default)]
@@ -490,6 +682,7 @@ pub struct Status {
     pub metered: bool,
     pub free: u64,
     pub snapshots: String,
+    pub vpn: String,
 }
 
 pub fn gather_status(b: &dyn Backend) -> Status {
@@ -521,6 +714,7 @@ pub fn gather_status(b: &dyn Backend) -> Status {
             (_, extras::SnapTool::Timeshift) => "timeshift (делает upd)".into(),
             _ => "нет".into(),
         },
+        vpn: vpn_line(),
     }
 }
 
@@ -564,6 +758,7 @@ fn print_status(b: &dyn Backend) {
     } else {
         println!("Зеркала:      {}", s.mirror_note);
     }
+    println!("VPN:          {}", vpn_line());
     println!("Снапшоты:     {}", s.snapshots);
     println!(
         "Обслуживание: новых настроек {} · сирот {} · кэш {} · свободно {} · упавших служб {}",
@@ -574,6 +769,20 @@ fn print_status(b: &dyn Backend) {
         s.failed
     );
     println!("Автоматика:   обновления {}, слежение за сетью {}", or_dash(&s.auto_timer), or_dash(&s.net_timer));
+}
+
+/// Короткая строка о VPN без обращения к API (для статуса от имени пользователя).
+pub fn vpn_line() -> String {
+    let st = vpn::load_state();
+    let state = match unit_state(vpn::SERVICE).as_str() {
+        "active" => "работает",
+        "failed" => "ОШИБКА (journalctl -u upd-vpn)",
+        "" => "не установлен",
+        _ => "выключен",
+    };
+    let sub = st.subs.iter().find(|s| s.active).map(|s| format!(" · «{}»", s.name)).unwrap_or_else(|| " · нет подписки".into());
+    let core = if st.core_version.is_empty() { String::new() } else { format!(" · mihomo {}", st.core_version) };
+    format!("{state}{sub}{core}")
 }
 
 pub fn or_dash(s: &str) -> &str {
@@ -618,6 +827,20 @@ fn cmd_notify() {
         let boot = fs::read_to_string("/proc/sys/kernel/random/boot_id").unwrap_or_default();
         send("reboot", boot, "Нужна перезагрузка", "Обновилось ядро");
     }
+    let v = vpn::load_state();
+    if !v.event.is_empty() {
+        send("vpn-core", v.event_time.to_string(), "VPN", &v.event);
+    }
+    for sp in v.subs.iter().filter(|s| s.active) {
+        if let Some(i) = &sp.info {
+            if i.expire > 0 && i.expire - now() < 3 * 86400 {
+                send("vpn-expire", i.expire.to_string(), "Подписка VPN скоро закончится", &format!("«{}» — до {}", sp.name, fmt_time(i.expire)));
+            }
+            if i.total > 0 && (i.upload + i.download) * 10 >= i.total * 9 {
+                send("vpn-traffic", i.total.to_string(), "Трафик VPN почти исчерпан", &format!("«{}»: {} из {}", sp.name, fmt_bytes(i.upload + i.download), fmt_bytes(i.total)));
+            }
+        }
+    }
     let m = load_mirror_state();
     if !m.event.is_empty() {
         send("mirrors", m.event_time.to_string(), "Зеркала подобраны заново", &m.event);
@@ -628,15 +851,45 @@ fn cmd_notify() {
 
 // ---------- установка ----------
 
-const BIN: &str = "/usr/local/bin/upd";
-const NM_PATH: &str = "/etc/NetworkManager/dispatcher.d/90-upd";
+const LOCAL_BIN: &str = "/usr/local/bin/upd";
+const PKG_BIN: &str = "/usr/bin/upd";
 const CRON_PATH: &str = "/etc/cron.d/upd";
+const GARUDA_CONF: &str = "/etc/garuda/garuda-update/config";
+const GARUDA_MARK: &str = "# upd: зеркалами управляет upd — garuda-update их не перезаписывает";
 
-fn system_units(b: &dyn Backend) -> Vec<(&'static str, String)> {
+/// Куда кладутся системные файлы: ручная установка (upd install) — в /etc; пакет — в /usr/lib и /usr/share.
+struct Layout {
+    bin: &'static str,
+    units: &'static str,
+    user_units: &'static str,
+    pacman_hook: &'static str,
+    apt_hook: &'static str,
+    nm: &'static str,
+}
+
+const MANUAL: Layout = Layout {
+    bin: LOCAL_BIN,
+    units: "/etc/systemd/system",
+    user_units: "/etc/systemd/user",
+    pacman_hook: "/etc/pacman.d/hooks/zz-upd.hook",
+    apt_hook: "/etc/apt/apt.conf.d/99upd",
+    nm: "/etc/NetworkManager/dispatcher.d/90-upd",
+};
+
+const PACKAGE: Layout = Layout {
+    bin: PKG_BIN,
+    units: "/usr/lib/systemd/system",
+    user_units: "/usr/lib/systemd/user",
+    pacman_hook: "/usr/share/libalpm/hooks/zz-upd.hook",
+    apt_hook: "/etc/apt/apt.conf.d/99upd",
+    nm: "/usr/lib/NetworkManager/dispatcher.d/90-upd",
+};
+
+fn system_units(bin: &str, watch: Option<&str>) -> Vec<(&'static str, String)> {
     let mut u = vec![
         (
             "upd-auto.service",
-            "[Unit]\nDescription=upd: смена сети, замер зеркал, проверка и предзагрузка обновлений\nWants=network-online.target\nAfter=network-online.target\n\n[Service]\nType=oneshot\nExecStart=/usr/local/bin/upd auto\nNice=10\nIOSchedulingClass=idle\n".to_string(),
+            format!("[Unit]\nDescription=upd: смена сети, зеркала, VPN, проверка и предзагрузка обновлений\nWants=network-online.target\nAfter=network-online.target\n\n[Service]\nType=oneshot\nExecStart={bin} auto\nNice=10\nIOSchedulingClass=idle\n"),
         ),
         (
             "upd-auto.timer",
@@ -644,37 +897,53 @@ fn system_units(b: &dyn Backend) -> Vec<(&'static str, String)> {
         ),
         (
             "upd-net.service",
-            "[Unit]\nDescription=upd: подбор зеркал при смене сети\nAfter=network-online.target\n\n[Service]\nType=oneshot\nExecStart=/usr/local/bin/upd net\nNice=10\n".to_string(),
+            format!("[Unit]\nDescription=upd: подбор зеркал при смене сети\nAfter=network-online.target\n\n[Service]\nType=oneshot\nExecStart={bin} net\nNice=10\n"),
         ),
         (
             "upd-net.timer",
             "[Unit]\nDescription=upd: не сменилась ли сеть (дёшево, без запросов в сеть)\n\n[Timer]\nOnBootSec=2min\nOnUnitActiveSec=15min\n\n[Install]\nWantedBy=timers.target\n".to_string(),
         ),
+        (
+            vpn::SERVICE,
+            format!(
+                "[Unit]\nDescription=upd: VPN (ядро mihomo)\nWants=network-online.target\nAfter=network-online.target\n\
+                 StartLimitIntervalSec=10min\nStartLimitBurst=5\n\n[Service]\nType=simple\n\
+                 ExecStartPre={bin} vpn prepare\nExecStart=/var/lib/upd/vpn/bin/mihomo -d /var/lib/upd/vpn -f /var/lib/upd/vpn/config.yaml\n\
+                 Restart=on-failure\nRestartSec=5\nTimeoutStartSec=5min\nLimitNOFILE=1048576\n\n[Install]\nWantedBy=multi-user.target\n"
+            ),
+        ),
     ];
-    if let (Some(w), true) = (b.watch_path(), b.mirrors_managed()) {
+    if let Some(w) = watch {
         u.push((
             "upd-mirrors.path",
             format!("[Unit]\nDescription=upd: вернуть закреплённые зеркала, если список перезаписали\n\n[Path]\nPathChanged={w}\nUnit=upd-mirrors-apply.service\n\n[Install]\nWantedBy=paths.target\n"),
         ));
         u.push((
             "upd-mirrors-apply.service",
-            "[Unit]\nDescription=upd: вернуть закреплённые зеркала наверх\n\n[Service]\nType=oneshot\nExecStart=/usr/local/bin/upd mirrors apply\n".to_string(),
+            format!("[Unit]\nDescription=upd: вернуть закреплённые зеркала наверх\n\n[Service]\nType=oneshot\nExecStart={bin} mirrors apply\n"),
         ));
     }
     u
 }
 
-const USER_UNITS: &[(&str, &str)] = &[
-    ("upd-notify.service", "[Unit]\nDescription=upd: уведомления об обновлениях\n\n[Service]\nType=oneshot\nExecStart=/usr/local/bin/upd notify\n"),
-    ("upd-notify.timer", "[Unit]\nDescription=upd: уведомления об обновлениях\n\n[Timer]\nOnActiveSec=3min\nOnUnitActiveSec=30min\n\n[Install]\nWantedBy=timers.target\n"),
-];
+fn user_units(bin: &str) -> Vec<(&'static str, String)> {
+    vec![
+        ("upd-notify.service", format!("[Unit]\nDescription=upd: уведомления\n\n[Service]\nType=oneshot\nExecStart={bin} notify\n")),
+        ("upd-notify.timer", "[Unit]\nDescription=upd: уведомления\n\n[Timer]\nOnActiveSec=3min\nOnUnitActiveSec=30min\n\n[Install]\nWantedBy=timers.target\n".to_string()),
+    ]
+}
 
-const PACMAN_HOOK: &str = "/etc/pacman.d/hooks/zz-upd.hook";
-const PACMAN_HOOK_BODY: &str = "# upd: после любой транзакции сверить список доступных обновлений (без сети)\n[Trigger]\nOperation = Install\nOperation = Upgrade\nOperation = Remove\nType = Package\nTarget = *\n\n[Action]\nDescription = upd: сверяю список обновлений...\nWhen = PostTransaction\nExec = /usr/local/bin/upd reconcile\n";
-const APT_HOOK: &str = "/etc/apt/apt.conf.d/99upd";
-const APT_HOOK_BODY: &str = "// upd: после любой установки сверить список доступных обновлений (без сети)\nDPkg::Post-Invoke { \"/usr/local/bin/upd reconcile >/dev/null 2>&1 || true\"; };\n";
-const GARUDA_CONF: &str = "/etc/garuda/garuda-update/config";
-const GARUDA_MARK: &str = "# upd: зеркалами управляет upd — garuda-update их не перезаписывает";
+fn pacman_hook(bin: &str) -> String {
+    format!("# upd: после любой транзакции сверить список доступных обновлений (без сети)\n[Trigger]\nOperation = Install\nOperation = Upgrade\nOperation = Remove\nType = Package\nTarget = *\n\n[Action]\nDescription = upd: сверяю список обновлений...\nWhen = PostTransaction\nExec = {bin} reconcile\n")
+}
+
+fn apt_hook(bin: &str) -> String {
+    format!("// upd: после любой установки сверить список доступных обновлений (без сети)\nDPkg::Post-Invoke {{ \"{bin} reconcile >/dev/null 2>&1 || true\"; }};\n")
+}
+
+fn nm_dispatcher() -> &'static str {
+    "#!/bin/sh\n# upd: при смене сети проверить, не пора ли подобрать другие зеркала\ncase \"$2\" in\n  up|down|vpn-up|vpn-down|connectivity-change) systemctl start --no-block upd-net.service ;;\nesac\n"
+}
 
 /// garuda-update, запущенный напрямую, пересобирает зеркала через rate-mirrors — запрещаем, пока стоит upd.
 fn garuda_skip_mirrors(on: bool) -> Option<String> {
@@ -690,20 +959,120 @@ fn garuda_skip_mirrors(on: bool) -> Option<String> {
     })
 }
 
-const NM_DISPATCHER: &str = "#!/bin/sh\n# upd: при смене сети проверить, не пора ли подобрать другие зеркала\ncase \"$2\" in\n  up|down|vpn-up|vpn-down|connectivity-change) systemctl start --no-block upd-net.service ;;\nesac\n";
+fn write_file(path: &str, body: &str, mode: u32) -> Result<(), String> {
+    if let Some(d) = Path::new(path).parent() {
+        fs::create_dir_all(d).map_err(|e| format!("{}: {e}", d.display()))?;
+    }
+    fs::write(path, body).map_err(|e| format!("{path}: {e}"))?;
+    fs::set_permissions(path, std::os::unix::fs::PermissionsExt::from_mode(mode)).map_err(|e| format!("{path}: {e}"))
+}
 
-fn cmd_install(b: &dyn Backend, c: &Config) -> i32 {
+/// Все системные файлы под корнем root. target: arch | deb | rpm | host (текущая система).
+fn write_system_files(root: &str, l: &Layout, target: &str, b: &dyn Backend) -> Result<Vec<String>, String> {
+    let watch = match target {
+        "arch" => Some("/etc/pacman.d/mirrorlist".to_string()),
+        "host" => b.watch_path().filter(|_| b.mirrors_managed()),
+        _ => None,
+    };
+    let mut done = vec![];
+    for (n, body) in system_units(l.bin, watch.as_deref()) {
+        write_file(&format!("{root}{}/{n}", l.units), &body, 0o644)?;
+        done.push(n.to_string());
+    }
+    for (n, body) in user_units(l.bin) {
+        write_file(&format!("{root}{}/{n}", l.user_units), &body, 0o644)?;
+    }
+    let pacman = target == "arch" || (target == "host" && have("pacman"));
+    let apt = target == "deb" || (target == "host" && !pacman && Path::new("/etc/apt/apt.conf.d").is_dir());
+    if pacman {
+        write_file(&format!("{root}{}", l.pacman_hook), &pacman_hook(l.bin), 0o644)?;
+    }
+    if apt {
+        write_file(&format!("{root}{}", l.apt_hook), &apt_hook(l.bin), 0o644)?;
+    }
+    if target != "host" || Path::new("/etc/NetworkManager").is_dir() {
+        write_file(&format!("{root}{}", l.nm), nm_dispatcher(), 0o755)?;
+    }
+    Ok(done)
+}
+
+/// Для сборки пакетов: upd gen-files <каталог> <arch|deb|rpm>
+fn cmd_gen_files(b: &dyn Backend, pos: &[String]) -> i32 {
+    let (Some(root), Some(target)) = (pos.first(), pos.get(1)) else {
+        eprintln!("upd gen-files <каталог> <arch|deb|rpm>");
+        return 2;
+    };
+    match write_system_files(root.trim_end_matches('/'), &PACKAGE, target, b) {
+        Ok(_) => 0,
+        Err(e) => err_code(Err(e)),
+    }
+}
+
+/// Следы ручной установки мешают пакетной: юниты в /etc перекрывают /usr/lib, /usr/local/bin — раньше в PATH.
+fn remove_manual_files() {
+    let _ = fs::remove_file(LOCAL_BIN);
+    for dir in [MANUAL.units, MANUAL.user_units] {
+        let Ok(rd) = fs::read_dir(dir) else { continue };
+        let files: Vec<(String, std::path::PathBuf)> = rd
+            .flatten()
+            .map(|e| (e.file_name().to_string_lossy().into_owned(), e.path()))
+            .filter(|(n, _)| n.starts_with("upd-") && (n.ends_with(".service") || n.ends_with(".timer") || n.ends_with(".path")))
+            .collect();
+        if files.is_empty() {
+            continue;
+        }
+        // сначала disable: иначе в *.wants останутся ссылки на удалённые файлы
+        let mut args: Vec<&str> = if dir == MANUAL.user_units { vec!["--global", "disable"] } else { vec!["disable"] };
+        args.extend(files.iter().map(|(n, _)| n.as_str()));
+        let _ = run(true, &[], "systemctl", &args);
+        for (_, p) in &files {
+            let _ = fs::remove_file(p);
+        }
+    }
+    let _ = fs::remove_file(MANUAL.pacman_hook);
+    let _ = fs::remove_file(MANUAL.nm);
+}
+
+fn enable_units(b: &dyn Backend, c: &Config, ok: &dyn Fn(String)) -> Result<(), String> {
+    let _ = run(true, &[], "systemctl", &["daemon-reload"]);
+    let mut enable = vec!["upd-auto.timer", "upd-net.timer"];
+    if b.mirrors_managed() && b.watch_path().is_some() {
+        enable.push("upd-mirrors.path");
+    }
+    let mut args = vec!["enable", "--now"];
+    args.extend(enable.iter().copied());
+    run(false, &[], "systemctl", &args)?;
+    let _ = run(true, &[], "systemctl", &["--global", "enable", "upd-notify.timer"]);
+    ok(format!("службы: {}", enable.join(", ")));
+    ok("уведомления: upd-notify.timer (для всех пользователей, после входа)".into());
+    if !vpn::load_subs().list.is_empty() && c.vpn_autostart {
+        let _ = vpn::autostart(true);
+        ok("VPN: автозапуск включён".into());
+    } else {
+        ok("VPN: добавь подписку — upd → VPN (или upd vpn add), дальше он будет стартовать сам".into());
+    }
+    Ok(())
+}
+
+fn cmd_install(b: &dyn Backend, c: &Config, pkg: bool) -> i32 {
     let ok = |s: String| println!("\x1b[32m✓\x1b[0m {s}");
     let exe = std::env::current_exe().and_then(fs::canonicalize).unwrap_or_default();
-    if exe != Path::new(BIN) {
+    let l = if pkg { &PACKAGE } else { &MANUAL };
+    if !pkg && Path::new(PKG_BIN).exists() && exe != Path::new(PKG_BIN) {
+        eprintln!("upd уже установлен пакетом ({PKG_BIN}) — обновляй его через пакетный менеджер.");
+        return 1;
+    }
+    if pkg {
+        remove_manual_files();
+    } else if exe != Path::new(LOCAL_BIN) {
         let _ = fs::create_dir_all("/usr/local/bin");
-        let tmp = format!("{BIN}.new");
-        if let Err(e) = fs::copy(&exe, &tmp).and_then(|_| fs::set_permissions(&tmp, std::os::unix::fs::PermissionsExt::from_mode(0o755))).and_then(|_| fs::rename(&tmp, BIN)) {
+        let tmp = format!("{LOCAL_BIN}.new");
+        if let Err(e) = fs::copy(&exe, &tmp).and_then(|_| fs::set_permissions(&tmp, std::os::unix::fs::PermissionsExt::from_mode(0o755))).and_then(|_| fs::rename(&tmp, LOCAL_BIN)) {
             eprintln!("не удалось скопировать бинарник: {e}");
             return 1;
         }
     }
-    ok(format!("бинарник: {BIN}"));
+    ok(format!("бинарник: {}", l.bin));
     if !Path::new(&conf_path()).exists() {
         let _ = c.save();
     }
@@ -711,67 +1080,37 @@ fn cmd_install(b: &dyn Backend, c: &Config) -> i32 {
     let _ = fs::create_dir_all(state_dir());
 
     if systemd() {
-        let mut enable = vec![];
-        for (name, body) in system_units(b) {
-            if let Err(e) = fs::write(format!("/etc/systemd/system/{name}"), body) {
-                eprintln!("{name}: {e}");
-                return 1;
-            }
-            if name.ends_with(".timer") || name.ends_with(".path") {
-                enable.push(name);
+        if !pkg {
+            match write_system_files("", l, "host", b) {
+                Ok(_) => ok(format!("юниты, хуки и реакция на смену сети: {}", l.units)),
+                Err(e) => return err_code(Err(e)),
             }
         }
-        let _ = fs::create_dir_all("/etc/systemd/user");
-        for (name, body) in USER_UNITS {
-            let _ = fs::write(format!("/etc/systemd/user/{name}"), body);
-        }
-        let _ = run(true, &[], "systemctl", &["daemon-reload"]);
-        let mut args = vec!["enable", "--now"];
-        args.extend(enable.iter().copied());
-        if let Err(e) = run(false, &[], "systemctl", &args) {
-            eprintln!("{e}");
-            return 1;
-        }
-        let _ = run(true, &[], "systemctl", &["--global", "enable", "upd-notify.timer"]);
-        ok(format!("службы: {}", enable.join(", ")));
-        ok("уведомления: upd-notify.timer (для всех пользователей, после входа)".into());
-        if Path::new("/etc/NetworkManager/dispatcher.d").is_dir() {
-            let _ = fs::write(NM_PATH, NM_DISPATCHER).and_then(|_| fs::set_permissions(NM_PATH, std::os::unix::fs::PermissionsExt::from_mode(0o755)));
-            ok(format!("реакция на смену сети: {NM_PATH}"));
+        if let Err(e) = enable_units(b, c, &ok) {
+            return err_code(Err(e));
         }
     } else if Path::new("/etc/cron.d").is_dir() {
-        let _ = fs::write(CRON_PATH, "# upd\n*/15 * * * * root /usr/local/bin/upd net\n17 */6 * * * root /usr/local/bin/upd auto\n");
-        ok(format!("systemd нет — задания в {CRON_PATH}"));
+        let _ = fs::write(CRON_PATH, format!("# upd\n*/15 * * * * root {0} net\n17 */6 * * * root {0} auto\n", l.bin));
+        ok(format!("systemd нет — задания в {CRON_PATH} (VPN запускай вручную: upd vpn start)"));
     } else {
         println!("⚠ нет ни systemd, ни cron: автоматика не установлена, запускай upd вручную");
-    }
-
-    if Path::new("/etc/pacman.d").is_dir() && have("pacman") {
-        let _ = fs::create_dir_all("/etc/pacman.d/hooks");
-        let _ = fs::write(PACMAN_HOOK, PACMAN_HOOK_BODY);
-        ok(format!("хук pacman: {PACMAN_HOOK} (статус верный, даже если обновлялись в обход upd)"));
-    } else if Path::new("/etc/apt/apt.conf.d").is_dir() {
-        let _ = fs::write(APT_HOOK, APT_HOOK_BODY);
-        ok(format!("хук apt: {APT_HOOK}"));
     }
     if b.mirrors_managed() && Path::new(GARUDA_CONF).exists() {
         garuda_skip_mirrors(true);
         ok(format!("garuda-update больше не перезаписывает зеркала ({GARUDA_CONF})"));
     }
 
-    if b.mirrors_managed() {
+    // из пакетного менеджера — без долгого подбора зеркал (он держит блокировку); это сделает upd-auto
+    if b.mirrors_managed() && !pkg {
         println!("\nПервый подбор зеркал для текущей сети:");
         with_lock(true, || {
             handle_network(b, c, &stdlog, true);
             0
         });
-    } else {
-        println!("\n{}", b.mirror_note());
     }
     if systemd() {
-        // таймеры сработали во время установки и пропустили ход из-за блокировки — первая проверка сейчас
         let _ = run(true, &[], "systemctl", &["start", "--no-block", "upd-auto.service"]);
-        println!("\nПервая проверка обновлений запущена в фоне: journalctl -u upd-auto -f");
+        println!("\nПервая проверка обновлений{} запущена в фоне: journalctl -u upd-auto -f", if pkg { " и подбор зеркал" } else { "" });
     }
     // Garuda: в стандартных настройках fish/bash есть alias upd → garuda-update, он перехватывает команду
     let shadowed = ["/usr/share/garuda/garuda-fish-config/config.fish", "/usr/share/garuda/garuda-bash-config/bashrc"]
@@ -781,37 +1120,38 @@ fn cmd_install(b: &dyn Backend, c: &Config) -> i32 {
         println!("\n\x1b[33m⚠ В Garuda команда `upd` занята алиасом на garuda-update. Сними его в своих настройках:\x1b[0m");
         println!("   fish: добавь `functions -e upd` в ~/.config/fish/config.fish (ниже строки source …garuda-fish-config…)");
         println!("   bash: добавь `unalias upd 2>/dev/null` в ~/.bashrc (ниже строки source …garuda-bash-config…)");
-        println!("   или запускай полным путём: {BIN}");
+        println!("   или запускай полным путём: {}", l.bin);
     }
     println!("\nГотово. Запуск интерфейса: upd");
     0
 }
 
-fn cmd_uninstall(b: &dyn Backend) -> i32 {
+fn cmd_uninstall(b: &dyn Backend, pkg: bool) -> i32 {
     if systemd() {
-        let mut names: Vec<&str> = system_units(b).iter().map(|x| x.0).collect();
-        names.extend(["upd-mirrors.path", "upd-mirrors-apply.service"]);
+        let mut names: Vec<&str> = system_units(PKG_BIN, Some("-")).iter().map(|x| x.0).collect();
+        names.retain(|n| !n.ends_with(".service") || *n == vpn::SERVICE);
         let _ = run(true, &[], "systemctl", &["--global", "disable", "upd-notify.timer"]);
         let mut args = vec!["disable", "--now"];
         args.extend(names.iter().copied());
         let _ = run(true, &[], "systemctl", &args);
-        for n in &names {
-            let _ = fs::remove_file(format!("/etc/systemd/system/{n}"));
-        }
-        for (n, _) in USER_UNITS {
-            let _ = fs::remove_file(format!("/etc/systemd/user/{n}"));
+        if !pkg {
+            remove_manual_files();
+            let _ = fs::remove_file(MANUAL.apt_hook);
         }
         let _ = run(true, &[], "systemctl", &["daemon-reload"]);
     }
-    let _ = fs::remove_file(NM_PATH);
+    let c = Config::load(b.default_mirrors());
+    vpn::sysproxy(&c);
     let _ = fs::remove_file(CRON_PATH);
-    let _ = fs::remove_file(PACMAN_HOOK);
-    let _ = fs::remove_file(APT_HOOK);
     garuda_skip_mirrors(false);
     if let Err(e) = b.remove_mirrors() {
         println!("не удалось вернуть зеркала: {e}");
     }
-    let _ = fs::remove_file(BIN);
-    println!("upd удалён. Оставлены: {} и {} (удали вручную, если не нужны).", conf_path(), state_dir());
+    println!(
+        "upd удалён. Оставлены настройки и данные: {}, {} (подписки VPN), {} — удали вручную, если не нужны.",
+        conf_path(),
+        vpn::etc(),
+        state_dir()
+    );
     0
 }
