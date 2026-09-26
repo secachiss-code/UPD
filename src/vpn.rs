@@ -13,7 +13,24 @@ use std::time::Duration;
 use url::Url;
 
 pub const SERVICE: &str = "upd-vpn.service";
-pub const AUTO_GROUP: &str = "⚡ Авто";
+pub const AUTO_GROUP: &str = "⚡ Auto";
+/// Имя группы до 0.2.5: на него могут ссылаться свои правила пользователя
+const AUTO_GROUP_OLD: &str = "⚡ Авто";
+
+/// Имя группы или сервера для показа: служебная группа автовыбора — на языке интерфейса,
+/// в конфиге mihomo она всегда AUTO_GROUP (на это имя опираются сохранённый выбор и правила).
+pub fn label(name: &str) -> String {
+    if name == AUTO_GROUP || name == AUTO_GROUP_OLD {
+        t!("⚡ Авто").to_string()
+    } else {
+        name.to_string()
+    }
+}
+
+/// Имя группы автовыбора, как его пишет пользователь в своих правилах: на любом языке интерфейса.
+fn is_auto_group(s: &str) -> bool {
+    s == AUTO_GROUP || s == AUTO_GROUP_OLD || crate::i18n::ALL.iter().any(|l| s == crate::i18n::tr_to(*l, "⚡ Авто"))
+}
 const CONTROLLER: &str = "127.0.0.1:9097";
 const TUN_DEV: &str = "upd-vpn";
 pub const TEST_URL: &str = "https://www.gstatic.com/generate_204";
@@ -103,7 +120,7 @@ pub fn load_subs() -> Result<Subs, String> {
 /// Удалить из сохранённых ошибок старые сообщения, которые могли содержать URL подписки.
 fn scrub_stored_error(error: &mut String) -> bool {
     if error.to_ascii_lowercase().contains("://") {
-        *error = "ошибка запроса (URL скрыт)".into();
+        *error = t!("ошибка запроса (URL скрыт)").into();
         true
     } else {
         false
@@ -228,19 +245,19 @@ fn safe_ureq_error(error: &ureq::Error) -> String {
     match error {
         ureq::Error::Status(code, _) => format!("HTTP {code}"),
         ureq::Error::Transport(transport) => match transport.kind() {
-            ureq::ErrorKind::InvalidUrl => "неверный URL".into(),
-            ureq::ErrorKind::UnknownScheme => "неподдерживаемая схема URL".into(),
-            ureq::ErrorKind::Dns => "ошибка DNS".into(),
-            ureq::ErrorKind::InsecureRequestHttpsOnly => "небезопасная HTTP схема".into(),
-            ureq::ErrorKind::ConnectionFailed => "ошибка соединения".into(),
-            ureq::ErrorKind::TooManyRedirects => "слишком много перенаправлений".into(),
-            ureq::ErrorKind::BadStatus => "неверный HTTP ответ".into(),
-            ureq::ErrorKind::BadHeader => "неверный HTTP заголовок".into(),
-            ureq::ErrorKind::Io => "ошибка ввода-вывода".into(),
-            ureq::ErrorKind::InvalidProxyUrl => "неверный адрес прокси".into(),
-            ureq::ErrorKind::ProxyConnect => "ошибка соединения с прокси".into(),
-            ureq::ErrorKind::ProxyUnauthorized => "ошибка авторизации прокси".into(),
-            ureq::ErrorKind::HTTP => "ошибка HTTP".into(),
+            ureq::ErrorKind::InvalidUrl => t!("неверный URL").into(),
+            ureq::ErrorKind::UnknownScheme => t!("неподдерживаемая схема URL").into(),
+            ureq::ErrorKind::Dns => t!("ошибка DNS").into(),
+            ureq::ErrorKind::InsecureRequestHttpsOnly => t!("небезопасная HTTP схема").into(),
+            ureq::ErrorKind::ConnectionFailed => t!("ошибка соединения").into(),
+            ureq::ErrorKind::TooManyRedirects => t!("слишком много перенаправлений").into(),
+            ureq::ErrorKind::BadStatus => t!("неверный HTTP ответ").into(),
+            ureq::ErrorKind::BadHeader => t!("неверный HTTP заголовок").into(),
+            ureq::ErrorKind::Io => t!("ошибка ввода-вывода").into(),
+            ureq::ErrorKind::InvalidProxyUrl => t!("неверный адрес прокси").into(),
+            ureq::ErrorKind::ProxyConnect => t!("ошибка соединения с прокси").into(),
+            ureq::ErrorKind::ProxyUnauthorized => t!("ошибка авторизации прокси").into(),
+            ureq::ErrorKind::HTTP => t!("ошибка HTTP").into(),
         },
     }
 }
@@ -253,13 +270,13 @@ fn get(url: &str, timeout: u64, port: u16) -> Result<ureq::Response, String> {
 fn get_with_redirects(url: &str, timeout: u64, port: u16, redirects: u32) -> Result<ureq::Response, String> {
     let mut errs = match agent_with_redirects(timeout, None, redirects).get(url).call() {
         Ok(r) => return Ok(r),
-        Err(e) => vec![format!("напрямую: {}", safe_ureq_error(&e))],
+        Err(e) => vec![t!("напрямую: {}", safe_ureq_error(&e))],
     };
     let mut via: Vec<((u16, bool), &str)> = vec![];
     if running() {
-        via.push(((port, false), "через VPN"));
+        via.push(((port, false), t!("через VPN")));
     }
-    via.extend(flclash_ports().into_iter().map(|p| (p, "через FlClash")));
+    via.extend(flclash_ports().into_iter().map(|p| (p, t!("через FlClash"))));
     for ((p, ipv6), what) in via {
         match agent_with_redirects(timeout, Some((p, ipv6)), redirects).get(url).call() {
             Ok(r) => return Ok(r),
@@ -270,12 +287,12 @@ fn get_with_redirects(url: &str, timeout: u64, port: u16, redirects: u32) -> Res
 }
 
 fn subscription_url(raw: &str) -> Result<Url, String> {
-    let url = Url::parse(raw).map_err(|_| "некорректный URL подписки".to_string())?;
+    let url = Url::parse(raw).map_err(|_| t!("некорректный URL подписки").to_string())?;
     if url.scheme() != "https" {
-        return Err("URL подписки должен использовать HTTPS; HTTP не поддерживается".into());
+        return Err(t!("URL подписки должен использовать HTTPS; HTTP не поддерживается").into());
     }
     if url.host_str().filter(|host| !host.is_empty()).is_none() {
-        return Err("у URL подписки отсутствует host".into());
+        return Err(t!("у URL подписки отсутствует host").into());
     }
     Ok(url)
 }
@@ -287,15 +304,15 @@ fn get_subscription(raw: &str, timeout: u64, port: u16) -> Result<ureq::Response
         let response = get_with_redirects(current.as_str(), timeout, port, 0)?;
         if !matches!(response.status(), 301 | 302 | 303 | 307 | 308) {
             if (300..400).contains(&response.status()) {
-                return Err(format!("HTTP {} вместо профиля подписки", response.status()));
+                return Err(t!("HTTP {} вместо профиля подписки", response.status()));
             }
             return Ok(response);
         }
         if redirects == MAX_REDIRECTS {
-            return Err("слишком много перенаправлений подписки".into());
+            return Err(t!("слишком много перенаправлений подписки").into());
         }
-        let location = response.header("location").ok_or("в перенаправлении нет Location")?;
-        current = subscription_url(current.join(location).map_err(|_| "неверный адрес перенаправления подписки")?.as_str())?;
+        let location = response.header("location").ok_or(t!("в перенаправлении нет Location"))?;
+        current = subscription_url(current.join(location).map_err(|_| t!("неверный адрес перенаправления подписки"))?.as_str())?;
     }
     unreachable!()
 }
@@ -373,15 +390,15 @@ fn flclash_ports() -> Vec<(u16, bool)> {
 fn read_limited(r: ureq::Response, max: u64) -> Result<Vec<u8>, String> {
     let expected = r.header("content-length").and_then(|v| v.parse::<u64>().ok());
     if expected.map(|size| size > max).unwrap_or(false) {
-        return Err(format!("ответ превышает лимит {}", fmt_bytes(max)));
+        return Err(t!("ответ превышает лимит {}", fmt_bytes(max)));
     }
     let mut b = vec![];
     r.into_reader().take(max.saturating_add(1)).read_to_end(&mut b).map_err(|e| e.to_string())?;
     if b.len() as u64 > max {
-        return Err(format!("ответ превышает лимит {}", fmt_bytes(max)));
+        return Err(t!("ответ превышает лимит {}", fmt_bytes(max)));
     }
     if expected.map(|size| size != b.len() as u64).unwrap_or(false) {
-        return Err("ответ обрезан относительно Content-Length".into());
+        return Err(t!("ответ обрезан относительно Content-Length").into());
     }
     Ok(b)
 }
@@ -392,13 +409,13 @@ fn read_progress(r: ureq::Response, max: u64, log: Log) -> Result<Vec<u8>, Strin
     let mut rd = r.into_reader().take(max);
     let (mut b, mut buf, mut step) = (vec![], [0u8; 64 << 10], 1u64);
     loop {
-        let n = rd.read(&mut buf).map_err(|e| format!("загрузка прервалась на {}: {e}", fmt_bytes(b.len() as u64)))?;
+        let n = rd.read(&mut buf).map_err(|e| t!("загрузка прервалась на {}: {1}", fmt_bytes(b.len() as u64), e))?;
         if n == 0 {
             return Ok(b);
         }
         b.extend_from_slice(&buf[..n]);
         if total > 0 && b.len() as u64 * 10 >= total * step {
-            log(&format!("  {}% ({} из {})", step * 10, fmt_bytes(b.len() as u64), fmt_bytes(total)));
+            log(&t!("  {}% ({} из {})", step * 10, fmt_bytes(b.len() as u64), fmt_bytes(total)));
             step += 1;
         }
     }
@@ -481,7 +498,7 @@ struct ProfileChange {
 }
 
 fn sync_profile_dir(path: &Path) -> Result<(), String> {
-    let parent = path.parent().ok_or_else(|| format!("{}: нет каталога профилей", path.display()))?;
+    let parent = path.parent().ok_or_else(|| t!("{}: нет каталога профилей", path.display()))?;
     fs::File::open(parent).and_then(|dir| dir.sync_all()).map_err(|e| format!("{}: {e}", parent.display()))
 }
 
@@ -494,7 +511,7 @@ fn remove_profile_file(path: &Path) -> Result<(), String> {
 }
 
 fn stage_profile(path: &Path, body: &str, kind: &str, nodes: usize) -> Result<PathBuf, String> {
-    let dir = path.parent().ok_or_else(|| format!("{}: нет каталога профилей", path.display()))?;
+    let dir = path.parent().ok_or_else(|| t!("{}: нет каталога профилей", path.display()))?;
     for _ in 0..8 {
         let n = PROFILE_TEMP_COUNTER.fetch_add(1, Ordering::Relaxed);
         let temp = dir.join(format!(".upd-profile-{}-{n}.tmp", std::process::id()));
@@ -511,7 +528,7 @@ fn stage_profile(path: &Path, body: &str, kind: &str, nodes: usize) -> Result<Pa
             let staged = fs::read_to_string(&temp).map_err(|e| format!("{}: {e}", path.display()))?;
             let (staged_kind, staged_nodes) = classify_sub(&staged)?;
             if staged_kind != kind || staged_nodes != nodes {
-                return Err("временный профиль отличается от проверенного ответа подписки".into());
+                return Err(t!("временный профиль отличается от проверенного ответа подписки").into());
             }
             sync_profile_dir(path)
         })();
@@ -521,13 +538,13 @@ fn stage_profile(path: &Path, body: &str, kind: &str, nodes: usize) -> Result<Pa
         }
         return Ok(temp);
     }
-    Err(format!("{}: не удалось создать временный профиль", path.display()))
+    Err(t!("{}: не удалось создать временный профиль", path.display()))
 }
 
 fn install_profile(temp: &Path, target: &Path, old_extension: Option<PathBuf>) -> Result<ProfileChange, String> {
     let previous_target = match fs::symlink_metadata(target) {
         Ok(metadata) if metadata.file_type().is_file() => {
-            let parent = target.parent().ok_or_else(|| format!("{}: нет каталога профилей", target.display()))?;
+            let parent = target.parent().ok_or_else(|| t!("{}: нет каталога профилей", target.display()))?;
             let mut backup = None;
             // Hard link keeps the old bytes available for rollback without another data write.
             for _ in 0..8 {
@@ -543,12 +560,12 @@ fn install_profile(temp: &Path, target: &Path, old_extension: Option<PathBuf>) -
                         break;
                     }
                     Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {}
-                    Err(e) => return Err(format!("{}: не удалось сохранить прежний профиль: {e}", target.display())),
+                    Err(e) => return Err(t!("{}: не удалось сохранить прежний профиль: {1}", target.display(), e)),
                 }
             }
-            Some(backup.ok_or_else(|| format!("{}: не удалось создать резервную ссылку профиля", target.display()))?)
+            Some(backup.ok_or_else(|| t!("{}: не удалось создать резервную ссылку профиля", target.display()))?)
         }
-        Ok(_) => return Err(format!("{}: ожидался обычный файл профиля", target.display())),
+        Ok(_) => return Err(t!("{}: ожидался обычный файл профиля", target.display())),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
         Err(e) => return Err(format!("{}: {e}", target.display())),
     };
@@ -561,12 +578,12 @@ fn install_profile(temp: &Path, target: &Path, old_extension: Option<PathBuf>) -
     }
     if let Err(e) = sync_profile_dir(target) {
         let rollback = match &previous_target {
-            Some(backup) => fs::rename(backup, target).map_err(|rollback| format!("{}: {rollback}; прежний профиль сохранён в {}", target.display(), backup.display())),
+            Some(backup) => fs::rename(backup, target).map_err(|rollback| t!("{}: {2}; прежний профиль сохранён в {}", target.display(), backup.display(), rollback)),
             None => remove_profile_file(target),
         };
         return match rollback {
             Ok(()) => Err(e),
-            Err(rollback) => Err(format!("{e}; не удалось вернуть прежний профиль: {rollback}")),
+            Err(rollback) => Err(t!("{0}; не удалось вернуть прежний профиль: {1}", e, rollback)),
         };
     }
     Ok(ProfileChange { target: target.to_path_buf(), previous_target, old_extension })
@@ -575,7 +592,7 @@ fn install_profile(temp: &Path, target: &Path, old_extension: Option<PathBuf>) -
 fn rollback_profile_change(change: &ProfileChange) -> Result<(), String> {
     match &change.previous_target {
         Some(backup) => {
-            fs::rename(backup, &change.target).map_err(|e| format!("{}: {e}; прежний профиль сохранён в {}", change.target.display(), backup.display()))?;
+            fs::rename(backup, &change.target).map_err(|e| t!("{}: {2}; прежний профиль сохранён в {}", change.target.display(), backup.display(), e))?;
             sync_profile_dir(&change.target)
         }
         None => remove_profile_file(&change.target),
@@ -586,13 +603,13 @@ fn finish_profile_change(change: ProfileChange, log: Log) {
     if let Some(old) = &change.old_extension {
         if old != &change.target {
             if let Err(e) = remove_profile_file(old) {
-                log(&format!("VPN: старый профиль оставлен для очистки: {e}"));
+                log(&t!("VPN: старый профиль оставлен для очистки: {0}", e));
             }
         }
     }
     if let Some(backup) = &change.previous_target {
         if let Err(e) = remove_profile_file(backup) {
-            log(&format!("VPN: резервный профиль оставлен для очистки: {e}"));
+            log(&t!("VPN: резервный профиль оставлен для очистки: {0}", e));
         }
     }
 }
@@ -615,7 +632,7 @@ fn classify_sub(body: &str) -> Result<(String, usize), String> {
             return Ok(("uri".into(), n));
         }
     }
-    Err("ответ не похож на подписку (нет ни конфига Clash, ни ссылок vless://, ss://…)".into())
+    Err(t!("ответ не похож на подписку (нет ни конфига Clash, ни ссылок vless://, ss://…)").into())
 }
 
 pub fn add_sub(url: &str, name: &str, c: &Config, log: Log) -> Result<(), String> {
@@ -623,13 +640,13 @@ pub fn add_sub(url: &str, name: &str, c: &Config, log: Log) -> Result<(), String
     subscription_url(url)?;
     let mut subs = load_subs()?;
     if subs.list.iter().any(|s| s.url == url) {
-        return Err("такая подписка уже есть".into());
+        return Err(t!("такая подписка уже есть").into());
     }
     let id = format!("{:x}", now()) + &sha1_smol::Sha1::from(url).digest().to_string()[..6];
     let mut sub = Sub { id: id.clone(), name: sanitize_profile_name(name), url: url.to_string(), interval_h: c.vpn_sub_update_h, ..Default::default() };
-    log(&format!("скачиваю подписку {}...", mask_url(url)));
+    log(&t!("скачиваю подписку {}...", mask_url(url)));
     let change = fetch_sub(&mut sub, c)?;
-    log(&format!("«{}»: серверов {}, формат {}", sub.name, sub.nodes, sub.kind));
+    log(&t!("«{}»: серверов {}, формат {}", sub.name, sub.nodes, sub.kind));
     subs.list.push(sub);
     if subs.active.is_empty() || !subs.list.iter().any(|s| s.id == subs.active) {
         subs.active = id;
@@ -637,7 +654,7 @@ pub fn add_sub(url: &str, name: &str, c: &Config, log: Log) -> Result<(), String
     if let Err(e) = save_subs(&subs) {
         return match rollback_profile_change(&change) {
             Ok(()) => Err(e),
-            Err(rollback) => Err(format!("{e}; профиль не удалось вернуть: {rollback}")),
+            Err(rollback) => Err(t!("{0}; профиль не удалось вернуть: {1}", e, rollback)),
         };
     }
     finish_profile_change(change, log);
@@ -648,7 +665,7 @@ pub fn delete_sub(idx: usize) -> Result<String, String> {
     let _lock = subscriptions_lock(true)?;
     let mut subs = load_subs()?;
     if idx >= subs.list.len() {
-        return Err("нет такой подписки".into());
+        return Err(t!("нет такой подписки").into());
     }
     let s = subs.list.remove(idx);
     if subs.active == s.id {
@@ -664,7 +681,7 @@ pub fn delete_sub(idx: usize) -> Result<String, String> {
 pub fn use_sub(idx: usize) -> Result<String, String> {
     let _lock = subscriptions_lock(true)?;
     let mut subs = load_subs()?;
-    let s = subs.list.get(idx).ok_or("нет такой подписки")?.clone();
+    let s = subs.list.get(idx).ok_or(t!("нет такой подписки"))?.clone();
     subs.active = s.id;
     save_subs(&subs)?;
     Ok(s.name)
@@ -689,13 +706,13 @@ fn update_subs_locked(c: &Config, log: Log, force: bool) -> Result<bool, String>
         match fetch_sub(s, c) {
             Ok(change) => {
                 profile_changes.push(change);
-                log(&format!("подписка «{}»: обновлена, серверов {}", s.name, s.nodes));
+                log(&t!("подписка «{}»: обновлена, серверов {}", s.name, s.nodes));
                 active_changed |= s.id == subs.active;
             }
             Err(e) => {
                 *s = previous;
                 s.error = e.clone();
-                log(&format!("подписка «{}»: {e}", s.name));
+                log(&t!("подписка «{}»: {1}", s.name, e));
             }
         }
     }
@@ -709,7 +726,7 @@ fn update_subs_locked(c: &Config, log: Log, force: bool) -> Result<bool, String>
         if rollback_errors.is_empty() {
             return Err(e);
         }
-        return Err(format!("{e}; не удалось вернуть прежние профили: {}", rollback_errors.join("; ")));
+        return Err(t!("{1}; не удалось вернуть прежние профили: {}", rollback_errors.join("; "), e));
     }
     for change in profile_changes {
         finish_profile_change(change, log);
@@ -799,7 +816,7 @@ pub fn secret() -> Result<String, String> {
         Ok(s) => {
             let s = s.trim();
             if s.len() < 32 || !s.bytes().all(|b| b.is_ascii_hexdigit()) {
-                return Err(format!("{p}: некорректный формат секрета"));
+                return Err(t!("{0}: некорректный формат секрета", p));
             }
             Ok(s.to_string())
         }
@@ -821,7 +838,19 @@ fn rules_path() -> String {
     format!("{}/rules.txt", etc())
 }
 
-const RULES_TEMPLATE: &str = "# upd VPN: свои правила — идут первыми, раньше правил подписки.\n\
+/// Шаблон rules.txt на языке интерфейса (комментарии и имя группы в примере); сами правила от языка не зависят.
+pub(crate) fn rules_template() -> String {
+    format!(
+        "{}\n{}\n{}\n# DOMAIN-SUFFIX,mirror.yandex.ru,DIRECT\n# DOMAIN-KEYWORD,torrent,DIRECT\n# GEOSITE,youtube,{}\n# IP-CIDR,10.8.0.0/16,DIRECT,no-resolve\n",
+        t!("# upd VPN: свои правила — идут первыми, раньше правил подписки."),
+        t!("# Формат mihomo: ТИП,значение,куда. Куда: DIRECT (напрямую), REJECT (блок) или имя группы/сервера."),
+        t!("# Примеры:"),
+        label(AUTO_GROUP)
+    )
+}
+
+/// Нетронутый шаблон прежних версий: такой файл можно заменить шаблоном на текущем языке.
+const RULES_TEMPLATE_OLD: &str = "# upd VPN: свои правила — идут первыми, раньше правил подписки.\n\
 # Формат mihomo: ТИП,значение,куда. Куда: DIRECT (напрямую), REJECT (блок) или имя группы/сервера.\n\
 # Примеры:\n\
 # DOMAIN-SUFFIX,mirror.yandex.ru,DIRECT\n\
@@ -831,12 +860,21 @@ const RULES_TEMPLATE: &str = "# upd VPN: свои правила — идут п
 
 pub fn user_rules() -> Result<Vec<String>, String> {
     let p = rules_path();
-    if !Path::new(&p).exists() {
+    // нет файла или в нём нетронутый шаблон прежней версии — пишем шаблон на текущем языке
+    let untouched = fs::read_to_string(&p).map(|t| t == RULES_TEMPLATE_OLD).unwrap_or(false);
+    if !Path::new(&p).exists() || untouched {
         private_dir(&etc())?;
-        atomic_write(Path::new(&p), RULES_TEMPLATE.as_bytes(), 0o600).map_err(|e| format!("{p}: {e}"))?;
+        atomic_write(Path::new(&p), rules_template().as_bytes(), 0o600).map_err(|e| format!("{p}: {e}"))?;
     }
     let text = fs::read_to_string(&p).map_err(|e| format!("{p}: {e}"))?;
-    Ok(text.lines().map(str::trim).filter(|l| !l.is_empty() && !l.starts_with('#')).map(String::from).collect())
+    // группу автовыбора в правилах можно назвать на любом языке интерфейса (и прежним «⚡ Авто»):
+    // в конфиг mihomo идёт её постоянное имя, иначе mihomo отверг бы правило
+    Ok(text
+        .lines()
+        .map(str::trim)
+        .filter(|l| !l.is_empty() && !l.starts_with('#'))
+        .map(|l| l.split(',').map(|f| if is_auto_group(f.trim()) { AUTO_GROUP } else { f }).collect::<Vec<_>>().join(","))
+        .collect())
 }
 
 pub fn edit_rules() -> Result<(), String> {
@@ -874,13 +912,13 @@ fn main_group(groups: &[Value], rules: &[Value]) -> Option<String> {
 /// Собирает итоговый конфиг: профиль подписки + настройки upd (порты, TUN, DNS, геофайлы, правила, авто-выбор).
 pub fn build_config(c: &Config) -> Result<String, String> {
     let subs = load_subs()?;
-    let sub = subs.list.iter().find(|s| s.id == subs.active).ok_or("нет подписки: добавь её (upd → VPN → Подписки → n)")?;
-    let body = fs::read_to_string(profile_path(sub, &sub.kind)).map_err(|_| "профиль подписки не скачан — обнови подписку".to_string())?;
+    let sub = subs.list.iter().find(|s| s.id == subs.active).ok_or(t!("нет подписки: добавь её (upd → VPN → Подписки → n)"))?;
+    let body = fs::read_to_string(profile_path(sub, &sub.kind)).map_err(|_| t!("профиль подписки не скачан — обнови подписку").to_string())?;
 
     let mut m: Mapping = if sub.kind == "clash" {
         match serde_yaml::from_str::<Value>(&body) {
             Ok(Value::Mapping(m)) => m,
-            _ => return Err("профиль подписки повреждён — обнови подписку".into()),
+            _ => return Err(t!("профиль подписки повреждён — обнови подписку").into()),
         }
     } else {
         let mut m = Mapping::new();
@@ -969,7 +1007,7 @@ pub fn build_config(c: &Config) -> Result<String, String> {
     let rules_now: Vec<Value> = m.get("rules").and_then(Value::as_sequence).cloned().unwrap_or_default();
     let mut groups: Vec<Value> = m.get("proxy-groups").and_then(Value::as_sequence).cloned().unwrap_or_default();
     let main = main_group(&groups, &rules_now);
-    groups.retain(|g| g.get("name").and_then(Value::as_str) != Some(AUTO_GROUP));
+    groups.retain(|g| !matches!(g.get("name").and_then(Value::as_str), Some(AUTO_GROUP | AUTO_GROUP_OLD)));
     if c.vpn_auto_select {
         groups.insert(
             0,
@@ -991,7 +1029,7 @@ pub fn build_config(c: &Config) -> Result<String, String> {
                 if g.get("name").and_then(Value::as_str) == Some(main.as_str()) {
                     if let Value::Mapping(gm) = g {
                         let mut list: Vec<Value> = gm.get("proxies").and_then(Value::as_sequence).cloned().unwrap_or_default();
-                        list.retain(|x| x.as_str() != Some(AUTO_GROUP));
+                        list.retain(|x| !matches!(x.as_str(), Some(AUTO_GROUP | AUTO_GROUP_OLD)));
                         list.insert(0, k(AUTO_GROUP));
                         gm.insert(k("proxies"), Value::Sequence(list));
                     }
@@ -1003,7 +1041,7 @@ pub fn build_config(c: &Config) -> Result<String, String> {
             if let (Some(n), Value::Mapping(gm)) = (g.get("name").and_then(Value::as_str).map(String::from), &mut *g) {
                 if n == *main {
                     if let Some(Value::Sequence(list)) = gm.get_mut("proxies") {
-                        list.retain(|x| x.as_str() != Some(AUTO_GROUP));
+                        list.retain(|x| !matches!(x.as_str(), Some(AUTO_GROUP | AUTO_GROUP_OLD)));
                     }
                 }
             }
@@ -1118,7 +1156,7 @@ pub struct Snapshot {
 }
 
 impl Snapshot {
-    /// Цепочка от главной группы до реального сервера: Proxy → ⚡ Авто → 🇩🇪 DE-1
+    /// Цепочка от главной группы до реального сервера: Proxy → ⚡ Auto → 🇩🇪 DE-1
     pub fn chain(&self) -> Vec<String> {
         let mut out = vec![];
         let mut cur = self.groups.iter().find(|g| g.kind == "Selector").or(self.groups.first()).map(|g| g.name.clone());
@@ -1207,7 +1245,7 @@ pub fn restart() -> Result<(), String> {
 }
 
 pub(crate) fn core_restart_failure(error: &str) -> String {
-    format!("Ядро VPN обновлено на диске, но перезапуск не удался: {error}")
+    t!("Ядро VPN обновлено на диске, но перезапуск не удался: {0}", error)
 }
 
 fn note_core_update(state: &mut VpnState, changed: bool, active: bool, restart: Result<(), String>, flclash_tag: &str) -> Option<String> {
@@ -1221,9 +1259,9 @@ fn note_core_update(state: &mut VpnState, changed: bool, active: bool, restart: 
             state.flclash_applied = flclash_tag.to_string();
             if changed {
                 state.event = if active {
-                    format!("Ядро VPN обновлено до {} (FlClash {})", state.core_version, flclash_tag)
+                    t!("Ядро VPN обновлено до {} (FlClash {})", state.core_version, flclash_tag)
                 } else {
-                    format!("Ядро VPN обновлено на диске до {} (FlClash {}); служба VPN не запущена", state.core_version, flclash_tag)
+                    t!("Ядро VPN обновлено на диске до {} (FlClash {}); служба VPN не запущена", state.core_version, flclash_tag)
                 };
                 state.event_time = now();
             }
@@ -1248,7 +1286,7 @@ pub fn flclash_running() -> Option<String> {
     for e in rd.flatten() {
         let comm = fs::read_to_string(e.path().join("comm")).unwrap_or_default();
         if comm.trim() == "FlClashCore" {
-            return Some("запущен FlClash — закрой его (и выключи его автозапуск), иначе два VPN помешают друг другу".into());
+            return Some(t!("запущен FlClash — закрой его (и выключи его автозапуск), иначе два VPN помешают друг другу").into());
         }
     }
     None
@@ -1258,7 +1296,7 @@ pub fn flclash_running() -> Option<String> {
 pub fn apply(c: &Config, log: Log) -> Result<(), String> {
     let changed = write_config(c)?;
     if !service_active() {
-        log("конфиг собран; VPN не запущен");
+        log(t!("конфиг собран; VPN не запущен"));
         return Ok(());
     }
     if changed {
@@ -1266,13 +1304,13 @@ pub fn apply(c: &Config, log: Log) -> Result<(), String> {
         let tun_now = snapshot().tun;
         if tun_now != c.vpn_tun {
             restart()?;
-            log("VPN перезапущен");
+            log(t!("VPN перезапущен"));
         } else {
             reload()?;
-            log("конфиг перезагружен");
+            log(t!("конфиг перезагружен"));
         }
     } else {
-        log("конфиг не изменился");
+        log(t!("конфиг не изменился"));
     }
     sysproxy(c);
     Ok(())
@@ -1344,26 +1382,21 @@ pub fn core_check(c: &Config, log: Log) -> Result<VpnState, String> {
     st.core_version = core_version().unwrap_or_default();
     st.checked = now();
     let _ = save_json("vpn.json", &st);
-    log(&format!(
-        "FlClash: {} · mihomo: установлен {}, последний {}",
-        st.flclash_tag,
-        if st.core_version.is_empty() { "—" } else { &st.core_version },
-        st.core_latest
-    ));
+    log(&t!("FlClash: {} · mihomo: установлен {}, последний {}", st.flclash_tag, if st.core_version.is_empty() { "—" } else { &st.core_version }, st.core_latest));
     Ok(st)
 }
 
 /// Проверка SHA-256 digest релиза mihomo до распаковки и запуска кандидата.
 fn verify_core_gz_digest(raw_digest: &str, gz: &[u8]) -> Result<(), String> {
-    let digest = raw_digest.strip_prefix("sha256:").ok_or("неверный формат SHA-256 digest; установка отменена")?;
+    let digest = raw_digest.strip_prefix("sha256:").ok_or(t!("неверный формат SHA-256 digest; установка отменена"))?;
     if digest.len() != 64 || !digest.bytes().all(|b| b.is_ascii_hexdigit()) {
-        return Err("неверный формат SHA-256 digest; установка отменена".into());
+        return Err(t!("неверный формат SHA-256 digest; установка отменена").into());
     }
     let digest = digest.to_ascii_lowercase();
     use sha2::Digest;
     let got: String = sha2::Sha256::digest(gz).iter().map(|b| format!("{b:02x}")).collect();
     if got != digest {
-        return Err(format!("контрольная сумма не совпала (ожидалась {digest}, получена {got})"));
+        return Err(t!("контрольная сумма не совпала (ожидалась {0}, получена {1})", digest, got));
     }
     Ok(())
 }
@@ -1371,32 +1404,32 @@ fn verify_core_gz_digest(raw_digest: &str, gz: &[u8]) -> Result<(), String> {
 /// Скачать и поставить mihomo (сборка под процессор, проверка SHA-256). true — ядро сменилось.
 pub fn core_install(c: &Config, log: Log, force: bool) -> Result<bool, String> {
     let rel = gh_latest("MetaCubeX/mihomo", c.vpn_port)?;
-    let tag = rel["tag_name"].as_str().ok_or("нет tag_name в релизе mihomo")?.to_string();
+    let tag = rel["tag_name"].as_str().ok_or(t!("нет tag_name в релизе mihomo"))?.to_string();
     let cur = core_version();
     if !force && cur.as_deref() == Some(tag.as_str()) {
-        log(&format!("ядро mihomo {tag} уже актуально"));
+        log(&t!("ядро mihomo {0} уже актуально", tag));
         return Ok(false);
     }
     let name = if cfg!(target_arch = "aarch64") { format!("mihomo-linux-arm64-{tag}.gz") } else { format!("mihomo-linux-amd64-{}-{tag}.gz", cpu_level()) };
-    let asset = rel["assets"].as_array().and_then(|a| a.iter().find(|x| x["name"] == name.as_str())).ok_or(format!("в релизе нет {name}"))?;
-    let raw_digest = asset["digest"].as_str().ok_or("в релизе нет SHA-256 digest; установка отменена")?;
-    let url = asset["browser_download_url"].as_str().ok_or("нет ссылки на файл")?;
-    log(&format!("скачиваю {name}..."));
+    let asset = rel["assets"].as_array().and_then(|a| a.iter().find(|x| x["name"] == name.as_str())).ok_or(t!("в релизе нет {0}", name))?;
+    let raw_digest = asset["digest"].as_str().ok_or(t!("в релизе нет SHA-256 digest; установка отменена"))?;
+    let url = asset["browser_download_url"].as_str().ok_or(t!("нет ссылки на файл"))?;
+    log(&t!("скачиваю {0}...", name));
     let gz = read_progress(get(url, 600, c.vpn_port)?, 200 << 20, log)?;
     verify_core_gz_digest(raw_digest, &gz)?;
-    log("контрольная сумма SHA-256 совпала");
+    log(t!("контрольная сумма SHA-256 совпала"));
     let mut bin = vec![];
-    flate2::read::GzDecoder::new(&gz[..]).read_to_end(&mut bin).map_err(|e| format!("распаковка: {e}"))?;
+    flate2::read::GzDecoder::new(&gz[..]).read_to_end(&mut bin).map_err(|e| t!("распаковка: {0}", e))?;
     private_dir(&format!("{}/bin", home()))?;
     let tmp = format!("{}.new", core_bin());
     atomic_write(Path::new(&tmp), &bin, 0o755).map_err(|e| e.to_string())?;
     let (ver, code) = out(&tmp, &["-v"]);
     if code != 0 {
         let _ = fs::remove_file(&tmp);
-        return Err("новое ядро не запускается — оставляю прежнее".into());
+        return Err(t!("новое ядро не запускается — оставляю прежнее").into());
     }
     fs::rename(&tmp, core_bin()).map_err(|e| e.to_string())?;
-    log(&format!("ядро: {}", ver.lines().next().unwrap_or("").trim()));
+    log(&t!("ядро: {}", ver.lines().next().unwrap_or("").trim()));
     let mut st = load_state();
     st.core_version = tag.clone();
     st.core_latest = tag;
@@ -1443,34 +1476,34 @@ fn next_proto_field<'a>(data: &'a [u8], pos: &mut usize) -> Result<Option<ProtoF
     if *pos == data.len() {
         return Ok(None);
     }
-    let key = proto_varint(data, pos).ok_or("неверная структура protobuf")?;
+    let key = proto_varint(data, pos).ok_or(t!("неверная структура protobuf"))?;
     let number = key >> 3;
     let wire = (key & 7) as u8;
     if number == 0 || number >= (1 << 29) {
-        return Err("неверная структура protobuf".into());
+        return Err(t!("неверная структура protobuf").into());
     }
     let (bytes, integer) = match wire {
-        0 => (&[][..], Some(proto_varint(data, pos).ok_or("неверная структура protobuf")?)),
+        0 => (&[][..], Some(proto_varint(data, pos).ok_or(t!("неверная структура protobuf"))?)),
         1 => {
-            let end = pos.checked_add(8).filter(|end| *end <= data.len()).ok_or("обрезанная структура protobuf")?;
+            let end = pos.checked_add(8).filter(|end| *end <= data.len()).ok_or(t!("обрезанная структура protobuf"))?;
             let bytes = &data[*pos..end];
             *pos = end;
             (bytes, None)
         }
         2 => {
-            let len: usize = proto_varint(data, pos).and_then(|n| n.try_into().ok()).ok_or("неверная длина protobuf")?;
-            let end = pos.checked_add(len).filter(|end| *end <= data.len()).ok_or("обрезанная структура protobuf")?;
+            let len: usize = proto_varint(data, pos).and_then(|n| n.try_into().ok()).ok_or(t!("неверная длина protobuf"))?;
+            let end = pos.checked_add(len).filter(|end| *end <= data.len()).ok_or(t!("обрезанная структура protobuf"))?;
             let bytes = &data[*pos..end];
             *pos = end;
             (bytes, None)
         }
         5 => {
-            let end = pos.checked_add(4).filter(|end| *end <= data.len()).ok_or("обрезанная структура protobuf")?;
+            let end = pos.checked_add(4).filter(|end| *end <= data.len()).ok_or(t!("обрезанная структура protobuf"))?;
             let bytes = &data[*pos..end];
             *pos = end;
             (bytes, None)
         }
-        _ => return Err("неподдерживаемая структура protobuf".into()),
+        _ => return Err(t!("неподдерживаемая структура protobuf").into()),
     };
     Ok(Some(ProtoField { number: number as u32, wire, bytes, integer }))
 }
@@ -1481,12 +1514,12 @@ fn validate_geo_domain(data: &[u8]) -> Result<(), String> {
     while let Some(field) = next_proto_field(data, &mut pos)? {
         if field.number == 2 {
             if field.wire != 2 || field.bytes.is_empty() || std::str::from_utf8(field.bytes).is_err() {
-                return Err("неверный домен в GeoSite".into());
+                return Err(t!("неверный домен в GeoSite").into());
             }
             value = true;
         }
     }
-    if value { Ok(()) } else { Err("пустой домен в GeoSite".into()) }
+    if value { Ok(()) } else { Err(t!("пустой домен в GeoSite").into()) }
 }
 
 fn validate_geo_cidr(data: &[u8]) -> Result<(), String> {
@@ -1497,22 +1530,22 @@ fn validate_geo_cidr(data: &[u8]) -> Result<(), String> {
         match field.number {
             1 => {
                 if field.wire != 2 || !matches!(field.bytes.len(), 4 | 16) {
-                    return Err("неверный адрес в GeoIP".into());
+                    return Err(t!("неверный адрес в GeoIP").into());
                 }
                 ip = Some(field.bytes.len());
             }
             2 => {
                 if field.wire != 0 {
-                    return Err("неверная маска в GeoIP".into());
+                    return Err(t!("неверная маска в GeoIP").into());
                 }
                 prefix = field.integer;
             }
             _ => {}
         }
     }
-    let Some(ip_len) = ip else { return Err("в GeoIP нет адреса".into()) };
+    let Some(ip_len) = ip else { return Err(t!("в GeoIP нет адреса").into()) };
     if prefix.map(|n| n > (ip_len * 8) as u64).unwrap_or(false) {
-        return Err("неверная маска в GeoIP".into());
+        return Err(t!("неверная маска в GeoIP").into());
     }
     Ok(())
 }
@@ -1525,7 +1558,7 @@ fn validate_geo_dat(data: &[u8], site: bool) -> Result<(), String> {
             continue;
         }
         if field.wire != 2 {
-            return Err("неверная запись GeoIP/GeoSite".into());
+            return Err(t!("неверная запись GeoIP/GeoSite").into());
         }
         let mut entry_pos = 0;
         let mut country = false;
@@ -1534,13 +1567,13 @@ fn validate_geo_dat(data: &[u8], site: bool) -> Result<(), String> {
             match entry.number {
                 1 => {
                     if entry.wire != 2 || entry.bytes.is_empty() || std::str::from_utf8(entry.bytes).is_err() {
-                        return Err("неверный код GeoIP/GeoSite".into());
+                        return Err(t!("неверный код GeoIP/GeoSite").into());
                     }
                     country = true;
                 }
                 2 => {
                     if entry.wire != 2 {
-                        return Err("неверная запись GeoIP/GeoSite".into());
+                        return Err(t!("неверная запись GeoIP/GeoSite").into());
                     }
                     if site {
                         validate_geo_domain(entry.bytes)?;
@@ -1553,12 +1586,12 @@ fn validate_geo_dat(data: &[u8], site: bool) -> Result<(), String> {
             }
         }
         if !country || values == 0 {
-            return Err("неполная запись GeoIP/GeoSite".into());
+            return Err(t!("неполная запись GeoIP/GeoSite").into());
         }
         entries += 1;
     }
     if entries == 0 {
-        return Err("в GeoIP/GeoSite нет записей".into());
+        return Err(t!("в GeoIP/GeoSite нет записей").into());
     }
     Ok(())
 }
@@ -1569,87 +1602,87 @@ fn mmdb_size(data: &[u8], pos: &mut usize, code: u8) -> Result<usize, String> {
         29 => (1, 29usize),
         30 => (2, 285usize),
         31 => (3, 65_821usize),
-        _ => return Err("неверный размер поля MaxMind DB".into()),
+        _ => return Err(t!("неверный размер поля MaxMind DB").into()),
     };
-    let end = pos.checked_add(extra).filter(|end| *end <= data.len()).ok_or("обрезанные метаданные MaxMind DB")?;
+    let end = pos.checked_add(extra).filter(|end| *end <= data.len()).ok_or(t!("обрезанные метаданные MaxMind DB"))?;
     let mut value = 0usize;
     for byte in &data[*pos..end] {
         value = (value << 8) | *byte as usize;
     }
     *pos = end;
-    base.checked_add(value).ok_or_else(|| "неверный размер поля MaxMind DB".into())
+    base.checked_add(value).ok_or_else(|| t!("неверный размер поля MaxMind DB").into())
 }
 
 fn mmdb_skip_value(data: &[u8], pos: &mut usize, depth: usize) -> Result<u8, String> {
     if depth > 32 {
-        return Err("слишком глубокие метаданные MaxMind DB".into());
+        return Err(t!("слишком глубокие метаданные MaxMind DB").into());
     }
-    let control = *data.get(*pos).ok_or("обрезанные метаданные MaxMind DB")?;
+    let control = *data.get(*pos).ok_or(t!("обрезанные метаданные MaxMind DB"))?;
     *pos += 1;
     let mut kind = control >> 5;
     let size_code = control & 0x1f;
     if kind == 0 {
-        kind = data.get(*pos).copied().and_then(|n| n.checked_add(7)).ok_or("обрезанные метаданные MaxMind DB")?;
+        kind = data.get(*pos).copied().and_then(|n| n.checked_add(7)).ok_or(t!("обрезанные метаданные MaxMind DB"))?;
         *pos += 1;
         if !(8..=15).contains(&kind) {
-            return Err("неизвестный тип метаданных MaxMind DB".into());
+            return Err(t!("неизвестный тип метаданных MaxMind DB").into());
         }
     }
     if kind == 1 {
         let width = ((size_code >> 3) + 1) as usize;
-        let end = pos.checked_add(width).filter(|end| *end <= data.len()).ok_or("обрезанный указатель MaxMind DB")?;
+        let end = pos.checked_add(width).filter(|end| *end <= data.len()).ok_or(t!("обрезанный указатель MaxMind DB"))?;
         *pos = end;
         return Ok(kind);
     }
     let size = mmdb_size(data, pos, size_code)?;
     match kind {
         2 => {
-            let end = pos.checked_add(size).filter(|end| *end <= data.len()).ok_or("обрезанная строка MaxMind DB")?;
-            std::str::from_utf8(&data[*pos..end]).map_err(|_| "неверная строка метаданных MaxMind DB")?;
+            let end = pos.checked_add(size).filter(|end| *end <= data.len()).ok_or(t!("обрезанная строка MaxMind DB"))?;
+            std::str::from_utf8(&data[*pos..end]).map_err(|_| t!("неверная строка метаданных MaxMind DB"))?;
             *pos = end;
         }
         3 | 15 => {
             let expected = if kind == 3 { 8 } else { 4 };
             if size != expected {
-                return Err("неверный размер числа MaxMind DB".into());
+                return Err(t!("неверный размер числа MaxMind DB").into());
             }
-            let end = pos.checked_add(size).filter(|end| *end <= data.len()).ok_or("обрезанное число MaxMind DB")?;
+            let end = pos.checked_add(size).filter(|end| *end <= data.len()).ok_or(t!("обрезанное число MaxMind DB"))?;
             *pos = end;
         }
         4 => {
-            let end = pos.checked_add(size).filter(|end| *end <= data.len()).ok_or("обрезанные байты MaxMind DB")?;
+            let end = pos.checked_add(size).filter(|end| *end <= data.len()).ok_or(t!("обрезанные байты MaxMind DB"))?;
             *pos = end;
         }
         5 | 6 | 8 | 9 | 10 => {
             let max = match kind { 5 => 2, 6 | 8 => 4, 9 => 8, _ => 16 };
             if size > max {
-                return Err("неверный размер целого MaxMind DB".into());
+                return Err(t!("неверный размер целого MaxMind DB").into());
             }
-            let end = pos.checked_add(size).filter(|end| *end <= data.len()).ok_or("обрезанное целое MaxMind DB")?;
+            let end = pos.checked_add(size).filter(|end| *end <= data.len()).ok_or(t!("обрезанное целое MaxMind DB"))?;
             *pos = end;
         }
         7 => {
             if size > data.len().saturating_sub(*pos) / 2 {
-                return Err("обрезанная карта метаданных MaxMind DB".into());
+                return Err(t!("обрезанная карта метаданных MaxMind DB").into());
             }
             for _ in 0..size {
                 if mmdb_skip_value(data, pos, depth + 1)? != 2 {
-                    return Err("ключ метаданных MaxMind DB не является строкой".into());
+                    return Err(t!("ключ метаданных MaxMind DB не является строкой").into());
                 }
                 mmdb_skip_value(data, pos, depth + 1)?;
             }
         }
         11 => {
             if size > data.len().saturating_sub(*pos) {
-                return Err("обрезанный список метаданных MaxMind DB".into());
+                return Err(t!("обрезанный список метаданных MaxMind DB").into());
             }
             for _ in 0..size {
                 mmdb_skip_value(data, pos, depth + 1)?;
             }
         }
         14 if size <= 1 => {}
-        12 | 13 | 14 => return Err("неподдерживаемый тип метаданных MaxMind DB".into()),
-        _ => return Err("неизвестный тип метаданных MaxMind DB".into()),
+        12 | 13 | 14 => return Err(t!("неподдерживаемый тип метаданных MaxMind DB").into()),
+        _ => return Err(t!("неизвестный тип метаданных MaxMind DB").into()),
     }
     Ok(kind)
 }
@@ -1658,15 +1691,15 @@ fn validate_mmdb(data: &[u8]) -> Result<(), String> {
     const MARKER: &[u8] = b"\xab\xcd\xefMaxMind.com";
     let start = data.len().saturating_sub((128 << 10) + MARKER.len());
     let Some(relative) = data[start..].windows(MARKER.len()).rposition(|w| w == MARKER) else {
-        return Err("нет сигнатуры MaxMind DB".into());
+        return Err(t!("нет сигнатуры MaxMind DB").into());
     };
     let metadata = &data[start + relative + MARKER.len()..];
     if metadata.is_empty() || metadata[0] >> 5 != 7 || metadata[0] & 0x1f == 0 {
-        return Err("повреждённый раздел метаданных MaxMind DB".into());
+        return Err(t!("повреждённый раздел метаданных MaxMind DB").into());
     }
     let mut pos = 0;
     if mmdb_skip_value(metadata, &mut pos, 0)? != 7 || pos != metadata.len() {
-        return Err("повреждённый раздел метаданных MaxMind DB".into());
+        return Err(t!("повреждённый раздел метаданных MaxMind DB").into());
     }
     Ok(())
 }
@@ -1679,13 +1712,13 @@ fn save_geo_result(path: &Path, remote: &str, fetched: Result<Vec<u8>, String>) 
 
 fn validate_geo_file(remote: &str, data: &[u8]) -> Result<(), String> {
     if data.len() <= 1024 {
-        return Err("файл слишком мал".into());
+        return Err(t!("файл слишком мал").into());
     }
     match remote {
         "geoip.metadb" | "ASN.mmdb" => validate_mmdb(data),
         "GeoSite.dat" => validate_geo_dat(data, true),
         "GeoIP.dat" => validate_geo_dat(data, false),
-        _ => Err("неизвестный формат геофайла".into()),
+        _ => Err(t!("неизвестный формат геофайла").into()),
     }
 }
 
@@ -1697,11 +1730,11 @@ pub fn geo_update(c: &Config, log: Log, only_missing: bool) -> Result<(), String
         if only_missing && Path::new(&path).exists() {
             continue;
         }
-        log(&format!("геофайл {remote}..."));
+        log(&t!("геофайл {0}...", remote));
         match get(&format!("{GEO_BASE}/{remote}"), 300, c.vpn_port)
             .and_then(|r| {
                 if r.status() != 200 {
-                    return Err(format!("HTTP {} вместо полного файла", r.status()));
+                    return Err(t!("HTTP {} вместо полного файла", r.status()));
                 }
                 read_limited(r, 100 << 20)
             })
@@ -1733,11 +1766,11 @@ pub fn geo_update(c: &Config, log: Log, only_missing: bool) -> Result<(), String
 /// Скачать недостающее: ядро и геофайлы. Работает и при запущенном FlClash — тогда качает через его прокси.
 pub fn fetch_missing(c: &Config, log: Log) -> Result<(), String> {
     if core_version().is_none() {
-        log("ядра ещё нет — ставлю mihomo");
+        log(t!("ядра ещё нет — ставлю mihomo"));
         core_install(c, log, true)?;
     }
     if let Err(e) = geo_update(c, log, true) {
-        log(&format!("геофайлы не скачались ({e}) — mihomo попробует сам"));
+        log(&t!("геофайлы не скачались ({0}) — mihomo попробует сам", e));
     }
     Ok(())
 }
@@ -1751,9 +1784,9 @@ pub fn prepare(c: &Config, log: Log) -> Result<(), String> {
     write_config(c)?;
     let (msg, code) = out(&core_bin(), &["-t", "-d", &home(), "-f", &config_path()]);
     if code != 0 {
-        return Err(format!("mihomo не принял конфиг: {}", last_line(&msg).unwrap_or("")));
+        return Err(t!("mihomo не принял конфиг: {}", last_line(&msg).unwrap_or("")));
     }
-    log("конфиг проверен");
+    log(t!("конфиг проверен"));
     Ok(())
 }
 
@@ -1763,14 +1796,14 @@ pub fn maintain(c: &Config, log: Log) {
         let _lock = match subscriptions_lock(true) {
             Ok(lock) => lock,
             Err(e) => {
-                log(&format!("VPN: блокировка подписок не получена: {e}"));
+                log(&t!("VPN: блокировка подписок не получена: {0}", e));
                 return;
             }
         };
         let subs = match load_subs() {
             Ok(subs) => subs,
             Err(e) => {
-                log(&format!("VPN: подписки не прочитаны: {e}"));
+                log(&t!("VPN: подписки не прочитаны: {0}", e));
                 return;
             }
         };
@@ -1783,7 +1816,7 @@ pub fn maintain(c: &Config, log: Log) {
                 Err(e) => log(&format!("VPN: {e}")),
             },
             Ok(false) => {}
-            Err(e) => log(&format!("VPN: подписки не обновлены: {e}")),
+            Err(e) => log(&t!("VPN: подписки не обновлены: {0}", e)),
         }
     }
     let st = load_state();
@@ -1793,7 +1826,7 @@ pub fn maintain(c: &Config, log: Log) {
     let Ok(st) = core_check(c, log) else { return };
     let signal = st.flclash_tag != st.flclash_applied;
     if signal || core_version().is_none() {
-        log(&format!("новый релиз FlClash {} — обновляю ядро mihomo", st.flclash_tag));
+        log(&t!("новый релиз FlClash {} — обновляю ядро mihomo", st.flclash_tag));
         match core_install(c, log, false) {
             Ok(changed) => {
                 let active = service_active();
@@ -1804,13 +1837,29 @@ pub fn maintain(c: &Config, log: Log) {
                 }
                 let _ = save_json("vpn.json", &s2);
             }
-            Err(e) => log(&format!("ядро не обновилось: {e}")),
+            Err(e) => log(&t!("ядро не обновилось: {0}", e)),
         }
     }
 }
 
 #[cfg(test)]
 mod contract_tests {
+
+    #[test]
+    fn auto_group_label_and_rules_follow_language() {
+        crate::i18n::set(crate::i18n::Lang::Zh);
+        assert_eq!(label(AUTO_GROUP), "⚡ 自动");
+        assert_eq!(label("🇩🇪 DE-1"), "🇩🇪 DE-1");
+        assert!(rules_template().contains("# 示例：") && rules_template().contains("GEOSITE,youtube,⚡ 自动"));
+        crate::i18n::set(crate::i18n::Lang::Ru);
+        assert_eq!(label(AUTO_GROUP), "⚡ Авто");
+        // в правилах группа на любом языке и прежнее имя — постоянный идентификатор
+        for n in ["⚡ Авто", "⚡ 自动", "⚡ تلقائي", "⚡ Auto"] {
+            assert!(is_auto_group(n), "{n}");
+        }
+        assert!(!is_auto_group("Proxy"));
+    }
+
     use super::*;
     use std::path::PathBuf;
 

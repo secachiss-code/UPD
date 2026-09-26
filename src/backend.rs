@@ -62,6 +62,10 @@ pub trait Backend {
     fn upgrade_asks(&self) -> bool {
         true
     }
+    /// Доступен ли AUR (Arch и производные)
+    fn aur(&self) -> bool {
+        false
+    }
     fn clean(&self) -> Result<(), String>;
     fn orphans(&self) -> Vec<String>;
     fn pending_configs(&self) -> Vec<String>;
@@ -97,7 +101,7 @@ pub fn detect() -> Result<Box<dyn Backend>, String> {
     } else if have("dnf5") || have("dnf") || have("yum") {
         Ok(Box::new(Rpm::dnf(&osr)))
     } else {
-        Err(format!("{}: пакетный менеджер не поддерживается (есть: pacman, apt, dnf, zypper)", osr["PRETTY_NAME"]))
+        Err(t!("{}: пакетный менеджер не поддерживается (есть: pacman, apt, dnf, zypper)", osr["PRETTY_NAME"]))
     }
 }
 
@@ -124,7 +128,7 @@ impl PrivateTempDir {
                 Err(e) => return Err(e),
             }
         }
-        Err(std::io::Error::new(std::io::ErrorKind::AlreadyExists, "не удалось подобрать имя временного каталога"))
+        Err(std::io::Error::new(std::io::ErrorKind::AlreadyExists, t!("не удалось подобрать имя временного каталога")))
     }
 }
 
@@ -140,8 +144,10 @@ fn hist_from(path: &str, n: usize, keep: impl Fn(&str) -> bool) -> Vec<String> {
 
 // ======================= pacman (Arch, Garuda, EndeavourOS, CachyOS…) =======================
 
-const PIN_BEGIN: &str = "## >>> upd: закреплённые зеркала (управляется автоматически, см. upd) >>>";
-const PIN_END: &str = "## <<< upd <<<";
+pub(crate) const PIN_BEGIN: &str = "## >>> upd: pinned mirrors (managed automatically, see upd) >>>";
+/// Начало блока до 0.2.5 — узнаём, при следующей записи блок получит новую метку
+const PIN_BEGIN_OLD: &str = "## >>> upd: закреплённые зеркала (управляется автоматически, см. upd) >>>";
+pub(crate) const PIN_END: &str = "## <<< upd <<<";
 
 pub struct Pacman {
     mirrorlist: String,
@@ -159,10 +165,10 @@ impl Pacman {
         let manjaro = field("ID").starts_with("manjaro") || field("ID_LIKE").split_whitespace().any(|s| s == "manjaro") || have("pacman-mirrors");
         let conf = fs::read_to_string(env_or("UPD_PACMAN_CONF", "/etc/pacman.conf")).unwrap_or_default();
         let unmanaged = if manjaro {
-            Some("в Manjaro зеркалами управляет pacman-mirrors (sudo pacman-mirrors --fasttrack)".to_string())
+            Some(t!("в Manjaro зеркалами управляет pacman-mirrors (sudo pacman-mirrors --fasttrack)").to_string())
         } else if !conf.is_empty() && !repo_uses(&conf, "core", &mirrorlist) {
             // Artix и подобные: в mirrorlist зеркала своих репозиториев, а не Arch — подменять нельзя
-            Some(format!("{mirrorlist} не подключён к репозиторию Arch [core] — зеркалами управляет дистрибутив"))
+            Some(t!("{0} не подключён к репозиторию Arch [core] — зеркалами управляет дистрибутив", mirrorlist))
         } else {
             None
         };
@@ -210,7 +216,7 @@ fn server_url(l: &str) -> Option<String> {
 fn split_pin(ls: &[String]) -> (Vec<String>, Vec<String>) {
     let (mut pinned, mut rest, mut inside) = (vec![], vec![], false);
     for l in ls {
-        if l == PIN_BEGIN {
+        if l == PIN_BEGIN || l == PIN_BEGIN_OLD {
             inside = true;
         } else if l == PIN_END {
             inside = false;
@@ -259,7 +265,7 @@ impl Backend for Pacman {
         if s.starts_with("http") && s.contains("$repo") {
             Ok(())
         } else {
-            Err("нужен http(s)://…/$repo/os/$arch".into())
+            Err(t!("нужен http(s)://…/$repo/os/$arch").into())
         }
     }
     fn default_mirrors(&self) -> Vec<String> {
@@ -277,7 +283,7 @@ impl Backend for Pacman {
         let rate_mirrors = have("rate-mirrors");
         let reflector = !rate_mirrors && have("reflector");
         if rate_mirrors || reflector {
-            log(if rate_mirrors { "  rate-mirrors: зеркала рядом с тобой..." } else { "  reflector: свежие зеркала..." });
+            log(if rate_mirrors { t!("  rate-mirrors: зеркала рядом с тобой...") } else { t!("  reflector: свежие зеркала...") });
             match PrivateTempDir::new() {
                 Ok(tmp_dir) => {
                     let output = tmp_dir.0.join("mirrors");
@@ -291,19 +297,19 @@ impl Backend for Pacman {
                     match result {
                         Ok(()) => match fs::read_to_string(&output) {
                             Ok(body) => file = body.lines().map(String::from).collect(),
-                            Err(e) => log(&format!("  не удалось прочитать результат автопоиска: {e}")),
+                            Err(e) => log(&t!("  не удалось прочитать результат автопоиска: {0}", e)),
                         },
-                        Err(e) => log(&format!("  не сработал: {e}")),
+                        Err(e) => log(&t!("  не сработал: {0}", e)),
                     }
                 }
-                Err(e) => log(&format!("  не удалось создать закрытый временный каталог: {e}")),
+                Err(e) => log(&t!("  не удалось создать закрытый временный каталог: {0}", e)),
             }
         }
         let mut servers: Vec<String> = file.iter().filter_map(|l| server_url(l)).collect();
         if servers.len() < 5 {
-            log("  список зеркал с archlinux.org...");
+            log(t!("  список зеркал с archlinux.org..."));
             servers = arch_status_mirrors()?;
-            file = vec![format!("# upd: список с archlinux.org/mirrors/status, {}", fmt_time(now()))];
+            file = vec![format!("# upd: list from archlinux.org/mirrors/status, {}", fmt_time(now()))];
             file.extend(servers.iter().map(|s| format!("Server = {s}")));
         }
         servers.truncate(n);
@@ -361,22 +367,22 @@ impl Backend for Pacman {
     fn updates(&self) -> Result<Vec<String>, String> {
         // без скачанной временной базы pacman честно скажет «обновлений нет» — это была бы ложь
         if !Path::new(&format!("{}/sync", Self::sync_db())).is_dir() {
-            return Err("временная база ещё не скачана".into());
+            return Err(t!("временная база ещё не скачана").into());
         }
         let output = Command::new("pacman")
             .args(["-Qu", "--dbpath", &Self::sync_db()])
             .env("LC_ALL", "C")
             .output()
-            .map_err(|e| format!("pacman -Qu: не удалось запустить: {e}"))?;
+            .map_err(|e| t!("pacman -Qu: не удалось запустить: {0}", e))?;
         let stdout = String::from_utf8_lossy(&output.stdout);
         let stderr = String::from_utf8_lossy(&output.stderr);
         let detail = last_line(&stderr).map(|line| format!(": {line}")).unwrap_or_default();
         let Some(code) = output.status.code() else {
-            return Err(format!("pacman -Qu: процесс завершился без кода выхода{detail}"));
+            return Err(t!("pacman -Qu: процесс завершился без кода выхода{0}", detail));
         };
         let updates: Vec<String> = lines(&stdout).into_iter().filter(|line| !line.contains("[ignored]")).collect();
         if code > 1 || (code == 1 && (!stderr.trim().is_empty() || !updates.is_empty())) {
-            return Err(format!("pacman -Qu: код {code}{detail}"));
+            return Err(t!("pacman -Qu: код {0}{1}", code, detail));
         }
         Ok(updates)
     }
@@ -408,7 +414,7 @@ impl Backend for Pacman {
             return run(false, &env, "garuda-update", &["--noconfirm"]);
         }
         if booted_from_snapshot() {
-            return Err("система загружена из снапшота — изменения пропадут при перезагрузке. Сначала восстанови снапшот (snapper rollback / btrfs-assistant) и перезагрузись".into());
+            return Err(t!("система загружена из снапшота — изменения пропадут при перезагрузке. Сначала восстанови снапшот (snapper rollback / btrfs-assistant) и перезагрузись").into());
         }
         // Как в garuda-update и eos-update: сначала ключи (archlinux-, manjaro-, endeavouros-, cachyos-, chaotic-keyring…),
         // иначе после смены ключа сборщика всё обновление падает на проверке подписей.
@@ -417,13 +423,13 @@ impl Backend for Pacman {
         let (outdated, _) = out("pacman", &["-Qqu"]);
         let keyrings: Vec<&str> = outdated.lines().map(str::trim).filter(|p| p.ends_with("-keyring")).collect();
         if !keyrings.is_empty() {
-            println!("→ сначала ключи: {}", keyrings.join(", "));
+            println!("{}", t!("→ сначала ключи: {}", keyrings.join(", ")));
             let mut args = vec!["-S", "--needed", "--noconfirm"];
             args.extend(&keyrings);
             run(false, &[], "pacman", &args)?;
         }
         // подтверждение уже спросил upd; на конфликтах --noconfirm выбирает безопасное «нет» и прерывает установку
-        run(false, &[], "pacman", &["-Su", "--noconfirm"]).map_err(|e| format!("{e} — если pacman спрашивал про конфликт пакетов, запусти вручную: sudo pacman -Syu"))
+        run(false, &[], "pacman", &["-Su", "--noconfirm"]).map_err(|e| t!("{0} — если pacman спрашивал про конфликт пакетов, запусти вручную: sudo pacman -Syu", e))
     }
     fn upgrade_handles_aur(&self) -> bool {
         have("garuda-update")
@@ -431,22 +437,25 @@ impl Backend for Pacman {
     fn upgrade_asks(&self) -> bool {
         false
     }
+    fn aur(&self) -> bool {
+        true
+    }
 
     fn clean(&self) -> Result<(), String> {
         if have("paccache") {
-            println!("→ кэш: оставляю 2 последние версии установленных пакетов");
+            println!("{}", t!("→ кэш: оставляю 2 последние версии установленных пакетов"));
             let _ = run(false, &[], "paccache", &["-rk2"]);
-            println!("→ кэш: убираю версии удалённых пакетов");
+            println!("{}", t!("→ кэш: убираю версии удалённых пакетов"));
             let _ = run(false, &[], "paccache", &["-ruk0"]);
         } else {
             let _ = run(false, &[], "pacman", &["-Sc"]);
         }
         let o = self.orphans();
         if o.is_empty() {
-            println!("→ ненужных пакетов нет");
+            println!("{}", t!("→ ненужных пакетов нет"));
             return Ok(());
         }
-        println!("→ ненужные пакеты (сироты): {}", o.len());
+        println!("{}", t!("→ ненужные пакеты (сироты): {}", o.len()));
         let mut args = vec!["-Rns"];
         args.extend(o.iter().map(String::as_str));
         run(false, &[], "pacman", &args)
@@ -459,7 +468,7 @@ impl Backend for Pacman {
     }
     fn merge(&self) -> Result<(), String> {
         if !have("pacdiff") {
-            return Err("нет pacdiff (пакет pacman-contrib)".into());
+            return Err(t!("нет pacdiff (пакет pacman-contrib)").into());
         }
         run(false, &[], "pacdiff", &[])
     }
@@ -570,7 +579,7 @@ fn peek_apt_original_uri() -> Result<String, String> {
     for path in [apt_original_uri_path(), legacy_apt_original_uri_path()] {
         match fs::symlink_metadata(&path) {
             Ok(metadata) if metadata.file_type().is_file() => return fs::read_to_string(&path).map_err(|e| format!("{}: {e}", path.display())),
-            Ok(_) => return Err(format!("{}: ожидался обычный файл", path.display())),
+            Ok(_) => return Err(t!("{}: ожидался обычный файл", path.display())),
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
             Err(e) => return Err(format!("{}: {e}", path.display())),
         }
@@ -619,7 +628,7 @@ fn apt_transaction_path() -> PathBuf {
 }
 
 fn sync_parent_dir(path: &Path) -> Result<(), String> {
-    let parent = path.parent().ok_or_else(|| format!("{}: нет родительского каталога", path.display()))?;
+    let parent = path.parent().ok_or_else(|| t!("{}: нет родительского каталога", path.display()))?;
     fs::File::open(parent).and_then(|dir| dir.sync_all()).map_err(|e| format!("{}: {e}", parent.display()))
 }
 
@@ -654,7 +663,7 @@ fn snapshot_apt_file(path: &Path) -> Result<Option<AptSourceBackup>, String> {
                 applied: None,
             }))
         }
-        Ok(_) => Err(format!("{}: ожидался обычный файл", path.display())),
+        Ok(_) => Err(t!("{}: ожидался обычный файл", path.display())),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
         Err(e) => Err(format!("{}: {e}", path.display())),
     }
@@ -676,7 +685,7 @@ fn rollback_apt_transaction(transaction: &AptTransaction) -> Result<(), String> 
     for (path, previous) in paths {
         let path = Path::new(path);
         if !apt_transaction_path_allowed(path) {
-            errors.push(format!("{}: путь отката APT не разрешён", path.display()));
+            errors.push(t!("{}: путь отката APT не разрешён", path.display()));
             continue;
         }
         let result = match snapshot_apt_file(path) {
@@ -694,7 +703,7 @@ fn rollback_apt_transaction(transaction: &AptTransaction) -> Result<(), String> 
     if let Some(prepared) = &transaction.prepared_file {
         let path = Path::new(prepared);
         if !apt_temp_path_allowed(path) {
-            errors.push(format!("{}: временный путь APT не разрешён", path.display()));
+            errors.push(t!("{}: временный путь APT не разрешён", path.display()));
         } else if let Err(e) = remove_file_if_exists(path) {
             errors.push(e);
         }
@@ -716,7 +725,7 @@ fn recover_apt_transaction() -> Result<(), String> {
     if transaction.files.keys().any(|p| !apt_transaction_path_allowed(Path::new(p)))
         || transaction.prepared_file.as_deref().map(|p| !apt_temp_path_allowed(Path::new(p))).unwrap_or(false)
     {
-        return Err(format!("{}: журнал APT содержит недопустимый путь", path.display()));
+        return Err(t!("{}: журнал APT содержит недопустимый путь", path.display()));
     }
     rollback_apt_transaction(&transaction)
 }
@@ -725,13 +734,13 @@ fn run_apt_transaction<T>(paths: &[PathBuf], prepared_file: Option<&Path>, actio
     recover_apt_transaction()?;
     if let Some(path) = prepared_file {
         if !apt_temp_path_allowed(path) {
-            return Err(format!("{}: временный путь транзакции APT не разрешён", path.display()));
+            return Err(t!("{}: временный путь транзакции APT не разрешён", path.display()));
         }
     }
     let mut files = BTreeMap::new();
     for path in paths {
         if !apt_transaction_path_allowed(path) {
-            return Err(format!("{}: путь транзакции APT не разрешён", path.display()));
+            return Err(t!("{}: путь транзакции APT не разрешён", path.display()));
         }
         files.insert(path.to_string_lossy().into_owned(), snapshot_apt_file(path)?);
     }
@@ -745,17 +754,17 @@ fn run_apt_transaction<T>(paths: &[PathBuf], prepared_file: Option<&Path>, actio
     match action() {
         Err(error) => match rollback_apt_transaction(&transaction) {
             Ok(()) => Err(error),
-            Err(rollback) => Err(format!("{error}; откат APT не завершён: {rollback}")),
+            Err(rollback) => Err(t!("{0}; откат APT не завершён: {1}", error, rollback)),
         },
         Ok(value) => match remove_file_if_exists(&apt_transaction_path()) {
             Ok(()) => Ok(value),
             Err(error) => {
                 let journal_error = write_apt_transaction(&transaction).err();
                 let rollback = rollback_apt_transaction(&transaction);
-                let details = journal_error.map(|e| format!("; журнал не восстановлен: {e}")).unwrap_or_default();
+                let details = journal_error.map(|e| t!("; журнал не восстановлен: {0}", e)).unwrap_or_default();
                 match rollback {
-                    Ok(()) => Err(format!("не удалось зафиксировать транзакцию APT: {error}{details}")),
-                    Err(e) => Err(format!("не удалось зафиксировать транзакцию APT: {error}{details}; откат: {e}")),
+                    Ok(()) => Err(t!("не удалось зафиксировать транзакцию APT: {0}{1}", error, details)),
+                    Err(e) => Err(t!("не удалось зафиксировать транзакцию APT: {0}{1}; откат: {2}", error, details, e)),
                 }
             }
         },
@@ -779,7 +788,7 @@ fn prepare_apt_file(path: &Path, data: &[u8], mode: u32, uid: u32, gid: u32) -> 
         }
     }
     let Some((tmp, mut file)) = created else {
-        return Err(format!("{}: не удалось создать временный файл", path.display()));
+        return Err(t!("{}: не удалось создать временный файл", path.display()));
     };
     let result = (|| -> std::io::Result<()> {
         file.write_all(data)?;
@@ -819,11 +828,11 @@ fn atomic_write_apt_source(path: &Path, data: &[u8], mode: u32, uid: u32, gid: u
 }
 
 fn ensure_private_dir(path: &Path) -> Result<(), String> {
-    let parent = path.parent().ok_or("нет родительского каталога для APT backup")?;
+    let parent = path.parent().ok_or(t!("нет родительского каталога для APT backup"))?;
     fs::create_dir_all(parent).map_err(|e| format!("{}: {e}", parent.display()))?;
     match fs::symlink_metadata(path) {
         Ok(metadata) if metadata.file_type().is_dir() => {}
-        Ok(_) => return Err(format!("{}: ожидался каталог", path.display())),
+        Ok(_) => return Err(t!("{}: ожидался каталог", path.display())),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
             let mut builder = fs::DirBuilder::new();
             builder.mode(0o700);
@@ -837,7 +846,7 @@ fn ensure_private_dir(path: &Path) -> Result<(), String> {
     }
     let metadata = fs::symlink_metadata(path).map_err(|e| format!("{}: {e}", path.display()))?;
     if !metadata.file_type().is_dir() {
-        return Err(format!("{}: ожидался каталог", path.display()));
+        return Err(t!("{}: ожидался каталог", path.display()));
     }
     fs::set_permissions(path, fs::Permissions::from_mode(0o700)).map_err(|e| format!("{}: {e}", path.display()))?;
     sync_parent_dir(path)
@@ -848,7 +857,7 @@ fn secure_backup_file(path: &Path) -> Result<bool, String> {
     match fs::symlink_metadata(path) {
         Ok(metadata) => {
             if !metadata.file_type().is_file() {
-                return Err(format!("{}: ожидался обычный файл", path.display()));
+                return Err(t!("{}: ожидался обычный файл", path.display()));
             }
             fs::set_permissions(path, fs::Permissions::from_mode(0o600)).map_err(|e| format!("{}: {e}", path.display()))?;
             Ok(true)
@@ -903,7 +912,7 @@ fn merge_apt_source_after_apply(path: &str, original: &AptSourceBackup, current:
         }
     }
     if current.content.contains(&reference) && original_uri.is_empty() {
-        return Err(format!("{path}: нет исходного URI для восстановления; backup сохранён"));
+        return Err(t!("{0}: нет исходного URI для восстановления; backup сохранён", path));
     }
     let restored = if let Some(applied) = applied {
         let applied_lines: Vec<&str> = applied.content.split_inclusive('\n').collect();
@@ -916,10 +925,10 @@ fn merge_apt_source_after_apply(path: &str, original: &AptSourceBackup, current:
                 next_applied = index + 1;
                 if line.contains(&reference) {
                     let Some(original_line) = original_lines.get(index) else {
-                        return Err(format!("{path}: applied snapshot не совпадает с backup; backup сохранён для ручного merge"));
+                        return Err(t!("{0}: applied snapshot не совпадает с backup; backup сохранён для ручного merge", path));
                     };
                     if original_line.contains(&reference) {
-                        return Err(format!("{path}: исходный source уже ссылался на список upd; backup сохранён для ручного merge"));
+                        return Err(t!("{0}: исходный source уже ссылался на список upd; backup сохранён для ручного merge", path));
                     }
                     merged.push_str(original_line);
                 } else {
@@ -927,7 +936,7 @@ fn merge_apt_source_after_apply(path: &str, original: &AptSourceBackup, current:
                 }
             } else {
                 if line.contains(&reference) {
-                    return Err(format!("{path}: source изменён после применения upd и всё ещё ссылается на его список зеркал; backup сохранён"));
+                    return Err(t!("{0}: source изменён после применения upd и всё ещё ссылается на его список зеркал; backup сохранён", path));
                 }
                 merged.push_str(line);
             }
@@ -935,14 +944,14 @@ fn merge_apt_source_after_apply(path: &str, original: &AptSourceBackup, current:
         merged
     } else if current.content.contains(&reference) {
         if original.content.contains(&reference) {
-            return Err(format!("{path}: нельзя отличить исходную ссылку от подстановки upd; backup сохранён для ручного merge"));
+            return Err(t!("{0}: нельзя отличить исходную ссылку от подстановки upd; backup сохранён для ручного merge", path));
         }
         current.content.replace(&reference, original_uri)
     } else {
         current.content.clone()
     };
     if restored.contains(&reference) {
-        return Err(format!("{path}: после восстановления остаётся ссылка на список зеркал upd; backup сохранён"));
+        return Err(t!("{0}: после восстановления остаётся ссылка на список зеркал upd; backup сохранён", path));
     }
     Ok(AptSourceBackup { content: restored, mode: current.mode, uid: current.uid, gid: current.gid, applied: None })
 }
@@ -1069,7 +1078,7 @@ impl Backend for Apt {
         !self.codename.is_empty()
     }
     fn mirror_note(&self) -> String {
-        "для этой системы зеркала apt не настраиваются автоматически".into()
+        t!("для этой системы зеркала apt не настраиваются автоматически").into()
     }
     fn probe_kind(&self) -> ProbeKind {
         ProbeKind::AptInRelease
@@ -1087,7 +1096,7 @@ impl Backend for Apt {
         if s.starts_with("http") {
             Ok(())
         } else {
-            Err("нужен http(s)://…/debian/ или …/ubuntu/".into())
+            Err(t!("нужен http(s)://…/debian/ или …/ubuntu/").into())
         }
     }
     fn default_mirrors(&self) -> Vec<String> {
@@ -1106,9 +1115,9 @@ impl Backend for Apt {
     fn discover(&self, n: usize, log: Log) -> Result<(Vec<String>, Option<Vec<String>>), String> {
         if !self.ubuntu {
             // у Debian нет гео-списка; deb.debian.org — CDN, он сам ведёт к ближайшему узлу
-            return Err("для Debian автопоиска нет, используется CDN deb.debian.org".into());
+            return Err(t!("для Debian автопоиска нет, используется CDN deb.debian.org").into());
         }
-        log("  mirrors.ubuntu.com: зеркала твоей страны...");
+        log(t!("  mirrors.ubuntu.com: зеркала твоей страны..."));
         let body = ureq::AgentBuilder::new()
             .timeout(std::time::Duration::from_secs(15))
             .build()
@@ -1122,7 +1131,7 @@ impl Backend for Apt {
 
     fn apply_mirrors(&self, best: &[String], _: Option<&[String]>) -> Result<bool, String> {
         recover_apt_transaction()?;
-        let prim = self.primary_uri().ok_or("не нашёл основной источник apt")?;
+        let prim = self.primary_uri().ok_or(t!("не нашёл основной источник apt"))?;
         let switching_to_mirror_file = !prim.starts_with("mirror+file:");
         let mut original_uri = if switching_to_mirror_file { prim.clone() } else { peek_apt_original_uri()? };
         if original_uri.is_empty() && switching_to_mirror_file {
@@ -1133,7 +1142,7 @@ impl Backend for Apt {
         if !o.is_empty() && !contains(&list, o) {
             list.push(o.to_string()); // исходное зеркало — последним запасным
         }
-        let body = format!("# upd: зеркала apt по убыванию скорости (управляется автоматически)\n{}\n", list.join("\n"));
+        let body = format!("# upd: apt mirrors by descending speed (managed automatically)\n{}\n", list.join("\n"));
         let list_changed = !fs::read_to_string(APT_LIST).map(|current| current == body).unwrap_or(false);
         if !switching_to_mirror_file && !list_changed {
             return Ok(false);
@@ -1165,11 +1174,11 @@ impl Backend for Apt {
         let result = run_apt_transaction(&paths, Some(&prepared), || {
             let stored_original_uri = load_apt_original_uri()?;
             if !switching_to_mirror_file && stored_original_uri != original_uri {
-                return Err("исходный URI APT изменился во время подготовки зеркал".into());
+                return Err(t!("исходный URI APT изменился во время подготовки зеркал").into());
             }
             let mut backup = load_apt_backup()?;
             if backup.keys().any(|path| !apt_is_source_path(Path::new(path))) {
-                return Err("backup APT содержит недопустимый путь source-файла".into());
+                return Err(t!("backup APT содержит недопустимый путь source-файла").into());
             }
             if switching_to_mirror_file {
                 let reference = format!("mirror+file:{APT_LIST}");
@@ -1182,7 +1191,7 @@ impl Backend for Apt {
                         || current_meta.uid() != metadata.uid
                         || current_meta.gid() != metadata.gid
                     {
-                        return Err(format!("{file}: source изменился во время подготовки зеркал"));
+                        return Err(t!("{0}: source изменился во время подготовки зеркал", file));
                     }
                     let current = AptSourceBackup { content: content.clone(), mode: metadata.mode, uid: metadata.uid, gid: metadata.gid, applied: None };
                     let baseline = match backup.get(file) {
@@ -1233,7 +1242,7 @@ impl Backend for Apt {
         for dst in backup.keys() {
             let path = PathBuf::from(dst);
             if !apt_is_source_path(&path) {
-                return Err(format!("{dst}: недопустимый путь APT source в backup"));
+                return Err(t!("{0}: недопустимый путь APT source в backup", dst));
             }
             paths.push(path);
         }
@@ -1245,10 +1254,10 @@ impl Backend for Apt {
             let reference = format!("mirror+file:{APT_LIST}");
             for file in Self::source_files() {
                 match fs::read_to_string(&file) {
-                    Ok(content) if content.contains(&reference) => return Err(format!("{file}: источник всё ещё ссылается на список зеркал upd")),
+                    Ok(content) if content.contains(&reference) => return Err(t!("{0}: источник всё ещё ссылается на список зеркал upd", file)),
                     Ok(_) => {}
                     Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
-                    Err(e) => return Err(format!("{file}: не удалось проверить источник APT: {e}")),
+                    Err(e) => return Err(t!("{0}: не удалось проверить источник APT: {1}", file, e)),
                 }
             }
             remove_file_if_exists(&apt_backup_path())?;
@@ -1266,13 +1275,13 @@ impl Backend for Apt {
     fn updates(&self) -> Result<Vec<String>, String> {
         let (s, code) = out("apt-get", &["-s", "-q", "full-upgrade"]);
         if code != 0 {
-            return Err(format!("apt-get -s: код {code}"));
+            return Err(t!("apt-get -s: код {0}", code));
         }
         Ok(s.lines()
             .filter(|l| l.starts_with("Inst "))
             .map(|l| {
                 let f: Vec<&str> = l.split_whitespace().collect();
-                let old = f.get(2).filter(|x| x.starts_with('[')).map(|x| x.trim_matches(|c| c == '[' || c == ']')).unwrap_or("новый");
+                let old = f.get(2).filter(|x| x.starts_with('[')).map(|x| x.trim_matches(|c| c == '[' || c == ']')).unwrap_or(t!("новый"));
                 let new = f.iter().find(|x| x.starts_with('(')).map(|x| x.trim_start_matches('(')).unwrap_or("");
                 format!("{} {old} -> {new}", f.get(1).unwrap_or(&"?"))
             })
@@ -1289,9 +1298,9 @@ impl Backend for Apt {
         run(false, &[], if have("apt") { "apt" } else { "apt-get" }, &["full-upgrade"])
     }
     fn clean(&self) -> Result<(), String> {
-        println!("→ кэш: убираю устаревшие пакеты");
+        println!("{}", t!("→ кэш: убираю устаревшие пакеты"));
         let _ = run(false, &[], "apt-get", &["autoclean"]);
-        println!("→ ненужные пакеты");
+        println!("{}", t!("→ ненужные пакеты"));
         run(false, &[], "apt-get", &["autoremove", "--purge"])
     }
     fn orphans(&self) -> Vec<String> {
@@ -1305,7 +1314,7 @@ impl Backend for Apt {
         find_etc(&[".dpkg-dist", ".dpkg-new", ".ucf-dist"])
     }
     fn merge(&self) -> Result<(), String> {
-        Err("слияние вручную: сравни файл с его .dpkg-dist".into())
+        Err(t!("слияние вручную: сравни файл с его .dpkg-dist").into())
     }
     fn cache_dirs(&self) -> Vec<&'static str> {
         vec!["/var/cache/apt/archives"]
@@ -1365,9 +1374,9 @@ impl Backend for Rpm {
     }
     fn mirror_note(&self) -> String {
         if self.zyp() {
-            "openSUSE сама выбирает ближайшее зеркало (MirrorCache) — настраивать нечего".into()
+            t!("openSUSE сама выбирает ближайшее зеркало (MirrorCache) — настраивать нечего").into()
         } else {
-            "Fedora/RHEL сами выбирают зеркала через metalink (гео + свежесть) — настраивать нечего".into()
+            t!("Fedora/RHEL сами выбирают зеркала через metalink (гео + свежесть) — настраивать нечего").into()
         }
     }
     fn probe_url(&self, m: &str) -> String {
@@ -1409,7 +1418,7 @@ impl Backend for Rpm {
             }
             let (s, code) = out("zypper", &args);
             if code != 0 {
-                return Err(format!("zypper list-updates: код {code}"));
+                return Err(t!("zypper list-updates: код {0}", code));
             }
             return Ok(s
                 .lines()
@@ -1421,7 +1430,7 @@ impl Backend for Rpm {
         }
         let (s, code) = out(self.bin, &["-q", "check-update"]);
         if code != 0 && code != 100 {
-            return Err(format!("{} check-update: код {code}", self.bin));
+            return Err(t!("{} check-update: код {1}", self.bin, code));
         }
         Ok(s.lines()
             .filter_map(|l| {
@@ -1464,7 +1473,7 @@ impl Backend for Rpm {
         find_etc(&[".rpmnew"])
     }
     fn merge(&self) -> Result<(), String> {
-        Err("слияние вручную: сравни файл с его .rpmnew".into())
+        Err(t!("слияние вручную: сравни файл с его .rpmnew").into())
     }
     fn cache_dirs(&self) -> Vec<&'static str> {
         if self.zyp() {

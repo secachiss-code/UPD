@@ -65,6 +65,8 @@ pub struct Config {
     pub vpn_mode: u8,
     pub vpn_sub_update_h: i64,
     pub vpn_core_check_h: i64,
+    /// язык интерфейса: ru, en, de, it, zh, ar или auto (по локали)
+    pub lang: String,
     pub mirrors: Vec<String>,
 }
 
@@ -103,6 +105,30 @@ const DOCS: &[(&str, &str)] = &[
     ("vpn_core_check_h", "VPN: проверять новые релизы FlClash (сигнал обновить ядро mihomo) раз в N часов"),
 ];
 
+/// Состояние systemd-юнита (active, inactive, failed…) для показа на языке интерфейса.
+pub fn unit_label(v: &str) -> String {
+    match v {
+        "active" => t!("вкл").into(),
+        "inactive" => t!("выкл").into(),
+        "failed" => t!("ошибка").into(),
+        "activating" | "reloading" => t!("запускается").into(),
+        "deactivating" => t!("останавливается").into(),
+        "" => t!("не установлено").into(),
+        _ => v.into(),
+    }
+}
+
+/// Настройка lang из файла настроек без полной загрузки (нужна до разбора команды); нет — auto.
+pub fn conf_lang() -> String {
+    fs::read_to_string(conf_path())
+        .unwrap_or_default()
+        .lines()
+        .filter_map(|l| l.split_once('='))
+        .find(|(k, _)| k.trim() == "lang")
+        .map(|(_, v)| v.trim().to_string())
+        .unwrap_or_else(|| "auto".into())
+}
+
 impl Config {
     pub fn defaults(mirrors: Vec<String>) -> Self {
         Config {
@@ -137,6 +163,7 @@ impl Config {
             vpn_mode: 0,
             vpn_sub_update_h: 12,
             vpn_core_check_h: 24,
+            lang: "auto".into(),
             mirrors,
         }
     }
@@ -157,6 +184,10 @@ impl Config {
             }
             let Some((k, v)) = line.split_once('=') else { continue };
             let (k, v) = (k.trim(), v.trim());
+            if k == "lang" {
+                c.lang = if crate::i18n::Lang::from_code(v).is_some() { v.to_ascii_lowercase() } else { "auto".into() };
+                continue;
+            }
             if k == "mirror" {
                 if !contains(&c.mirrors, v) {
                     c.mirrors.push(v.to_string());
@@ -245,11 +276,12 @@ impl Config {
     }
 
     pub fn save(&self) -> std::io::Result<()> {
-        let mut s = String::from("# upd — настройки. Правится вручную или через TUI (upd → Зеркала).\n");
+        let mut s = String::from(t!("# upd — настройки. Правится вручную или через TUI (upd → Зеркала).\n"));
+        s += &format!("\n# {}\nlang = {}\n", t!("Язык интерфейса: ru, en, de, it, zh, ar или auto (по локали системы)"), self.lang);
         for (k, doc) in DOCS {
-            s += &format!("\n# {doc}\n{k} = {}\n", self.value(k));
+            s += &format!("\n# {}\n{k} = {}\n", t!(*doc), self.value(k));
         }
-        s += "\n# Предпочитаемые зеркала: замеряются всегда, наравне с найденными автоматически\n";
+        s += t!("\n# Предпочитаемые зеркала: замеряются всегда, наравне с найденными автоматически\n");
         for m in &self.mirrors {
             s += &format!("mirror = {m}\n");
         }
@@ -407,7 +439,7 @@ pub struct Lock(#[allow(dead_code)] fs::File);
 
 fn named_lock(name: &str, block: bool) -> Result<Lock, String> {
     if name.is_empty() || Path::new(name).components().count() != 1 {
-        return Err("некорректное имя блокировки".into());
+        return Err(t!("некорректное имя блокировки").into());
     }
     let dir = state_dir();
     fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
@@ -464,13 +496,13 @@ pub fn run(quiet: bool, env: &[(&str, &str)], cmd: &str, args: &[&str]) -> Resul
             return Ok(());
         }
         let err = String::from_utf8_lossy(&o.stderr);
-        return Err(format!("{cmd}: {}", last_line(&err).unwrap_or("ошибка")));
+        return Err(format!("{cmd}: {}", last_line(&err).unwrap_or(t!("ошибка"))));
     }
     let st = c.status().map_err(|e| format!("{cmd}: {e}"))?;
     if st.success() {
         Ok(())
     } else {
-        Err(format!("{cmd}: код {}", st.code().unwrap_or(-1)))
+        Err(t!("{1}: код {}", st.code().unwrap_or(-1), cmd))
     }
 }
 
@@ -508,21 +540,11 @@ pub fn confirm(q: &str, default_yes: bool) -> bool {
         if std::io::stdin().lock().read_line(&mut s).unwrap_or(0) == 0 {
             return default_yes;
         }
-        match confirm_answer(&s) {
+        match crate::i18n::yes_no(&s) {
             Some(a) => return a.unwrap_or(default_yes),
             // «н» — это и Y в русской раскладке, и «нет»: переспрашиваем, а не угадываем
-            None => print!("не понял ответ «{}»: y или д — да, n или т — нет, Enter — {} ", s.trim(), if default_yes { "да" } else { "нет" }),
+            None => print!("{}", t!("не понял ответ «{}»: y или д — да, n или т — нет, Enter — {} ", s.trim(), if default_yes { t!("да") } else { t!("нет") })),
         }
-    }
-}
-
-/// Some(None) — пустой ответ (по умолчанию), None — непонятный. «т» — это N в русской раскладке.
-fn confirm_answer(s: &str) -> Option<Option<bool>> {
-    match s.trim().to_lowercase().as_str() {
-        "" => Some(None),
-        "y" | "yes" | "д" | "да" => Some(Some(true)),
-        "n" | "no" | "т" | "нет" => Some(Some(false)),
-        _ => None,
     }
 }
 
@@ -530,7 +552,7 @@ fn confirm_answer(s: &str) -> Option<Option<bool>> {
 
 pub fn fmt_speed(p: &Probe) -> String {
     if !p.ok {
-        return if p.err.is_empty() { "—".into() } else { p.err.clone() };
+        return if p.err.is_empty() { "—".into() } else { crate::i18n::tr_data(&p.err) };
     }
     let s = if p.score > 0.0 { p.score } else { p.speed };
     if s >= 1048576.0 {
@@ -543,31 +565,31 @@ pub fn fmt_speed(p: &Probe) -> String {
 pub fn fmt_bytes(n: u64) -> String {
     let n = n as f64;
     if n >= 1073741824.0 {
-        format!("{:.1} ГБ", n / 1073741824.0)
+        t!("{:.1} ГБ", n / 1073741824.0)
     } else if n >= 1048576.0 {
-        format!("{:.0} МБ", n / 1048576.0)
+        t!("{:.0} МБ", n / 1048576.0)
     } else {
-        format!("{:.0} КБ", n / 1024.0)
+        t!("{:.0} КБ", n / 1024.0)
     }
 }
 
 pub fn fmt_ago(ts: i64) -> String {
     if ts == 0 {
-        return "не было".into();
+        return t!("не было").into();
     }
     let d = now() - ts;
     match d {
-        _ if d < 60 => "только что".into(),
-        _ if d < 3600 => format!("{} мин назад", d / 60),
-        _ if d < 48 * 3600 => format!("{} ч назад", d / 3600),
-        _ => format!("{} дн назад", d / 86400),
+        _ if d < 60 => t!("только что").into(),
+        _ if d < 3600 => t!("{} мин назад", d / 60),
+        _ if d < 48 * 3600 => t!("{} ч назад", d / 3600),
+        _ => t!("{} дн назад", d / 86400),
     }
 }
 
 /// Unix-время → «2026-09-24 22:19» (UTC-смещение берём из /etc/localtime через libc).
 pub fn fmt_time(ts: i64) -> String {
     if ts == 0 {
-        return "не было".into();
+        return t!("не было").into();
     }
     let t = ts as _;
     let mut tm: libc::tm = unsafe { std::mem::zeroed() };
@@ -649,9 +671,9 @@ fn net_info_from_routes(routes: Vec<DefaultRoute>) -> NetInfo {
     let id = sha1_smol::Sha1::from(raw.as_bytes()).digest().to_string()[..10].to_string();
     let dev = routes.iter().find(|r| r.family == "IPv4").or_else(|| routes.first()).map(|r| r.dev.clone()).unwrap_or_default();
     let mut label = if routes.is_empty() {
-        "нет сети".to_string()
+        t!("нет сети").to_string()
     } else {
-        routes.iter().map(|r| format!("{} {} через {}", r.family, r.dev, r.gateway)).collect::<Vec<_>>().join(", ")
+        routes.iter().map(|r| t!("{} {} через {}", r.family, r.dev, r.gateway)).collect::<Vec<_>>().join(", ")
     };
     if !vpn.is_empty() {
         label += &format!(" + VPN {}", vpn.join(","));
@@ -1098,20 +1120,6 @@ pub(crate) mod contract_fixtures {
 #[cfg(test)]
 mod contract_tests {
     use super::*;
-
-    #[test]
-    fn confirm_answer_handles_russian_layout() {
-        assert_eq!(confirm_answer("\n"), Some(None));
-        for yes in ["y", "Yes", "д", "Да"] {
-            assert_eq!(confirm_answer(yes), Some(Some(true)), "{yes}");
-        }
-        for no in ["n", "NO", "т", "нет"] {
-            assert_eq!(confirm_answer(no), Some(Some(false)), "{no}");
-        }
-        // «н»: Y в русской раскладке или «нет» — переспросить
-        assert_eq!(confirm_answer("н"), None);
-        assert_eq!(confirm_answer("maybe"), None);
-    }
 
     // --- NET-01 ---
     #[test]

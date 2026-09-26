@@ -25,16 +25,16 @@ fn classify(msg: &str) -> String {
     }
     let m = msg.to_lowercase();
     if m.contains("dns") || m.contains("resolve") || m.contains("lookup") {
-        "нет DNS"
+        "no DNS"
     } else if m.contains("timed out") || m.contains("timeout") || m.contains("deadline") {
-        "таймаут"
+        "timeout"
     } else if m.contains("reset") || m.contains("eof") || m.contains("end of file") || m.contains("broken pipe") || m.contains("aborted") {
         // соединение оборвали посередине — чаще всего прокси/VPN под нагрузкой, повтор обычно помогает
-        "обрыв"
+        "dropped"
     } else if m.contains("certificate") || m.contains("tls") || m.contains("handshake") {
-        "ошибка TLS"
+        "TLS error"
     } else {
-        "нет связи"
+        "no connection"
     }
     .into()
 }
@@ -42,11 +42,11 @@ fn classify(msg: &str) -> String {
 /// Проверить ответ на captive portal и формат контрольного файла.
 fn validate_probe(kind: ProbeKind, body: &[u8]) -> Result<(), String> {
     if body.is_empty() {
-        return Err("пустой ответ".into());
+        return Err(t!("пустой ответ").into());
     }
     let prefix = String::from_utf8_lossy(&body[..body.len().min(1024)]).to_ascii_lowercase();
     if ["<html", "<!doctype html", "<head", "<body"].iter().any(|needle| prefix.contains(needle)) {
-        return Err("вместо файла получен HTML".into());
+        return Err(t!("вместо файла получен HTML").into());
     }
     match kind {
         ProbeKind::AptInRelease => {
@@ -55,7 +55,7 @@ fn validate_probe(kind: ProbeKind, body: &[u8]) -> Result<(), String> {
                 || !text.contains("\nSHA256:")
                 || !text.contains("-----BEGIN PGP SIGNATURE-----")
             {
-                return Err("ответ не похож на APT InRelease".into());
+                return Err(t!("ответ не похож на APT InRelease").into());
             }
         }
         ProbeKind::PacmanDb => {
@@ -69,13 +69,13 @@ fn validate_probe(kind: ProbeKind, body: &[u8]) -> Result<(), String> {
                 || body.starts_with(b"LRZI"); // lrzip
             let tar = body.len() >= 512 && valid_tar_header(&body[..512]);
             if !known_compressed && !tar {
-                return Err("ответ не похож на базу pacman".into());
+                return Err(t!("ответ не похож на базу pacman").into());
             }
             if gzip {
                 let mut decoder = flate2::read::GzDecoder::new(body);
                 let mut header = [0u8; 512];
                 if decoder.read_exact(&mut header).is_err() || !valid_tar_header(&header) {
-                    return Err("повреждённая база pacman".into());
+                    return Err(t!("повреждённая база pacman").into());
                 }
             }
         }
@@ -125,15 +125,15 @@ fn probe_speed(url: &str, timeout: u64, kind: ProbeKind) -> (bool, f64, String) 
     let content_length = resp.header("content-length").and_then(|v| v.parse::<u64>().ok());
     let content_range = resp.header("content-range");
     let expected = if status == 206 {
-        let Some(value) = content_range else { return (false, 0.0, "неверный Content-Range".into()) };
-        let Some((start, range_len)) = content_range_len(value) else { return (false, 0.0, "неверный Content-Range".into()) };
+        let Some(value) = content_range else { return (false, 0.0, t!("неверный Content-Range").into()) };
+        let Some((start, range_len)) = content_range_len(value) else { return (false, 0.0, t!("неверный Content-Range").into()) };
         if start != 0 || content_length.map(|n| n != range_len).unwrap_or(false) || range_len > PROBE_BYTES {
-            return (false, 0.0, "неверный размер Range-ответа".into());
+            return (false, 0.0, t!("неверный размер Range-ответа").into());
         }
         Some(range_len)
     } else {
         if content_range.is_some() {
-            return (false, 0.0, "неожиданный Content-Range".into());
+            return (false, 0.0, t!("неожиданный Content-Range").into());
         }
         content_length
     };
@@ -161,10 +161,10 @@ fn probe_speed(url: &str, timeout: u64, kind: ProbeKind) -> (bool, f64, String) 
     }
     if let Some(size) = expected {
         if size <= PROBE_BYTES && n != size {
-            return (false, 0.0, "ответ обрезан относительно Content-Length".into());
+            return (false, 0.0, t!("ответ обрезан относительно Content-Length").into());
         }
         if size > PROBE_BYTES && n != PROBE_BYTES {
-            return (false, 0.0, "ответ обрезан относительно Content-Length".into());
+            return (false, 0.0, t!("ответ обрезан относительно Content-Length").into());
         }
     }
     if let Err(e) = validate_probe(kind, &body) {
@@ -172,7 +172,7 @@ fn probe_speed(url: &str, timeout: u64, kind: ProbeKind) -> (bool, f64, String) 
     }
     let el = start.elapsed().as_secs_f64();
     if n == 0 || el <= 0.0 {
-        return (false, 0.0, "пусто".into());
+        return (false, 0.0, t!("пусто").into());
     }
     (true, n as f64 / el, String::new())
 }
@@ -237,20 +237,20 @@ pub fn candidates(b: &dyn Backend, c: &Config, extra: Option<&[String]>) -> Vec<
             }
         }
     };
-    add(&c.mirrors, "конфиг");
-    add(&b.pinned(), "закреп");
+    add(&c.mirrors, "config");
+    add(&b.pinned(), "pinned");
     match extra {
-        Some(e) => add(e, "поиск"),
+        Some(e) => add(e, "search"),
         None => {
             let l = b.list_mirrors();
-            add(&l[..l.len().min(c.extra_from_list)], "список");
+            add(&l[..l.len().min(c.extra_from_list)], "list");
         }
     }
     r
 }
 
 fn mirror_needs_retry(src: &str, ok: bool, err: &str, had_prior_ok: bool) -> bool {
-    !ok && (err == "обрыв" || (src != "поиск" && src != "список") || had_prior_ok)
+    !ok && (err == "dropped" || (src != "search" && src != "list") || had_prior_ok)
 }
 
 /// Второй проход запускается по списку повторов, в том числе когда первый проход не дал ни одного ответа.
@@ -264,14 +264,7 @@ pub fn check_mirrors(b: &dyn Backend, c: &Config, log: Log, extra: Option<&[Stri
     let net = fingerprint();
     let cands = candidates(b, c, extra);
     let parallel = if net.vpn { c.parallel_vpn } else { c.parallel };
-    log(&format!(
-        "замеряю зеркала: {} шт. (по {} МБ, таймаут {} с, параллельно {}{})",
-        cands.len(),
-        PROBE_BYTES >> 20,
-        c.timeout,
-        parallel,
-        if net.vpn { " — через VPN" } else { "" }
-    ));
+    log(&t!("замеряю зеркала: {} шт. (по {} МБ, таймаут {} с, параллельно {}{})", cands.len(), PROBE_BYTES >> 20, c.timeout, parallel, if net.vpn { t!(" — через VPN") } else { "" }));
     let mk = |i: usize, cd: &Cand| Job { idx: i, probe: b.probe_url(&cd.url), fresh: b.fresh_url(&cd.url), kind: b.probe_kind() };
     let mut res: Vec<Probe> = cands.iter().map(|cd| Probe { url: cd.url.clone(), src: cd.src.into(), ..Default::default() }).collect();
     let mut fresh: Vec<Option<i64>> = vec![None; cands.len()];
@@ -303,10 +296,10 @@ pub fn check_mirrors(b: &dyn Backend, c: &Config, log: Log, extra: Option<&[Stri
         .map(|(i, _)| mk(i, &cands[i]))
         .collect();
     if schedule_mirror_retry(res.iter().any(|p| p.ok), retry.len()) {
-        log(&format!("  повторный замер упавших: {}", retry.len()));
+        log(&t!("  повторный замер упавших: {}", retry.len()));
         for d in measure(retry, 1, c.timeout, &mut |d| {
             if d.ok {
-                log(&format!("  ✓ со второй попытки: {}", cands[d.idx].url));
+                log(&t!("  ✓ со второй попытки: {}", cands[d.idx].url));
             }
         }) {
             if d.ok {
@@ -323,8 +316,9 @@ pub fn check_mirrors(b: &dyn Backend, c: &Config, log: Log, extra: Option<&[Stri
                 p.lag_h = Some((lag * 10.0).round() / 10.0);
                 if lag > c.max_lag_h as f64 {
                     p.ok = false;
-                    p.err = format!("отстаёт {lag:.0} ч");
-                    log(&format!("  ⌛ {} отстаёт на {lag:.0} ч — не беру", host_of(&p.url)));
+                    // идентификатор, а не текст: по нему ниже узнают отставшие зеркала; переводится при показе
+                    p.err = format!("lag {lag:.0} h");
+                    log(&t!("  ⌛ {} отстаёт на {1:.0} ч — не беру", host_of(&p.url), lag));
                 }
             }
         }
@@ -368,16 +362,12 @@ pub fn check_mirrors(b: &dyn Backend, c: &Config, log: Log, extra: Option<&[Stri
         st.networks.retain(|_, v| v.checked > cutoff);
         // Подсказка про прокси: вручную заданное зеркало не отвечает через VPN, а другие работают.
         if net.vpn {
-            for p in res.iter().filter(|p| !p.ok && p.src == "конфиг" && !p.err.starts_with("отстаёт")) {
-                st.hints.push(format!(
-                    "{} не отвечает через VPN. Если это зеркало в твоей стране — добавь {} в правила DIRECT своего VPN-клиента (FlClash и т.п.)",
-                    host_of(&p.url),
-                    host_of(&p.url)
-                ));
+            for p in res.iter().filter(|p| !p.ok && p.src == "config" && !p.err.starts_with("lag ")) {
+                st.hints.push(t!("{} не отвечает через VPN. Если это зеркало в твоей стране — добавь {} в правила DIRECT своего VPN-клиента (FlClash и т.п.)", host_of(&p.url), host_of(&p.url)));
             }
         }
     } else {
-        log("ни одно зеркало не ответило — оставляю прежние");
+        log(t!("ни одно зеркало не ответило — оставляю прежние"));
     }
     st.results = res;
     let apply_best = b.mirrors_managed() && !st.best.is_empty();
@@ -414,7 +404,7 @@ pub fn apply_mirrors(b: &dyn Backend, c: &Config, st: &MirrorState, fallback: Op
     }
     let block = desired_block(c, st);
     if block.is_empty() {
-        log("нечего закреплять: нет рабочих зеркал");
+        log(t!("нечего закреплять: нет рабочих зеркал"));
         return Ok(false);
     }
     let net = fingerprint();
@@ -426,7 +416,7 @@ pub fn apply_mirrors(b: &dyn Backend, c: &Config, st: &MirrorState, fallback: Op
     saved.best = st.best.clone();
     match result {
         Err(e) => {
-            log(&format!("не удалось записать зеркала: {e}"));
+            log(&t!("не удалось записать зеркала: {0}", e));
             saved.pending_apply = true;
             saved.pending_fingerprint = target_fingerprint;
             saved.pending_label = if has_pending_target { st.pending_label.clone() } else { net.label.clone() };
@@ -437,9 +427,9 @@ pub fn apply_mirrors(b: &dyn Backend, c: &Config, st: &MirrorState, fallback: Op
         }
         Ok(changed) => {
             if changed {
-                log(&format!("закреплено зеркал: {}, первое: {}", block.len(), block[0]));
+                log(&t!("закреплено зеркал: {}, первое: {}", block.len(), block[0]));
             } else {
-                log("зеркала уже на месте");
+                log(t!("зеркала уже на месте"));
             }
             saved.fingerprint = target_fingerprint;
             saved.label = if has_pending_target && !st.pending_label.is_empty() { st.pending_label.clone() } else { net.label };
@@ -460,15 +450,15 @@ pub fn rescan(b: &dyn Backend, c: &Config, log: Log) -> Result<usize, String> {
         log(&b.mirror_note());
         return Ok(0);
     }
-    log("ищу зеркала рядом с текущим местоположением...");
+    log(t!("ищу зеркала рядом с текущим местоположением..."));
     match b.discover(c.rescan_count, log) {
         Ok((cands, fallback)) if cands.len() >= 3 => check_mirrors(b, c, log, Some(&cands), fallback.as_deref()),
         Ok(_) => {
-            log("автопоиск нашёл слишком мало зеркал — замеряю известные");
+            log(t!("автопоиск нашёл слишком мало зеркал — замеряю известные"));
             check_mirrors(b, c, log, None, None)
         }
         Err(e) => {
-            log(&format!("автопоиск не удался ({e}) — замеряю известные"));
+            log(&t!("автопоиск не удался ({0}) — замеряю известные", e));
             check_mirrors(b, c, log, None, None)
         }
     }
@@ -481,27 +471,27 @@ pub fn handle_network(b: &dyn Backend, c: &Config, log: Log, force: bool) -> Res
     }
     let net = fingerprint();
     if !net.online {
-        log("сети нет — жду");
+        log(t!("сети нет — жду"));
         return Ok(false);
     }
     let st = load_mirror_state();
     if st.pending_apply && st.pending_fingerprint == net.id && !force {
-        log("предыдущее применение зеркал не завершилось — повторяю");
+        log(t!("предыдущее применение зеркал не завершилось — повторяю"));
         let fallback = st.pending_fallback.clone();
         apply_mirrors(b, c, &st, fallback.as_deref(), log)?;
         let mut applied = load_mirror_state();
         if applied.fingerprint == net.id && !applied.pending_apply && !applied.best.is_empty() {
-            applied.event = format!("Сеть {}. Лучшее зеркало: {}", net.label, host_of(&applied.best[0]));
+            applied.event = t!("Сеть {}. Лучшее зеркало: {}", net.label, host_of(&applied.best[0]));
             applied.event_time = now();
             let _ = save_json("mirrors.json", &applied);
         }
         return Ok(true);
     }
     if st.fingerprint == net.id && !force {
-        log(&format!("сеть та же ({})", net.label));
+        log(&t!("сеть та же ({})", net.label));
         return Ok(false);
     }
-    log(&format!("сеть: {} (было: {})", net.label, if st.label.is_empty() { "—" } else { &st.label }));
+    log(&t!("сеть: {} (было: {})", net.label, if st.label.is_empty() { "—" } else { &st.label }));
     let fresh = st
         .networks
         .get(&net.id)
@@ -509,7 +499,7 @@ pub fn handle_network(b: &dyn Backend, c: &Config, log: Log, force: bool) -> Res
         .cloned();
     match fresh {
         Some(m) if !force => {
-            log("сеть знакомая — сразу ставлю её зеркала, потом перепроверяю");
+            log(t!("сеть знакомая — сразу ставлю её зеркала, потом перепроверяю"));
             let mut tmp = st.clone();
             tmp.best = m.best;
             tmp.label = net.label.clone();
@@ -522,26 +512,26 @@ pub fn handle_network(b: &dyn Backend, c: &Config, log: Log, force: bool) -> Res
             let cached_result = apply_mirrors(b, c, &tmp, None, log);
             let checked_result = check_mirrors(b, c, log, None, None);
             if let Err(e) = checked_result {
-                log(&format!("зеркала не применены: {e}"));
+                log(&t!("зеркала не применены: {0}", e));
             } else if let Err(e) = cached_result {
-                log(&format!("кэшированные зеркала не применены: {e}"));
+                log(&t!("кэшированные зеркала не применены: {0}", e));
             }
         }
         _ => {
-            log("новая сеть — полный подбор зеркал");
+            log(t!("новая сеть — полный подбор зеркал"));
             if let Err(e) = rescan(b, c, log) {
-                log(&format!("зеркала не применены: {e}"));
+                log(&t!("зеркала не применены: {0}", e));
             }
         }
     }
     let mut st = load_mirror_state();
     if st.fingerprint == net.id && !st.pending_apply && !st.best.is_empty() {
-        st.event = format!("Сеть сменилась ({}). Лучшее зеркало: {}", net.label, host_of(&st.best[0]));
+        st.event = t!("Сеть сменилась ({}). Лучшее зеркало: {}", net.label, host_of(&st.best[0]));
         st.event_time = now();
         let _ = save_json("mirrors.json", &st);
     }
     if st.pending_apply {
-        return Err(if st.apply_error.is_empty() { "не удалось применить зеркала".into() } else { st.apply_error });
+        return Err(if st.apply_error.is_empty() { t!("не удалось применить зеркала").into() } else { st.apply_error });
     }
     Ok(true)
 }
@@ -556,10 +546,10 @@ pub fn pkg_names(list: &[String]) -> Vec<String> {
 pub fn background_block(c: &Config) -> Option<String> {
     let net = fingerprint();
     if !c.prefetch_on_metered && metered(&net.dev) {
-        return Some("лимитная сеть — фоновая загрузка отложена".into());
+        return Some(t!("лимитная сеть — фоновая загрузка отложена").into());
     }
     if !c.prefetch_on_battery && on_battery() {
-        return Some("работа от батареи — фоновая загрузка отложена".into());
+        return Some(t!("работа от батареи — фоновая загрузка отложена").into());
     }
     None
 }
@@ -590,14 +580,14 @@ pub fn gather(b: &dyn Backend, c: &Config, log: Log, quiet: bool, invoking_user:
     let mut st = UpdState { checked: now(), ..Default::default() };
     let mut res = b.refresh(quiet);
     if let Err(e) = &res {
-        log(&format!("не удалось обновить базы пакетов: {e}"));
+        log(&t!("не удалось обновить базы пакетов: {0}", e));
         if b.mirrors_managed() {
             let _ = rescan(b, c, log);
             res = b.refresh(quiet);
         }
     }
     if res.is_err() {
-        st.error = "не удалось обновить базы пакетов".into();
+        st.error = t!("не удалось обновить базы пакетов").into();
         st.package_check_failure = Some(PackageCheckFailure::Refresh);
         let _ = save_json("updates.json", &st);
         return st;
@@ -626,7 +616,7 @@ pub fn gather(b: &dyn Backend, c: &Config, log: Log, quiet: bool, invoking_user:
     if c.news && b.arch_news() {
         match extras::arch_news(b.last_upgrade()) {
             Ok(n) => st.news = n,
-            Err(e) => log(&format!("новости Arch не загрузились: {e}")),
+            Err(e) => log(&t!("новости Arch не загрузились: {0}", e)),
         }
     }
     if !st.list.is_empty() {
@@ -634,9 +624,9 @@ pub fn gather(b: &dyn Backend, c: &Config, log: Log, quiet: bool, invoking_user:
         let (dir, space_dir) = cache_space_path(b);
         let need = required_free(st.download_size, c.min_free_gb);
         let location = if dir == space_dir {
-            format!("кэш {dir}")
+            t!("кэш {0}", dir)
         } else {
-            format!("кэш {dir}, место проверено по {space_dir}")
+            t!("кэш {0}, место проверено по {1}", dir, space_dir)
         };
         match free_space(&space_dir) {
             Ok(free) if free == 0 || free < need => {
@@ -644,36 +634,30 @@ pub fn gather(b: &dyn Backend, c: &Config, log: Log, quiet: bool, invoking_user:
             }
             Ok(_) => {}
             Err(e) => {
-                let message = format!("не удалось проверить свободное место ({space_dir}): {e}");
+                let message = t!("не удалось проверить свободное место ({0}): {1}", space_dir, e);
                 st.space_check_error = Some(message.clone());
                 st.error = message;
             }
         }
     }
     let size_label = match st.download_size {
-        Some(0) if !st.list.is_empty() => " (уже скачаны)".into(),
+        Some(0) if !st.list.is_empty() => t!(" (уже скачаны)").into(),
         Some(size) => format!(" ({})", fmt_bytes(size)),
-        None if !st.list.is_empty() => " (полный объём неизвестен)".into(),
+        None if !st.list.is_empty() => t!(" (полный объём неизвестен)").into(),
         None => String::new(),
     };
-    log(&format!(
-        "обновлений: пакетов {}{}{}{}",
-        st.list.len(),
-        size_label,
-        if st.flatpak.is_empty() { String::new() } else { format!(", Flatpak {}", st.flatpak.len()) },
-        if st.firmware.is_empty() { String::new() } else { format!(", прошивок {}", st.firmware.len()) },
-    ));
+    log(&t!("обновлений: пакетов {}{}{}{}", st.list.len(), size_label, if st.flatpak.is_empty() { String::new() } else { format!(", Flatpak {}", st.flatpak.len()) }, if st.firmware.is_empty() { String::new() } else { t!(", прошивок {}", st.firmware.len()) }));
     if !st.news.is_empty() {
-        log(&format!("новостей Arch с прошлого обновления: {}", st.news.len()));
+        log(&t!("новостей Arch с прошлого обновления: {}", st.news.len()));
     }
     if !st.error.is_empty() {
         log(&st.error);
     }
     if !st.flatpak_error.is_empty() {
-        log(&format!("Flatpak: ошибка проверки: {}", st.flatpak_error));
+        log(&t!("Flatpak: ошибка проверки: {}", st.flatpak_error));
     }
     if !st.firmware_error.is_empty() {
-        log(&format!("Прошивки: ошибка проверки: {}", st.firmware_error));
+        log(&t!("Прошивки: ошибка проверки: {}", st.firmware_error));
     }
     let _ = save_json("updates.json", &st);
     st
@@ -686,23 +670,24 @@ fn required_free(download_size: Option<u64>, min_free_gb: u64) -> u64 {
 fn low_space_message(download_size: Option<u64>, min_free_gb: u64, location: &str, free: u64) -> String {
     let need = required_free(download_size, min_free_gb);
     match download_size {
-        Some(_) => format!("мало места ({location}): нужно {} (с запасом {} ГБ), свободно {}", fmt_bytes(need), min_free_gb, fmt_bytes(free)),
-        None => format!("мало места ({location}) для резерва {} ГБ при неизвестном объёме загрузки, свободно {}", min_free_gb, fmt_bytes(free)),
+        // «мало места» — отдельный ключ: по этому началу строки ошибку узнают в main.rs
+        Some(_) => format!("{}{}", t!("мало места"), t!(" ({3}): нужно {} (с запасом {} ГБ), свободно {}", fmt_bytes(need), min_free_gb, fmt_bytes(free), location)),
+        None => format!("{}{}", t!("мало места"), t!(" ({2}) для резерва {} ГБ при неизвестном объёме загрузки, свободно {}", min_free_gb, fmt_bytes(free), location)),
     }
 }
 
 /// Предзагрузка с повторами; на второй неудаче — переподбор зеркал.
 pub fn download(b: &dyn Backend, c: &Config, st: &mut UpdState, log: Log, quiet: bool, allow_unknown_size: bool) {
     if let Some(error) = &st.space_check_error {
-        log(&format!("загрузку пропускаю: {error}"));
+        log(&t!("загрузку пропускаю: {0}", error));
         return;
     }
-    if st.error.starts_with("мало места") {
-        log("загрузку пропускаю: мало места");
+    if st.error.starts_with(t!("мало места")) {
+        log(t!("загрузку пропускаю: мало места"));
         return;
     }
     if !st.list.is_empty() && st.download_size.is_none() && !allow_unknown_size {
-        let message = "полный объём загрузки неизвестен; предзагрузку пропускаю";
+        let message = t!("полный объём загрузки неизвестен; предзагрузку пропускаю");
         log(message);
         st.skipped = message.into();
         let _ = save_json("updates.json", st);
@@ -711,29 +696,29 @@ pub fn download(b: &dyn Backend, c: &Config, st: &mut UpdState, log: Log, quiet:
     if !st.list.is_empty() {
         let names = pkg_names(&st.list);
         for attempt in 1..=c.retries {
-            log(&format!("скачиваю заранее (попытка {attempt} из {})...", c.retries));
+            log(&t!("скачиваю заранее (попытка {1} из {})...", c.retries, attempt));
             match b.prefetch(&names, quiet) {
                 Ok(()) => {
                     st.downloaded = true;
-                    log("пакеты скачаны");
+                    log(t!("пакеты скачаны"));
                     break;
                 }
-                Err(e) => log(&format!("загрузка оборвалась: {e}")),
+                Err(e) => log(&t!("загрузка оборвалась: {0}", e)),
             }
             if attempt == 2 && b.mirrors_managed() {
-                log("похоже, зеркала плохие — подбираю заново");
+                log(t!("похоже, зеркала плохие — подбираю заново"));
                 let _ = rescan(b, c, log);
             }
         }
         if !st.downloaded {
-            st.error = "не удалось скачать обновления".into();
+            st.error = t!("не удалось скачать обновления").into();
         }
     }
     if !st.flatpak.is_empty() {
-        log("Flatpak: скачиваю заранее...");
+        log(t!("Flatpak: скачиваю заранее..."));
         let user = invoking_user();
         if let Err(e) = extras::flatpak_prefetch(quiet, user.as_deref(), &st.flatpak) {
-            let message = format!("не удалось скачать обновления Flatpak: {e}");
+            let message = t!("не удалось скачать обновления Flatpak: {0}", e);
             log(&message);
             if st.error.is_empty() {
                 st.error = message;
@@ -782,11 +767,11 @@ mod contract_tests {
     // --- NET-02 ---
     #[test]
     fn net02_retries_pinned_after_all_fail() {
-        let pinned = Probe { url: "https://mirror/pinned".into(), src: "закреп".into(), ok: false, err: "таймаут".into(), ..Default::default() };
+        let pinned = Probe { url: "https://mirror/pinned".into(), src: "pinned".into(), ok: false, err: "timeout".into(), ..Default::default() };
         assert!(mirror_needs_retry(&pinned.src, pinned.ok, &pinned.err, false));
-        let search = Probe { url: "https://mirror/new".into(), src: "поиск".into(), ok: false, err: "таймаут".into(), ..Default::default() };
+        let search = Probe { url: "https://mirror/new".into(), src: "search".into(), ok: false, err: "timeout".into(), ..Default::default() };
         assert!(!mirror_needs_retry(&search.src, search.ok, &search.err, false));
-        let memory = Probe { url: "https://mirror/old".into(), src: "список".into(), ok: false, err: "таймаут".into(), ..Default::default() };
+        let memory = Probe { url: "https://mirror/old".into(), src: "list".into(), ok: false, err: "timeout".into(), ..Default::default() };
         assert!(mirror_needs_retry(&memory.src, memory.ok, &memory.err, true));
         assert!(schedule_mirror_retry(false, 1), "полный отказ первого прохода всё равно запускает повтор");
         assert!(!schedule_mirror_retry(false, 0), "пустой список повторов не делает лишних запросов");

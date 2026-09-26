@@ -37,16 +37,16 @@ impl FlatpakScope {
 fn invoking_user_command(user: &str, args: &[&str]) -> Result<(String, Vec<String>), String> {
     let (passwd, code) = out("getent", &["passwd", user]);
     if code != 0 {
-        return Err(format!("не удалось получить данные пользователя {user}"));
+        return Err(t!("не удалось получить данные пользователя {0}", user));
     }
-    let fields: Vec<&str> = passwd.lines().find(|line| line.split(':').next() == Some(user)).ok_or_else(|| format!("пользователь {user} не найден в NSS"))?.split(':').collect();
+    let fields: Vec<&str> = passwd.lines().find(|line| line.split(':').next() == Some(user)).ok_or_else(|| t!("пользователь {0} не найден в NSS", user))?.split(':').collect();
     if fields.len() < 7 {
-        return Err(format!("неверная запись NSS для пользователя {user}"));
+        return Err(t!("неверная запись NSS для пользователя {0}", user));
     }
-    let uid: u32 = fields[2].parse().map_err(|_| format!("неверный UID пользователя {user}"))?;
+    let uid: u32 = fields[2].parse().map_err(|_| t!("неверный UID пользователя {0}", user))?;
     let home = fields[5];
     if !Path::new(home).is_absolute() {
-        return Err(format!("неверный HOME пользователя {user}"));
+        return Err(t!("неверный HOME пользователя {0}", user));
     }
     let runtime = format!("/run/user/{uid}");
     let mut command = if have("runuser") {
@@ -54,7 +54,7 @@ fn invoking_user_command(user: &str, args: &[&str]) -> Result<(String, Vec<Strin
     } else if have("sudo") {
         vec!["-u".into(), user.into(), "--".into(), "env".into()]
     } else {
-        return Err("для запуска Flatpak от имени пользователя нужен runuser или sudo".into());
+        return Err(t!("для запуска Flatpak от имени пользователя нужен runuser или sudo").into());
     };
     command.push(format!("HOME={home}"));
     command.push(format!("XDG_RUNTIME_DIR={runtime}"));
@@ -83,10 +83,10 @@ fn run_as_user(quiet: bool, user: &str, args: &[&str]) -> Result<(), String> {
             return Ok(());
         }
         let error = String::from_utf8_lossy(&output.stderr);
-        return Err(format!("{runner}: {}", last_line(&error).unwrap_or("ошибка")));
+        return Err(format!("{runner}: {}", last_line(&error).unwrap_or(t!("ошибка"))));
     }
     let status = command.status().map_err(|e| format!("{runner}: {e}"))?;
-    if status.success() { Ok(()) } else { Err(format!("{runner}: код {}", status.code().unwrap_or(-1))) }
+    if status.success() { Ok(()) } else { Err(t!("{1}: код {}", status.code().unwrap_or(-1), runner)) }
 }
 
 fn parse_flatpak_updates(output: &str, scope: FlatpakScope) -> Result<Vec<String>, String> {
@@ -94,7 +94,7 @@ fn parse_flatpak_updates(output: &str, scope: FlatpakScope) -> Result<Vec<String
     for line in output.lines().filter(|line| !line.trim().is_empty()) {
         let fields: Vec<&str> = line.split_whitespace().collect();
         if fields.len() != 2 || !fields[0].contains('.') {
-            return Err("flatpak remote-ls вернул некорректный список обновлений".into());
+            return Err(t!("flatpak remote-ls вернул некорректный список обновлений").into());
         }
         updates.push(format!("[{}] {}", scope.label(), fields.join(" ")));
     }
@@ -109,13 +109,13 @@ fn flatpak_scope_updates(scope: FlatpakScope, invoking_user: Option<&str>) -> Re
             (output, code)
         }
         FlatpakScope::User => {
-            let user = invoking_user.ok_or("нет вызывающего пользователя")?;
+            let user = invoking_user.ok_or(t!("нет вызывающего пользователя"))?;
             let args = ["flatpak", "remote-ls", scope.option(), "--updates", "--columns=application,version"];
             out_as_user(user, &args)?
         }
     };
     if code != 0 {
-        return Err(format!("flatpak remote-ls завершился с кодом {code}"));
+        return Err(t!("flatpak remote-ls завершился с кодом {0}", code));
     }
     parse_flatpak_updates(&output, scope)
 }
@@ -170,7 +170,7 @@ fn flatpak_operation(quiet: bool, invoking_user: Option<&str>, updates: &[String
                     user_args.extend(args);
                     run_as_user(quiet, user, &user_args)
                 }
-                None => Err("невозможно обновить per-user Flatpak без вызывающего пользователя".into()),
+                None => Err(t!("невозможно обновить per-user Flatpak без вызывающего пользователя").into()),
             },
         };
         if let Err(e) = result {
@@ -215,15 +215,15 @@ pub fn aur_updates(user: &str) -> Result<Vec<String>, String> {
     if code != 0 {
         let err = String::from_utf8_lossy(&o.stderr);
         return Err(match last_line(&err) {
-            Some(l) => format!("{h} -Qua завершился с кодом {code}: {l}"),
-            None => format!("{h} -Qua завершился с кодом {code}"),
+            Some(l) => t!("{0} -Qua завершился с кодом {1}: {2}", h, code, l),
+            None => t!("{0} -Qua завершился с кодом {1}", h, code),
         });
     }
     let mut updates = Vec::new();
     for (index, line) in lines(&output).into_iter().enumerate() {
         let parts: Vec<&str> = line.split("->").collect();
         if parts.len() != 2 || parts.iter().any(|part| part.trim().is_empty()) {
-            return Err(format!("{h} вернул некорректный список обновлений AUR (строка {})", index + 1));
+            return Err(t!("{1} вернул некорректный список обновлений AUR (строка {})", index + 1, h));
         }
         updates.push(line.trim().to_string());
     }
@@ -231,9 +231,129 @@ pub fn aur_updates(user: &str) -> Result<Vec<String>, String> {
 }
 
 pub fn aur_upgrade(user: &str) -> Result<(), String> {
-    let h = aur_helper().ok_or("нет paru/yay")?;
+    let h = aur_helper().ok_or(t!("нет paru/yay"))?;
     let (cmd, args) = as_user(user, h, &["-Sua"]);
     let a: Vec<&str> = args.iter().map(String::as_str).collect();
+    run(false, &[], &cmd, &a)
+}
+
+// ---------- поиск и установка из AUR ----------
+
+#[derive(Clone, Default, Debug)]
+pub struct AurPkg {
+    pub name: String,
+    pub version: String,
+    pub desc: String,
+    pub votes: u64,
+    pub popularity: f64,
+    pub out_of_date: bool,
+    /// установленная версия, если пакет уже стоит
+    pub installed: Option<String>,
+}
+
+/// Имя пакета Arch: строчные буквы, цифры и @._+- (защищает и командную строку помощника).
+pub fn valid_pkg_name(n: &str) -> bool {
+    !n.is_empty() && !n.starts_with('-') && n.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b"@._+-".contains(&b))
+}
+
+/// Поиск через AUR RPC (по имени и описанию); точное совпадение имени — первым, дальше по популярности.
+pub fn aur_search(q: &str) -> Result<Vec<AurPkg>, String> {
+    let q = q.trim();
+    if q.chars().count() < 2 {
+        return Err(t!("для поиска нужно хотя бы 2 символа").into());
+    }
+    let url = format!("https://aur.archlinux.org/rpc/v5/search/{}?by=name-desc", crate::vpn::pct_encode(q));
+    let body = crate::mirrors::agent(20).get(&url).call().map_err(|e| t!("AUR недоступен: {0}", e))?.into_string().map_err(|e| e.to_string())?;
+    let mut r = parse_aur_search(&body)?;
+    let names: Vec<&str> = r.iter().map(|p| p.name.as_str()).collect();
+    let installed = installed_versions(&names);
+    for p in &mut r {
+        p.installed = installed.get(&p.name).cloned();
+    }
+    let ql = q.to_lowercase();
+    r.sort_by(|a, b| (b.name == ql).cmp(&(a.name == ql)).then(b.popularity.total_cmp(&a.popularity)).then(b.votes.cmp(&a.votes)));
+    r.truncate(250);
+    Ok(r)
+}
+
+fn parse_aur_search(body: &str) -> Result<Vec<AurPkg>, String> {
+    let v: serde_json::Value = serde_json::from_str(body).map_err(|e| t!("AUR вернул неверный JSON: {0}", e))?;
+    if v.get("type").and_then(|t| t.as_str()) == Some("error") {
+        return Err(format!("AUR: {}", v.get("error").and_then(|e| e.as_str()).unwrap_or(t!("ошибка"))));
+    }
+    let list = v.get("results").and_then(|r| r.as_array()).ok_or(t!("AUR: в ответе нет results"))?;
+    Ok(list
+        .iter()
+        .filter_map(|p| {
+            let name = p.get("Name")?.as_str()?.to_string();
+            valid_pkg_name(&name).then(|| AurPkg {
+                name,
+                version: p.get("Version").and_then(|x| x.as_str()).unwrap_or("?").to_string(),
+                desc: p.get("Description").and_then(|x| x.as_str()).unwrap_or("").to_string(),
+                votes: p.get("NumVotes").and_then(|x| x.as_u64()).unwrap_or(0),
+                popularity: p.get("Popularity").and_then(|x| x.as_f64()).unwrap_or(0.0),
+                out_of_date: p.get("OutOfDate").map(|x| !x.is_null()).unwrap_or(false),
+                installed: None,
+            })
+        })
+        .collect())
+}
+
+fn installed_versions(names: &[&str]) -> std::collections::HashMap<String, String> {
+    if names.is_empty() {
+        return Default::default();
+    }
+    let mut args = vec!["-Q"];
+    args.extend(names);
+    // ненайденные пакеты pacman пишет в stderr — их просто нет в выводе
+    out("pacman", &args)
+        .0
+        .lines()
+        .filter_map(|l| l.split_once(' ').map(|(n, v)| (n.to_string(), v.trim().to_string())))
+        .collect()
+}
+
+/// Ставит paru (или yay) из репозиториев, если их там предлагает дистрибутив (chaotic-aur, EndeavourOS, CachyOS…).
+fn install_aur_helper() -> Result<&'static str, String> {
+    for h in ["paru", "yay"] {
+        if out("pacman", &["-Si", h]).1 == 0 {
+            if !confirm(&t!("Для AUR нужен помощник. Установить {0} из репозитория?", h), true) {
+                return Err(t!("без paru или yay пакеты из AUR не ставятся").into());
+            }
+            let args = ["pacman", "-S", "--needed", h];
+            if is_root() {
+                run(false, &[], args[0], &args[1..])?;
+            } else {
+                run(false, &[], "sudo", &args)?;
+            }
+            return Ok(h);
+        }
+    }
+    Err(t!("paru и yay нет в репозиториях — поставь один из них вручную: https://github.com/Morganamilo/paru#installation").into())
+}
+
+/// Сборка и установка через paru/yay от имени обычного пользователя: помощник сам покажет PKGBUILD и спросит подтверждение.
+pub fn aur_install(user: Option<&str>, pkgs: &[String]) -> Result<(), String> {
+    if let Some(bad) = pkgs.iter().find(|p| !valid_pkg_name(p)) {
+        return Err(t!("неверное имя пакета: {0}", bad));
+    }
+    if pkgs.is_empty() {
+        return Err(t!("не указан пакет").into());
+    }
+    let h = match aur_helper() {
+        Some(h) => h,
+        None => install_aur_helper()?,
+    };
+    // --aur есть и у paru, и у yay: ставим именно из AUR, даже если в репозиториях есть одноимённый пакет
+    let mut args = vec!["-S", "--aur"];
+    args.extend(pkgs.iter().map(String::as_str));
+    if !is_root() {
+        return run(false, &[], h, &args);
+    }
+    // от root помощники AUR не собирают — нужен пользователь, запустивший upd через sudo
+    let user = user.ok_or(t!("AUR собирается от обычного пользователя: запусти upd без sudo или через sudo из своей сессии"))?;
+    let (cmd, a) = as_user(user, h, &args);
+    let a: Vec<&str> = a.iter().map(String::as_str).collect();
     run(false, &[], &cmd, &a)
 }
 
@@ -248,7 +368,7 @@ pub fn firmware_refresh() -> Result<(), String> {
     // код 2 — «нечего делать»: метаданные и так свежие
     match o.status.code() {
         Some(0 | 2) => Ok(()),
-        _ => Err(format!("fwupdmgr: {}", last_line(&String::from_utf8_lossy(&o.stderr)).unwrap_or("ошибка"))),
+        _ => Err(format!("fwupdmgr: {}", last_line(&String::from_utf8_lossy(&o.stderr)).unwrap_or(t!("ошибка")))),
     }
 }
 
@@ -257,24 +377,24 @@ pub fn firmware_updates() -> Result<Vec<String>, String> {
     // Код 2 — штатный пустой результат, но его нужно подтвердить JSON-ответом.
     // Остальные ненулевые коды сообщаем до разбора stdout: при сбое он часто пустой.
     if code != 0 && code != 2 {
-        return Err(format!("fwupdmgr get-updates завершился с кодом {code}"));
+        return Err(t!("fwupdmgr get-updates завершился с кодом {0}", code));
     }
-    let v: serde_json::Value = serde_json::from_str(&s).map_err(|e| format!("fwupdmgr вернул неверный JSON: {e}"))?;
+    let v: serde_json::Value = serde_json::from_str(&s).map_err(|e| t!("fwupdmgr вернул неверный JSON: {0}", e))?;
     let devices = v
         .get("Devices")
         .and_then(serde_json::Value::as_array)
-        .ok_or("fwupdmgr JSON не содержит массив Devices")?;
+        .ok_or(t!("fwupdmgr JSON не содержит массив Devices"))?;
     // fwupd использует код 2, когда обновлений нет; JSON в этом случае содержит пустой Devices.
     if code == 2 && devices.is_empty() {
         return Ok(vec![]);
     }
     if code != 0 {
-        return Err(format!("fwupdmgr get-updates завершился с кодом {code}"));
+        return Err(t!("fwupdmgr get-updates завершился с кодом {0}", code));
     }
     devices
         .iter()
         .map(|d| {
-            let name = d.get("Name").and_then(serde_json::Value::as_str).filter(|s| !s.is_empty()).ok_or("fwupdmgr JSON содержит запись Devices без Name")?;
+            let name = d.get("Name").and_then(serde_json::Value::as_str).filter(|s| !s.is_empty()).ok_or(t!("fwupdmgr JSON содержит запись Devices без Name"))?;
             let cur = d.get("Version").and_then(serde_json::Value::as_str).unwrap_or("?");
             let new = d
                 .get("Releases")
@@ -348,33 +468,47 @@ pub fn snap_tool() -> SnapTool {
     }
 }
 
+/// Описания снапшотов записываются по-английски: их показывают GRUB (grub-btrfs), snapper и btrfs-assistant,
+/// а шрифт GRUB может не иметь кириллицы, китайских и арабских букв. В списке upd они переводятся (snap_desc_label).
+pub(crate) const SNAP_PRE_DESC: &str = "upd: before update";
+pub(crate) const SNAP_POST_DESC: &str = "upd: after update";
+
 /// Снапшот перед обновлением. Возвращает номер (для snapper — чтобы связать с «после»).
 pub fn snap_pre() -> Result<Option<String>, String> {
     match snap_tool() {
         SnapTool::Snapper => {
-            let (s, code) = out("snapper", &["-c", "root", "create", "-t", "pre", "-p", "-c", "number", "-d", "upd: перед обновлением"]);
+            let (s, code) = out("snapper", &["-c", "root", "create", "-t", "pre", "-p", "-c", "number", "-d", SNAP_PRE_DESC]);
             if code != 0 {
-                return Err("snapper не создал снапшот".into());
+                return Err(t!("snapper не создал снапшот").into());
             }
             Ok(Some(s.trim().to_string()))
         }
-        SnapTool::Timeshift => run(false, &[], "timeshift", &["--create", "--comments", "upd: перед обновлением", "--scripted"]).map(|_| None),
-        SnapTool::None => Err("нет snapper (с конфигом root) или timeshift".into()),
+        SnapTool::Timeshift => run(false, &[], "timeshift", &["--create", "--comments", SNAP_PRE_DESC, "--scripted"]).map(|_| None),
+        SnapTool::None => Err(t!("нет snapper (с конфигом root) или timeshift").into()),
     }
 }
 
 pub fn snap_post(pre: &str) {
     if snap_tool() == SnapTool::Snapper {
-        let _ = run(true, &[], "snapper", &["-c", "root", "create", "-t", "post", "--pre-number", pre, "-c", "number", "-d", "upd: после обновления"]);
+        let _ = run(true, &[], "snapper", &["-c", "root", "create", "-t", "post", "--pre-number", pre, "-c", "number", "-d", SNAP_POST_DESC]);
     }
 }
 
 /// Последние снапшоты, новые сверху.
+/// Описание снапшота для показа: свои (и прежние русские) — на языке интерфейса, чужие — как есть.
+fn snap_desc_label(d: &str) -> String {
+    match d {
+        SNAP_PRE_DESC | "upd: перед обновлением" => t!("upd: перед обновлением").into(),
+        SNAP_POST_DESC | "upd: после обновления" => t!("upd: после обновления").into(),
+        _ => d.into(),
+    }
+}
+
 pub fn snap_list(n: usize) -> Vec<String> {
     match snap_tool() {
         SnapTool::Snapper => {
             let (s, _) = out("snapper", &["--jsonout", "-c", "root", "list", "--disable-used-space"]);
-            let Ok(v) = serde_json::from_str::<serde_json::Value>(&s) else { return vec!["snapper: не удалось прочитать список (нужны права root)".into()] };
+            let Ok(v) = serde_json::from_str::<serde_json::Value>(&s) else { return vec![t!("snapper: не удалось прочитать список (нужны права root)").into()] };
             let mut r: Vec<String> = v["root"]
                 .as_array()
                 .map(|a| {
@@ -386,7 +520,7 @@ pub fn snap_list(n: usize) -> Vec<String> {
                                 x["number"].as_u64().unwrap_or(0),
                                 x["date"].as_str().unwrap_or(""),
                                 x["type"].as_str().unwrap_or(""),
-                                x["description"].as_str().unwrap_or("")
+                                snap_desc_label(x["description"].as_str().unwrap_or(""))
                             )
                         })
                         .collect()
@@ -397,7 +531,12 @@ pub fn snap_list(n: usize) -> Vec<String> {
             r
         }
         SnapTool::Timeshift => {
-            let mut r: Vec<String> = out("timeshift", &["--list"]).0.lines().filter(|l| l.trim_start().chars().next().map(|c| c.is_ascii_digit()).unwrap_or(false)).map(String::from).collect();
+            let mut r: Vec<String> = out("timeshift", &["--list"])
+                .0
+                .lines()
+                .filter(|l| l.trim_start().chars().next().map(|c| c.is_ascii_digit()).unwrap_or(false))
+                .map(|l| l.replace(SNAP_PRE_DESC, t!("upd: перед обновлением")))
+                .collect();
             r.reverse();
             r.truncate(n);
             r
@@ -410,15 +549,15 @@ pub fn rollback_hint() -> Vec<String> {
     let grub_btrfs = Path::new("/etc/grub.d/41_snapshots-btrfs").exists();
     match snap_tool() {
         SnapTool::Snapper if grub_btrfs => vec![
-            "Как откатиться:".into(),
-            "  1. Перезагрузись, в меню GRUB выбери «… snapshots» → снапшот «перед обновлением».".into(),
-            "  2. Если система в нём работает — сделай его постоянным:".into(),
-            if have("btrfs-assistant") { "     btrfs-assistant → Snapper → Browse/Restore → Restore".into() } else { "     sudo snapper rollback <номер>".into() },
-            "  3. Перезагрузись ещё раз.".into(),
+            t!("Как откатиться:").into(),
+            t!("  1. Перезагрузись, в меню GRUB выбери «… snapshots» → снапшот «upd: before update».").into(),
+            t!("  2. Если система в нём работает — сделай его постоянным:").into(),
+            if have("btrfs-assistant") { "     btrfs-assistant → Snapper → Browse/Restore → Restore".into() } else { t!("     sudo snapper rollback <номер>").into() },
+            t!("  3. Перезагрузись ещё раз.").into(),
         ],
-        SnapTool::Snapper => vec!["Как откатиться: sudo snapper rollback <номер> и перезагрузка.".into()],
-        SnapTool::Timeshift => vec!["Как откатиться: sudo timeshift --restore (или из live-USB через Timeshift).".into()],
-        SnapTool::None => vec!["Снапшотов нет: не установлен snapper (с конфигом root) или timeshift.".into()],
+        SnapTool::Snapper => vec![t!("Как откатиться: sudo snapper rollback <номер> и перезагрузка.").into()],
+        SnapTool::Timeshift => vec![t!("Как откатиться: sudo timeshift --restore (или из live-USB через Timeshift).").into()],
+        SnapTool::None => vec![t!("Снапшотов нет: не установлен snapper (с конфигом root) или timeshift.").into()],
     }
 }
 
@@ -435,20 +574,20 @@ pub fn restart_services(list: &[String]) {
 
 pub fn print_restart(r: &Restart) {
     if r.services.is_empty() && r.critical.is_empty() && r.apps.is_empty() && r.unknown.is_empty() {
-        println!("перезапускать ничего не нужно");
+        println!("{}", t!("перезапускать ничего не нужно"));
         return;
     }
     if !r.services.is_empty() {
-        println!("службы со старыми библиотеками ({}): {}", r.services.len(), r.services.join(", "));
+        println!("{}", t!("службы со старыми библиотеками ({}): {}", r.services.len(), r.services.join(", ")));
     }
     if !r.critical.is_empty() {
-        println!("перезапуск оборвёт сеанс — нужна перезагрузка: {}", r.critical.join(", "));
+        println!("{}", t!("перезапуск оборвёт сеанс — нужна перезагрузка: {}", r.critical.join(", ")));
     }
     if !r.apps.is_empty() {
-        println!("программы — перезапусти вручную или перелогинься: {}", r.apps.join(", "));
+        println!("{}", t!("программы — перезапусти вручную или перелогинься: {}", r.apps.join(", ")));
     }
     if !r.unknown.is_empty() {
-        println!("процессы без распознанного cgroup: {}", r.unknown.join(", "));
+        println!("{}", t!("процессы без распознанного cgroup: {}", r.unknown.join(", ")));
     }
 }
 
@@ -571,6 +710,22 @@ mod contract_tests {
         write_executable(&dir.join("fwupdmgr"), "#!/bin/sh\necho 'Metadata is up to date' >&2\nexit 2\n");
         let _g = DirGuard::new(dir.clone());
         assert!(crate::common::contract_fixtures::with_prepend_path(&dir, firmware_refresh).is_ok());
+    }
+
+    #[test]
+    fn aur_search_parses_and_rejects_bad_names() {
+        let body = r#"{"version":5,"type":"search","resultcount":3,"results":[
+            {"Name":"paru-bin","Version":"2.0.4-1","Description":"Feature packed AUR helper","NumVotes":120,"Popularity":3.5,"OutOfDate":null},
+            {"Name":"old-thing","Version":"1-1","Description":null,"NumVotes":1,"Popularity":0.0,"OutOfDate":1700000000},
+            {"Name":"--evil","Version":"1-1"}]}"#;
+        let r = parse_aur_search(body).unwrap();
+        assert_eq!(r.len(), 2, "имя с ведущим дефисом отброшено");
+        assert_eq!(r[0].name, "paru-bin");
+        assert_eq!(r[0].votes, 120);
+        assert!(!r[0].out_of_date && r[1].out_of_date);
+        assert!(parse_aur_search(r#"{"type":"error","error":"Too many package results."}"#).unwrap_err().contains("Too many"));
+        assert!(valid_pkg_name("lib32-mesa-git") && valid_pkg_name("python-foo_bar+1@x"));
+        assert!(!valid_pkg_name("Foo") && !valid_pkg_name("a b") && !valid_pkg_name("a;rm"));
     }
 
     // --- UPD-04C ---
