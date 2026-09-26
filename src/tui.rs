@@ -1,21 +1,28 @@
 //! Интерфейс в терминале (ratatui).
 
+mod process;
+
 use crate::backend::{self, Backend};
 use crate::common::*;
 use crate::mirrors::{apply_mirrors, candidates, load_mirror_state};
 use crate::{extras, gather_status, sub_info, vpn, Status};
 use ratatui::crossterm::event::{self, Event, KeyCode, KeyEventKind, KeyModifiers};
+use ratatui::crossterm::terminal::{disable_raw_mode, enable_raw_mode};
 use ratatui::layout::{Constraint, Layout};
 use ratatui::style::{Color, Modifier, Style, Stylize};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, BorderType, Cell, Paragraph, Row, Table, TableState, Wrap};
 use ratatui::{DefaultTerminal, Frame};
+use process::ProcessSession;
+use std::io::Write;
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
-#[derive(PartialEq)]
+#[derive(Clone, Copy, PartialEq)]
 enum Screen {
     Menu,
+    Status,
+    Process,
     Pager,
     Mirrors,
     Vpn,
@@ -73,6 +80,17 @@ fn menu_items(b: &dyn Backend) -> Vec<Item> {
     v
 }
 
+fn menu_group(item: Item) -> Option<&'static str> {
+    match item {
+        Item::Update => Some(t!("Обновления")),
+        Item::Mirrors => Some(t!("Сеть и VPN")),
+        Item::Snapshots => Some(t!("Обслуживание")),
+        Item::Aur => Some("AUR"),
+        Item::Lang => Some(t!("Настройки")),
+        _ => None,
+    }
+}
+
 #[derive(Default)]
 struct AurUi {
     query: String,
@@ -123,13 +141,19 @@ struct App<'a> {
     p_title: String,
     p_lines: Vec<String>,
     p_off: usize,
+    status_off: usize,
+    p_aur_rx: Option<mpsc::Receiver<Result<Vec<String>, String>>>,
+    p_aur_line: Option<usize>,
     m_state: TableState,
     input: Option<String>,
-    /// что вводится: "" — адрес зеркала, иначе ключ числовой настройки VPN
+    /// что вводится: "" — адрес зеркала, "aur" — поиск, иначе ключ числовой настройки VPN
     input_key: &'static str,
     v: VpnUi,
     aur: AurUi,
     lang_sel: TableState,
+    process: Option<ProcessSession>,
+    process_return: Screen,
+    process_reported: bool,
     quit: bool,
 }
 
@@ -155,6 +179,13 @@ type Args = Option<Vec<String>>;
 
 fn cmd(a: &[&str]) -> Args {
     Some(a.iter().map(|s| s.to_string()).collect())
+}
+
+fn process_key_code(code: KeyCode, modifiers: KeyModifiers) -> KeyCode {
+    match code {
+        KeyCode::Char(c) if modifiers.contains(KeyModifiers::CONTROL) => KeyCode::Char(crate::i18n::latin_key(c)),
+        _ => code,
+    }
 }
 
 pub fn run(b: &dyn Backend) -> i32 {
@@ -186,12 +217,18 @@ impl<'a> App<'a> {
             p_title: String::new(),
             p_lines: vec![],
             p_off: 0,
+            status_off: 0,
+            p_aur_rx: None,
+            p_aur_line: None,
             m_state: TableState::default().with_selected(Some(0)),
             input: None,
             input_key: "",
             v,
             aur: AurUi::default(),
             lang_sel: TableState::default(),
+            process: None,
+            process_return: Screen::Menu,
+            process_reported: false,
             quit: false,
         }
     }
@@ -219,31 +256,85 @@ impl<'a> App<'a> {
                 self.vpn_poll();
             }
             self.aur_poll();
+            self.poll_aur_updates();
+            if self.scr == Screen::Process {
+                let auto_attach = if let Some(p) = &mut self.process {
+                    let _ = p.poll()?;
+                    p.take_attach_request() && p.alternate_screen_active()
+                } else {
+                    false
+                };
+                if auto_attach {
+                    self.attach_process(term, true)?;
+                }
+                self.report_process_completion();
+            }
             term.draw(|f| self.draw(f))?;
             if event::poll(Duration::from_millis(200))? {
-                if let Event::Key(k) = event::read()? {
-                    if k.kind != KeyEventKind::Press {
-                        continue;
+                match event::read()? {
+                    Event::Resize(w, h) => {
+                        if let Some(p) = &self.process {
+                            let _ = p.resize(h.saturating_sub(6), w);
+                        }
                     }
-                    if k.code == KeyCode::Char('c') && k.modifiers.contains(KeyModifiers::CONTROL) {
-                        break;
+                    Event::Key(k) => {
+                        if k.kind != KeyEventKind::Press {
+                            continue;
+                        }
+                        if self.scr == Screen::Process {
+                            if k.code == KeyCode::F(4) && self.process.as_ref().and_then(ProcessSession::finished).is_none() {
+                                self.attach_process(term, false)?;
+                            } else {
+                                self.key_process(k.code, k.modifiers, term)?;
+                            }
+                            continue;
+                        }
+                        if k.code == KeyCode::Char('c') && k.modifiers.contains(KeyModifiers::CONTROL) {
+                            break;
+                        }
+                        // горячие клавиши работают в любой раскладке: й → q, ن → k …; в поле ввода — как набрано
+                        let code = match k.code {
+                            KeyCode::Char(c) if self.input.is_none() => KeyCode::Char(crate::i18n::latin_key(c)),
+                            c => c,
+                        };
+                        let old_screen = self.scr;
+                        let old_tab = self.v.tab;
+                        if let Some(args) = self.key(code) {
+                            self.exec(term, &args)?;
+                        }
+                        if self.scr != old_screen || (self.scr == Screen::Vpn && self.v.tab != old_tab) {
+                            term.clear()?;
+                        }
                     }
-                    // горячие клавиши работают в любой раскладке: й → q, ن → k …; в поле ввода — как набрано
-                    let code = match k.code {
-                        KeyCode::Char(c) if self.input.is_none() => KeyCode::Char(crate::i18n::latin_key(c)),
-                        c => c,
-                    };
-                    if let Some(args) = self.key(code) {
-                        self.exec(term, &args)?;
-                    }
+                    _ => {}
                 }
             }
         }
         Ok(())
     }
 
-    /// Запускает `upd <args> --pause` в этом же терминале и возвращается в меню.
+    /// Запускает команду во встроенном PTY. Редакторы и ввод URL оставляем в полном терминале.
     fn exec(&mut self, term: &mut DefaultTerminal, args: &[String]) -> std::io::Result<()> {
+        if args.first().map(String::as_str) == Some("merge")
+            || matches!(args, [a, b] if a == "vpn" && (b == "rules" || b == "add"))
+        {
+            return self.exec_external(term, args);
+        }
+        let size = term.size()?;
+        match ProcessSession::spawn(args, size.height.saturating_sub(6), size.width) {
+            Ok(process) => {
+                self.process_return = self.scr;
+                self.process = Some(process);
+                self.process_reported = false;
+                self.scr = Screen::Process;
+                self.msg.clear();
+            }
+            Err(e) => self.msg = t!("не удалось запустить: {0}", e),
+        }
+        Ok(())
+    }
+
+    fn exec_external(&mut self, term: &mut DefaultTerminal, args: &[String]) -> std::io::Result<()> {
         ratatui::restore();
         let exe = std::env::current_exe().unwrap_or_else(|_| "upd".into());
         let st = std::process::Command::new(exe).args(args).arg("--pause").status();
@@ -262,11 +353,147 @@ impl<'a> App<'a> {
         Ok(())
     }
 
+    fn report_process_completion(&mut self) {
+        if self.process_reported {
+            return;
+        }
+        let Some(code) = self.process.as_ref().and_then(ProcessSession::finished) else { return };
+        self.process_reported = true;
+        self.msg = if code == 0 { t!("готово").into() } else { format!("{} ({code})", t!("завершилось с ошибкой")) };
+        self.reload();
+        self.v.at = None;
+        if self.process_return == Screen::Aur && !self.aur.query.is_empty() {
+            self.aur_start(self.aur.query.clone());
+        }
+    }
+
+    fn key_process(&mut self, key: KeyCode, modifiers: KeyModifiers, term: &mut DefaultTerminal) -> std::io::Result<()> {
+        let Some(p) = &mut self.process else { return Ok(()) };
+        if p.finished().is_some() {
+            match key {
+                KeyCode::Enter | KeyCode::Esc | KeyCode::Char('q') => {
+                    self.process = None;
+                    self.scr = self.process_return;
+                    term.clear()?;
+                }
+                KeyCode::Up | KeyCode::PageUp => p.scroll_up(15),
+                KeyCode::Down | KeyCode::PageDown => p.scroll_down(15),
+                KeyCode::Home => p.scroll_up(usize::MAX),
+                KeyCode::End => p.scroll_down(usize::MAX),
+                _ => {}
+            }
+        } else if modifiers.contains(KeyModifiers::ALT) && matches!(key, KeyCode::PageUp | KeyCode::PageDown) {
+            if key == KeyCode::PageUp { p.scroll_up(15) } else { p.scroll_down(15) }
+        } else if let Err(e) = p.send_key(process_key_code(key, modifiers), modifiers) {
+            self.msg = t!("ошибка: {0}", e);
+        }
+        Ok(())
+    }
+
+    /// Полный терминал включается вручную по F4 или автоматически для полноэкранного редактора.
+    fn attach_process(&mut self, term: &mut DefaultTerminal, auto: bool) -> std::io::Result<()> {
+        let size = term.size()?;
+        if let Some(p) = &self.process {
+            let _ = p.resize(size.height, size.width);
+        }
+        ratatui::restore();
+        enable_raw_mode()?;
+        let result = (|| -> std::io::Result<()> {
+            let mut stdout = std::io::stdout();
+            stdout.write_all(b"\x1b[2J\x1b[H")?;
+            if let Some(p) = &self.process {
+                if auto {
+                    let raw = p.raw_history();
+                    let start = [b"\x1b[?1049h".as_slice(), b"\x1b[?1047h".as_slice(), b"\x1b[?47h".as_slice()]
+                        .iter()
+                        .filter_map(|marker| raw.windows(marker.len()).rposition(|w| w == *marker))
+                        .max()
+                        .unwrap_or(0);
+                    stdout.write_all(&raw[start..])?;
+                } else {
+                    for line in p.lines_for(40) {
+                        writeln!(stdout, "{line}")?;
+                    }
+                }
+            }
+            stdout.flush()?;
+            loop {
+                let Some(p) = &mut self.process else { break };
+                for chunk in p.poll()? {
+                    stdout.write_all(&chunk)?;
+                }
+                stdout.flush()?;
+                if p.finished().is_some() || (auto && !p.alternate_screen_active()) {
+                    break;
+                }
+                if event::poll(Duration::from_millis(100))? {
+                    match event::read()? {
+                        Event::Key(k) if k.kind == KeyEventKind::Press && k.code == KeyCode::F(4) && !p.alternate_screen_active() => break,
+                        Event::Key(k) if k.kind == KeyEventKind::Press => { let _ = p.send_key(process_key_code(k.code, k.modifiers), k.modifiers); }
+                        Event::Resize(w, h) => { let _ = p.resize(h, w); }
+                        _ => {}
+                    }
+                }
+            }
+            Ok(())
+        })();
+        let _ = disable_raw_mode();
+        *term = ratatui::init();
+        term.clear()?;
+        if let Some(p) = &self.process {
+            let _ = p.resize(size.height.saturating_sub(6), size.width);
+        }
+        result
+    }
+
     fn pager(&mut self, title: &str, lines: Vec<String>) {
         self.scr = Screen::Pager;
         self.p_title = title.into();
         self.p_lines = if lines.is_empty() { vec![t!("пусто").into()] } else { lines };
         self.p_off = 0;
+        self.p_aur_rx = None;
+        self.p_aur_line = None;
+    }
+
+    fn start_aur_updates(&mut self) {
+        if !self.b.aur() || !self.cfg().map(|c| c.aur).unwrap_or(false) {
+            return;
+        }
+        self.p_lines.push(String::new());
+        self.p_lines.push("── AUR ──".into());
+        if extras::aur_helper().is_none() {
+            self.p_lines.push(t!("нет paru/yay").into());
+            return;
+        }
+        let Some(user) = invoking_user() else {
+            self.p_lines.push(t!("AUR: нужен обычный пользователь").into());
+            return;
+        };
+        self.p_aur_line = Some(self.p_lines.len());
+        self.p_lines.push(t!("обновляю состояние...").into());
+        let (tx, rx) = mpsc::channel();
+        std::thread::spawn(move || {
+            let _ = tx.send(extras::aur_updates(&user));
+        });
+        self.p_aur_rx = Some(rx);
+    }
+
+    fn poll_aur_updates(&mut self) {
+        let Some(rx) = &self.p_aur_rx else { return };
+        let result = match rx.try_recv() {
+            Ok(result) => result,
+            Err(mpsc::TryRecvError::Empty) => return,
+            Err(mpsc::TryRecvError::Disconnected) => Err(t!("завершилось с ошибкой").into()),
+        };
+        self.p_aur_rx = None;
+        if let Some(at) = self.p_aur_line.take() {
+            let lines = match result {
+                Ok(list) if list.is_empty() => vec![t!("нет").into()],
+                Ok(list) => list,
+                Err(e) => vec![format!("⚠ {e}")],
+            };
+            self.p_lines.splice(at..=at, lines);
+        }
     }
 
     /// Обработка клавиши; Some(args) — запустить upd с этими аргументами.
@@ -277,6 +504,20 @@ impl<'a> App<'a> {
         }
         match self.scr {
             Screen::Menu => self.key_menu(k),
+            Screen::Process => None,
+            Screen::Status => {
+                let n = self.st.as_ref().map(|s| status_lines(s).len()).unwrap_or(1);
+                match k {
+                    KeyCode::Char('q') | KeyCode::Esc | KeyCode::Backspace => self.scr = Screen::Menu,
+                    KeyCode::Up | KeyCode::Char('k') => self.status_off = self.status_off.saturating_sub(1),
+                    KeyCode::Down | KeyCode::Char('j') => self.status_off = (self.status_off + 1).min(n.saturating_sub(1)),
+                    KeyCode::PageUp => self.status_off = self.status_off.saturating_sub(10),
+                    KeyCode::PageDown | KeyCode::Char(' ') => self.status_off = (self.status_off + 10).min(n.saturating_sub(1)),
+                    KeyCode::Home => self.status_off = 0,
+                    _ => {}
+                }
+                None
+            }
             Screen::Pager => {
                 let n = self.p_lines.len();
                 match k {
@@ -306,6 +547,10 @@ impl<'a> App<'a> {
             KeyCode::Char('r') => {
                 self.msg = t!("обновляю состояние...").into();
                 self.reload();
+            }
+            KeyCode::Char('i') => {
+                self.status_off = 0;
+                self.scr = Screen::Status;
             }
             KeyCode::Enter => return self.activate(),
             KeyCode::Char(c) if c.is_ascii_digit() => {
@@ -362,6 +607,7 @@ impl<'a> App<'a> {
                     }
                 }
                 self.pager(t!("Что доступно"), l);
+                self.start_aur_updates();
             }
             Item::Mirrors => {
                 self.scr = Screen::Mirrors;
@@ -428,14 +674,16 @@ impl<'a> App<'a> {
                     }
                 };
                 c.lang = l.code().into();
-                crate::i18n::set(l);
-                self.msg = match c.save() {
-                    Ok(()) => t!("язык: {}", l.name()),
-                    Err(e) => t!("не удалось сохранить настройки: {}", e),
-                };
-                self.scr = Screen::Menu;
-                // статус собран на прежнем языке
-                self.reload();
+                match c.save() {
+                    Ok(()) => {
+                        crate::i18n::set(l);
+                        self.msg = t!("язык: {}", l.name());
+                        self.scr = Screen::Menu;
+                        // статус собран на прежнем языке
+                        self.reload();
+                    }
+                    Err(e) => self.msg = t!("не удалось сохранить настройки: {}", e),
+                }
             }
             _ => {}
         }
@@ -591,27 +839,36 @@ impl<'a> App<'a> {
                 self.msg = log.into_inner().join("; ");
                 self.reload();
             }
-            KeyCode::Char('n') if managed => self.input = Some(String::new()),
+            KeyCode::Char('n') if managed => {
+                self.input_key = "";
+                self.input = Some(String::new());
+            }
             KeyCode::Char('x') | KeyCode::Delete if managed => {
                 if let Some(p) = rows.get(sel) {
                     if contains(&c.mirrors, &p.url) {
                         c.mirrors.retain(|m| m != &p.url);
-                        let _ = c.save();
-                        self.msg = t!("удалено из конфига").into();
+                        self.msg = match c.save() {
+                            Ok(()) => t!("удалено из конфига").into(),
+                            Err(e) => t!("не сохранено: {0}", e),
+                        };
                     } else {
                         self.msg = t!("это зеркало не из конфига — его подбирает автоматика").into();
                     }
                 }
             }
-            KeyCode::Char('+') | KeyCode::Char('=') => {
+            KeyCode::Char('+') | KeyCode::Char('=') if managed => {
                 c.keep = (c.keep + 1).min(10);
-                let _ = c.save();
-                self.msg = t!("закреплять {} — нажми a, чтобы применить", c.keep);
+                self.msg = match c.save() {
+                    Ok(()) => t!("закреплять {} — нажми a, чтобы применить", c.keep),
+                    Err(e) => t!("не сохранено: {0}", e),
+                };
             }
-            KeyCode::Char('-') => {
+            KeyCode::Char('-') if managed => {
                 c.keep = c.keep.saturating_sub(1).max(1);
-                let _ = c.save();
-                self.msg = t!("закреплять {} — нажми a, чтобы применить", c.keep);
+                self.msg = match c.save() {
+                    Ok(()) => t!("закреплять {} — нажми a, чтобы применить", c.keep),
+                    Err(e) => t!("не сохранено: {0}", e),
+                };
             }
             _ => {}
         }
@@ -621,7 +878,10 @@ impl<'a> App<'a> {
     fn key_input(&mut self, k: KeyCode) {
         let Some(buf) = self.input.as_mut() else { return };
         match k {
-            KeyCode::Esc => self.input = None,
+            KeyCode::Esc => {
+                self.input = None;
+                self.input_key = "";
+            }
             KeyCode::Backspace => {
                 buf.pop();
             }
@@ -629,14 +889,15 @@ impl<'a> App<'a> {
             KeyCode::Enter => {
                 let u = buf.trim().to_string();
                 self.input = None;
+                let input_key = std::mem::take(&mut self.input_key);
                 if u.is_empty() {
                     return;
                 }
-                if self.input_key == "aur" {
+                if input_key == "aur" {
                     return self.aur_start(u);
                 }
-                if !self.input_key.is_empty() {
-                    return self.vpn_set_number(&u);
+                if !input_key.is_empty() {
+                    return self.vpn_set_number(input_key, &u);
                 }
                 if let Err(e) = self.b.valid_mirror(&u) {
                     self.msg = t!("неверный URL: {0}", e);
@@ -651,7 +912,10 @@ impl<'a> App<'a> {
                 };
                 if !contains(&c.mirrors, &u) {
                     c.mirrors.push(u);
-                    let _ = c.save();
+                    if let Err(e) = c.save() {
+                        self.msg = t!("не сохранено: {0}", e);
+                        return;
+                    }
                 }
                 self.msg = t!("добавлено — нажми c, чтобы замерить").into();
             }
@@ -662,7 +926,7 @@ impl<'a> App<'a> {
     // ---------- отрисовка ----------
 
     fn draw(&mut self, f: &mut Frame) {
-        let [head, body, foot] = Layout::vertical([Constraint::Length(1), Constraint::Min(3), Constraint::Length(2)]).areas(f.area());
+        let [head, body, foot] = Layout::vertical([Constraint::Length(1), Constraint::Min(3), Constraint::Length(3)]).areas(f.area());
         f.render_widget(
             Line::from(vec![" upd ".bold().black().on_cyan(), Span::raw(" "), Span::styled(t!("обновление системы · {}", self.b.name()), dim())]),
             head,
@@ -670,29 +934,65 @@ impl<'a> App<'a> {
         let keys: Vec<(&str, &str)> = match (&self.scr, self.input.is_some()) {
             (_, true) => vec![("enter", t!("сохранить")), ("esc", t!("отмена"))],
             (Screen::Vpn, _) => {
-                let mut k = vec![("tab 1-3", t!("вкладка")), ("s", t!("вкл/выкл"))];
+                let mut k = vec![("q", t!("назад")), ("tab 1-3", t!("вкладка")), ("s", t!("вкл/выкл"))];
                 match self.v.tab {
                     0 => k.extend([("←→", t!("группа")), ("enter", t!("выбрать сервер")), ("t", t!("замерить задержку"))]),
                     1 => k.extend([("enter", t!("сделать активной")), ("n", t!("добавить")), ("u", t!("обновить")), ("x", t!("удалить"))]),
                     _ => k.extend([("enter", t!("изменить"))]),
                 }
-                k.push(("q", t!("назад")));
                 k
             }
-            (Screen::Menu, _) => vec![("↑↓", t!("выбор")), ("enter", t!("выполнить")), ("1-9", t!("сразу")), ("r", t!("обновить")), ("q", t!("выход"))],
+            (Screen::Menu, _) => vec![("↑↓", t!("выбор")), ("enter", t!("выполнить")), ("1-9,0", t!("сразу")), ("i", t!(" Состояние ").trim()), ("r", t!("обновить")), ("q", t!("выход"))],
+            (Screen::Process, _) if self.process.as_ref().and_then(ProcessSession::finished).is_some() => vec![("enter/q", t!("назад")), ("PgUp/PgDn", t!("листать"))],
+            (Screen::Process, _) => vec![("F4", t!("полный терминал")), ("Alt+PgUp/PgDn", t!("листать")), ("Ctrl+C", t!("отмена"))],
+            (Screen::Status, _) => vec![("↑↓ PgUp PgDn", t!("листать")), ("q", t!("назад"))],
             (Screen::Pager, _) => vec![("↑↓ PgUp PgDn", t!("листать")), ("q", t!("назад"))],
-            (Screen::Mirrors, _) => vec![("c", t!("замерить")), ("s", t!("искать заново")), ("a", t!("применить")), ("n", t!("добавить")), ("x", t!("удалить")), ("+/-", t!("сколько закреплять")), ("q", t!("назад"))],
+            (Screen::Mirrors, _) if self.b.mirrors_managed() => vec![("q", t!("назад")), ("c", t!("замерить")), ("s", t!("искать заново")), ("a", t!("применить")), ("n", t!("добавить")), ("x", t!("удалить")), ("+/-", t!("сколько закреплять"))],
+            (Screen::Mirrors, _) => vec![("q", t!("назад"))],
             (Screen::Lang, _) => vec![("↑↓", t!("выбор")), ("enter", t!("выбрать")), ("q", t!("назад"))],
-            (Screen::Aur, _) => vec![("/ s", t!("искать")), ("↑↓", t!("выбор")), ("enter", t!("установить")), ("q", t!("назад"))],
+            (Screen::Aur, _) => vec![("q", t!("назад")), ("/ s", t!("искать")), ("↑↓", t!("выбор")), ("enter", t!("установить"))],
         };
+        let mut help: Vec<Line> = vec![];
         let mut kl: Vec<Span> = vec![];
+        let mut used = 0;
+        let width = foot.width as usize;
         for (k, d) in keys {
-            kl.push(Span::styled(format!(" {k} "), Style::new().fg(Color::Cyan)));
-            kl.push(Span::styled(d.to_string(), dim()));
+            let key = Span::styled(format!(" {k} "), Style::new().fg(Color::Cyan));
+            let desc = Span::styled(d.to_string(), dim());
+            let item_width = key.width() + desc.width();
+            if used > 0 && used + item_width > width {
+                help.push(Line::from(std::mem::take(&mut kl)));
+                used = 0;
+            }
+            if help.len() >= 2 {
+                break;
+            }
+            used += item_width;
+            kl.push(key);
+            kl.push(desc);
         }
-        f.render_widget(Paragraph::new(vec![Line::from(kl), Line::from(Span::styled(self.msg.clone(), Style::new().fg(Color::Yellow)))]), foot);
+        help.push(Line::from(kl));
+        help.push(Line::from(Span::styled(self.msg.clone(), Style::new().fg(Color::Yellow))));
+        f.render_widget(Paragraph::new(help), foot);
         match self.scr {
             Screen::Menu => self.draw_menu(f, body),
+            Screen::Process => {
+                if let Some(p) = &self.process {
+                    let [info, log] = Layout::vertical([Constraint::Length(1), Constraint::Min(3)]).areas(body);
+                    let state = match p.finished() {
+                        Some(0) => Span::styled(t!("готово"), Style::new().fg(Color::Green)),
+                        Some(_) => Span::styled(t!("завершилось с ошибкой"), Style::new().fg(Color::Red)),
+                        None => Span::styled(t!("выполняется..."), Style::new().fg(Color::Yellow)),
+                    };
+                    f.render_widget(Line::from(vec![state, Span::styled(format!(" · {}", t!("{} с", p.elapsed_secs())), dim())]), info);
+                    let lines: Vec<Line> = p.lines_for(log.height.saturating_sub(2) as usize).into_iter().map(|line| Line::raw(tui_vpn_label(&line))).collect();
+                    f.render_widget(Paragraph::new(lines).block(Block::bordered().border_type(BorderType::Rounded).border_style(dim()).title(format!(" {} ", p.title))), log);
+                }
+            }
+            Screen::Status => {
+                let lines = self.st.as_ref().map(status_lines).unwrap_or_else(|| vec![Line::styled(t!("загружаю состояние..."), dim())]);
+                f.render_widget(Paragraph::new(lines).wrap(Wrap { trim: false }).scroll((self.status_off.min(u16::MAX as usize) as u16, 0)).block(Block::bordered().border_type(BorderType::Rounded).border_style(dim()).title(t!(" Состояние "))), body);
+            }
             Screen::Pager => {
                 let h = body.height.saturating_sub(2) as usize;
                 let end = (self.p_off + h).min(self.p_lines.len());
@@ -713,26 +1013,36 @@ impl<'a> App<'a> {
             Some(s) => status_lines(s),
         };
         let items = menu_items(self.b);
-        let [top, bottom] = Layout::vertical([Constraint::Length(lines.len() as u16 + 2), Constraint::Min(items.len() as u16)]).areas(area);
+        let menu_rows = items.len() + items.iter().filter(|item| menu_group(**item).is_some()).count();
+        let [top, bottom] = if area.width >= 110 && area.height >= 20 {
+            Layout::horizontal([Constraint::Percentage(56), Constraint::Percentage(44)]).areas(area)
+        } else {
+            let top_height = area.height.saturating_sub(menu_rows as u16).clamp(5, 7).min(area.height.saturating_sub(3));
+            Layout::vertical([Constraint::Length(top_height), Constraint::Min(3)]).areas(area)
+        };
         f.render_widget(
-            Paragraph::new(lines).wrap(Wrap { trim: false }).block(Block::bordered().border_type(BorderType::Rounded).border_style(dim()).title(t!(" Состояние "))),
+            Paragraph::new(lines).wrap(Wrap { trim: false }).block(Block::bordered().border_type(BorderType::Rounded).border_style(dim()).title(format!("{} · i", t!(" Состояние ").trim()))),
             top,
         );
         let n_items = items.len();
-        let items: Vec<Line> = items
-            .iter()
-            .enumerate()
-            .map(|(i, t)| {
-                let n = if i + 1 == n_items { "0".to_string() } else if i < 9 { (i + 1).to_string() } else { String::new() };
-                let s = format!(" {n:>2}  {} ", t.label());
-                if i == self.sel {
-                    Line::styled(s, Style::new().add_modifier(Modifier::REVERSED))
-                } else {
-                    Line::raw(s)
-                }
-            })
-            .collect();
-        f.render_widget(Paragraph::new(items), bottom);
+        let mut selected_row = 0;
+        let mut rows = Vec::with_capacity(menu_rows);
+        for (i, item) in items.iter().enumerate() {
+            if let Some(group) = menu_group(*item) {
+                rows.push(Line::styled(format!(" {group}"), Style::new().fg(Color::Cyan).add_modifier(Modifier::BOLD)));
+            }
+            let n = if i + 1 == n_items { "0".to_string() } else if i < 9 { (i + 1).to_string() } else { String::new() };
+            let line = format!(" {n:>2}  {} ", item.label());
+            if i == self.sel {
+                selected_row = rows.len();
+                rows.push(Line::styled(line, Style::new().add_modifier(Modifier::REVERSED)));
+            } else {
+                rows.push(Line::raw(line));
+            }
+        }
+        let visible = bottom.height as usize;
+        let offset = selected_row.saturating_sub(visible.saturating_sub(1)).min(rows.len().saturating_sub(visible));
+        f.render_widget(Paragraph::new(rows).scroll((offset.min(u16::MAX as usize) as u16, 0)), bottom);
     }
 
     fn draw_mirrors(&mut self, f: &mut Frame, area: ratatui::layout::Rect) {
@@ -817,6 +1127,32 @@ fn delay_span(d: Option<&u64>) -> Span<'static> {
         Some(0) => Span::styled("✗", Style::new().fg(Color::Red)),
         Some(&d) => Span::styled(t!("{0} мс", d), Style::new().fg(if d < 300 { Color::Green } else if d < 800 { Color::Yellow } else { Color::Red })),
     }
+}
+
+/// Флаги из двух regional-indicator символов терминалы рисуют с разной шириной.
+/// В TUI показываем код страны обычными символами, чтобы при перерисовке не оставались хвосты.
+fn tui_vpn_label(name: &str) -> String {
+    let label = vpn::label(name);
+    let mut chars = label.chars().peekable();
+    let mut out = String::with_capacity(label.len());
+    while let Some(ch) = chars.next() {
+        let first = ch as u32;
+        if (0x1f1e6..=0x1f1ff).contains(&first) {
+            if let Some(next) = chars.peek().copied() {
+                let second = next as u32;
+                if (0x1f1e6..=0x1f1ff).contains(&second) {
+                    chars.next();
+                    out.push('[');
+                    out.push(char::from_u32(u32::from(b'A') + first - 0x1f1e6).unwrap_or('?'));
+                    out.push(char::from_u32(u32::from(b'A') + second - 0x1f1e6).unwrap_or('?'));
+                    out.push(']');
+                    continue;
+                }
+            }
+        }
+        out.push(ch);
+    }
+    out
 }
 
 impl App<'_> {
@@ -908,8 +1244,7 @@ impl App<'_> {
         self.v.at = None;
     }
 
-    fn vpn_set_number(&mut self, s: &str) {
-        let key = std::mem::take(&mut self.input_key);
+    fn vpn_set_number(&mut self, key: &str, s: &str) {
         let mut c = match self.cfg() {
             Ok(c) => c,
             Err(e) => {
@@ -970,11 +1305,11 @@ impl App<'_> {
             KeyCode::Enter => {
                 let Some(n) = g.all.get(sel) else { return None };
                 if g.kind != "Selector" {
-                    self.msg = t!("«{}» выбирает сервер сама ({})", vpn::label(&g.name), g.kind);
+                    self.msg = t!("«{}» выбирает сервер сама ({})", tui_vpn_label(&g.name), g.kind);
                     return None;
                 }
                 self.msg = match vpn::select(&g.name, n) {
-                    Ok(()) => format!("{} → {}", vpn::label(&g.name), vpn::label(n)),
+                    Ok(()) => format!("{} → {}", tui_vpn_label(&g.name), tui_vpn_label(n)),
                     Err(e) => t!("ошибка: {0}", e),
                 };
                 self.v.at = None;
@@ -984,13 +1319,13 @@ impl App<'_> {
                 let name = g.name.clone();
                 std::thread::spawn(move || {
                     let _ = tx.send(match vpn::group_delay(&name) {
-                        Ok(m) => t!("«{2}»: отвечают {} из {}", m.values().filter(|d| **d > 0).count(), m.len(), name),
-                        Err(e) if e.contains("timeout") => t!("«{0}»: ни один сервер не ответил", name),
+                        Ok(m) => t!("«{2}»: отвечают {} из {}", m.values().filter(|d| **d > 0).count(), m.len(), tui_vpn_label(&name)),
+                        Err(e) if e.contains("timeout") => t!("«{0}»: ни один сервер не ответил", tui_vpn_label(&name)),
                         Err(e) => t!("замер: {0}", e),
                     });
                 });
                 self.v.testing = Some(rx);
-                self.msg = t!("замеряю задержку серверов «{}»...", vpn::label(&g.name));
+                self.msg = t!("замеряю задержку серверов «{}»...", tui_vpn_label(&g.name));
             }
             _ => {}
         }
@@ -1013,7 +1348,7 @@ impl App<'_> {
                     return cmd(&["vpn", "del", &n]);
                 }
                 self.v.confirm_del = Some(sel);
-                self.msg = t!("удалить «{}»? нажми x ещё раз", subs[sel].name);
+                self.msg = t!("удалить «{}»? нажми x ещё раз", tui_vpn_label(&subs[sel].name));
             }
             _ => {}
         }
@@ -1048,8 +1383,14 @@ impl App<'_> {
                     "core" => return cmd(&["vpn", "core", "update"]),
                     "mode" => {
                         c.vpn_mode = (c.vpn_mode + 1) % 3;
-                        let _ = c.save();
-                        let _ = vpn::write_config(&c);
+                        if let Err(e) = c.save() {
+                            self.msg = t!("не сохранено: {0}", e);
+                            return None;
+                        }
+                        if let Err(e) = vpn::write_config(&c) {
+                            self.msg = t!("ошибка: {0}", e);
+                            return None;
+                        }
                         self.msg = match vpn::running().then(|| vpn::set_mode(c.vpn_mode_name())) {
                             Some(Err(e)) => t!("ошибка: {0}", e),
                             _ => t!("маршрутизация сохранена").into(),
@@ -1058,7 +1399,10 @@ impl App<'_> {
                     }
                     "autostart" => {
                         c.vpn_autostart = !c.vpn_autostart;
-                        let _ = c.save();
+                        if let Err(e) = c.save() {
+                            self.msg = t!("не сохранено: {0}", e);
+                            return None;
+                        }
                         self.msg = match self.ui.service_state(vpn::SERVICE).as_str() {
                             "" => t!("сохранено; служба появится после sudo upd install").into(),
                             _ => match vpn::autostart(c.vpn_autostart) {
@@ -1108,10 +1452,10 @@ impl App<'_> {
         }
         let st = self.ui.vpn_state();
         if let Some(a) = st.subs.iter().find(|x| x.active) {
-            l1.push(Span::styled(format!(" · «{}»{}", a.name, a.info.as_ref().map(sub_info).unwrap_or_default()), dim()));
+            l1.push(Span::styled(format!(" · «{}»{}", tui_vpn_label(&a.name), a.info.as_ref().map(sub_info).unwrap_or_default()), dim()));
         }
         let l2 = if s.running {
-            Line::from(vec![Span::styled(t!("маршрут: "), dim()), Span::raw(s.chain().iter().map(|n| vpn::label(n)).collect::<Vec<_>>().join(" → ")), Span::styled(t!(" · ↓ {} ↑ {} · соединений {}", fmt_bytes(s.down), fmt_bytes(s.up), s.conns), dim())])
+            Line::from(vec![Span::styled(t!("маршрут: "), dim()), Span::raw(s.chain().iter().map(|n| tui_vpn_label(n)).collect::<Vec<_>>().join(" → ")), Span::styled(t!(" · ↓ {} ↑ {} · соединений {}", fmt_bytes(s.down), fmt_bytes(s.up), s.conns), dim())])
         } else if st.subs.is_empty() {
             Line::styled(t!("нет подписки — вкладка 2, клавиша n"), Style::new().fg(Color::Yellow))
         } else {
@@ -1145,7 +1489,7 @@ impl App<'_> {
                     .iter()
                     .enumerate()
                     .map(|(i, g)| {
-                        let t = format!(" {} → {}", vpn::label(&g.name), vpn::label(&g.now));
+                        let t = format!(" {} → {}", tui_vpn_label(&g.name), tui_vpn_label(&g.now));
                         if i == self.v.group {
                             Line::styled(t, Style::new().fg(Color::Cyan).add_modifier(Modifier::BOLD))
                         } else {
@@ -1153,7 +1497,9 @@ impl App<'_> {
                         }
                     })
                     .collect();
-                f.render_widget(Paragraph::new(glines).block(blk(t!(" Группы ←→ ").into())), gl);
+                let visible = gl.height.saturating_sub(2) as usize;
+                let offset = self.v.group.saturating_sub(visible.saturating_sub(1)).min(s.groups.len().saturating_sub(visible));
+                f.render_widget(Paragraph::new(glines).scroll((offset.min(u16::MAX as usize) as u16, 0)).block(blk(t!(" Группы ←→ ").into())), gl);
                 let g = &s.groups[self.v.group.min(s.groups.len() - 1)];
                 let rows: Vec<Row> = g
                     .all
@@ -1162,9 +1508,9 @@ impl App<'_> {
                         let sub = s.groups.iter().find(|x| &x.name == n);
                         Row::new(vec![
                             Cell::from(Span::styled(if *n == g.now { "●" } else { "" }, Style::new().fg(Color::Cyan))),
-                            Cell::from(vpn::label(n)),
+                            Cell::from(tui_vpn_label(n)),
                             Cell::from(match sub {
-                                Some(x) => Span::styled(t!("группа → {}", vpn::label(&x.now)), dim()),
+                                Some(x) => Span::styled(t!("группа → {}", tui_vpn_label(&x.now)), dim()),
                                 None => delay_span(s.delay.get(n)),
                             }),
                         ])
@@ -1176,7 +1522,7 @@ impl App<'_> {
                     "Fallback" => t!("первый живой"),
                     _ => t!("балансировка"),
                 };
-                let t = Table::new(rows, [Constraint::Length(2), Constraint::Min(20), Constraint::Length(24)]).row_highlight_style(hl).block(blk(format!(" {} · {kind} ", vpn::label(&g.name))));
+                let t = Table::new(rows, [Constraint::Length(2), Constraint::Min(20), Constraint::Length(24)]).row_highlight_style(hl).block(blk(format!(" {} · {kind} ", tui_vpn_label(&g.name))));
                 f.render_stateful_widget(t, nl, &mut self.v.nodes);
             }
             1 => {
@@ -1189,7 +1535,7 @@ impl App<'_> {
                         let info = info.trim_start_matches(" · ").to_string();
                         Row::new(vec![
                             Cell::from(Span::styled(if x.active { "●" } else { "" }, Style::new().fg(Color::Cyan))),
-                            Cell::from(format!("{}. {}", i + 1, x.name)),
+                            Cell::from(format!("{}. {}", i + 1, tui_vpn_label(&x.name))),
                             Cell::from(Span::styled(x.host.clone(), dim())),
                             Cell::from(x.nodes.to_string()),
                             Cell::from(fmt_ago(x.updated)),
@@ -1298,7 +1644,7 @@ fn status_lines(s: &Status) -> Vec<Line<'static>> {
     }
     out.push(row(t!("Снапшоты"), vec![Span::raw(s.snapshots.clone())]));
     if !s.vpn.is_empty() {
-        let v = if s.vpn.starts_with(t!("работает")) { ok(s.vpn.clone()) } else if s.vpn.starts_with(t!("ОШИБКА (journalctl -u upd-vpn)")) { bad(s.vpn.clone()) } else { Span::raw(s.vpn.clone()) };
+        let v = if s.vpn.starts_with(t!("работает")) { ok(tui_vpn_label(&s.vpn)) } else if s.vpn.starts_with(t!("ОШИБКА (journalctl -u upd-vpn)")) { bad(tui_vpn_label(&s.vpn)) } else { Span::raw(tui_vpn_label(&s.vpn)) };
         out.push(row("VPN", vec![v, Span::styled(t!(" (пункт 5)"), dim())]));
     }
     let pend = if s.pending.is_empty() { Span::raw("0") } else { warn(s.pending.len().to_string()) };

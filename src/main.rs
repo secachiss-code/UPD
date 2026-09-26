@@ -899,13 +899,19 @@ fn cmd_vpn(c: &Config, pos: &[String]) -> i32 {
         "restart" => err_code(vpn::restart()),
         "tun" | "proxy" => {
             c.vpn_tun = sub == "tun";
-            let _ = c.save();
+            if let Err(e) = c.save() {
+                return err_code(Err(e.to_string()));
+            }
             apply(&c)
         }
         "rule" | "global" | "direct" => {
             c.vpn_mode = ["rule", "global", "direct"].iter().position(|m| *m == sub).unwrap_or(0) as u8;
-            let _ = c.save();
-            let _ = vpn::write_config(&c);
+            if let Err(e) = c.save() {
+                return err_code(Err(e.to_string()));
+            }
+            if let Err(e) = vpn::write_config(&c) {
+                return err_code(Err(e));
+            }
             if vpn::running() {
                 return err_code(vpn::set_mode(sub));
             }
