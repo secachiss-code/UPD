@@ -811,18 +811,26 @@ fn kernel_release() -> String {
     fs::read_to_string("/proc/sys/kernel/osrelease").unwrap_or_default().trim().to_string()
 }
 
-fn module_dirs() -> Vec<PathBuf> {
+fn module_dirs_from(candidates: &[PathBuf]) -> Vec<PathBuf> {
     let mut dirs = vec![];
-    for path in ["/usr/lib/modules", "/lib/modules"] {
-        if !Path::new(path).is_dir() {
+    for path in candidates {
+        if !path.is_dir() {
             continue;
         }
-        let canonical = fs::canonicalize(path).unwrap_or_else(|_| PathBuf::from(path));
+        let canonical = fs::canonicalize(path).unwrap_or_else(|_| path.clone());
         if !dirs.contains(&canonical) {
             dirs.push(canonical);
         }
     }
     dirs
+}
+
+fn module_dirs() -> Vec<PathBuf> {
+    module_dirs_from(&[PathBuf::from("/usr/lib/modules"), PathBuf::from("/lib/modules")])
+}
+
+fn running_modules_missing(release: &str, dirs: &[PathBuf]) -> bool {
+    !release.is_empty() && !dirs.iter().any(|dir| dir.join(release).is_dir())
 }
 
 /// Нужна перезагрузка: отметка дистрибутива, пропали модули запущенного ядра, или новое ядро после загрузки.
@@ -832,7 +840,7 @@ pub fn reboot_needed() -> bool {
     }
     let dirs = module_dirs();
     let rel = kernel_release();
-    if !rel.is_empty() && !dirs.iter().any(|dir| dir.join(&rel).is_dir()) {
+    if running_modules_missing(&rel, &dirs) {
         return true;
     }
     let boot = boot_time();
@@ -1158,6 +1166,27 @@ mod contract_tests {
         for d in dirs {
             assert!(seen.insert(d.clone()), "дубликат каталога модулей: {d:?}");
         }
+    }
+
+    #[test]
+    fn sys02_lib_modules_layout_keeps_running_kernel() {
+        let base = std::env::temp_dir().join(format!("upd-modules-{}", std::process::id()));
+        let lib = base.join("lib").join("modules");
+        let usr = base.join("usr").join("lib").join("modules");
+        let release = "6.8.0-upd";
+        fs::create_dir_all(lib.join(release)).unwrap();
+        let only_lib = module_dirs_from(&[usr.clone(), lib.clone()]);
+        assert_eq!(only_lib, vec![fs::canonicalize(&lib).unwrap()]);
+        assert!(!running_modules_missing(release, &only_lib));
+        assert!(running_modules_missing(release, &[usr.clone()]));
+        fs::create_dir_all(&usr).unwrap();
+        std::os::unix::fs::symlink(&lib, usr.join("same")).ok();
+        let linked = usr.join("link");
+        let _ = fs::remove_dir_all(&linked);
+        std::os::unix::fs::symlink(&lib, &linked).unwrap();
+        let folded = module_dirs_from(&[lib.clone(), linked]);
+        assert_eq!(folded.len(), 1);
+        let _ = fs::remove_dir_all(&base);
     }
 
     // --- DATA-04 ---

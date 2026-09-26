@@ -370,11 +370,17 @@ fn cmd_update(b: &dyn Backend, c: &Config) -> i32 {
         if !aur.is_empty() {
             println!("AUR: {} обновлений", aur.len());
         }
-        if st.list.is_empty() && st.flatpak.is_empty() && aur.is_empty() && st.firmware.is_empty() {
-            if st.flatpak_error.is_empty() && st.firmware_error.is_empty() {
-                println!("\x1b[32mСистема уже обновлена.\x1b[0m");
+        if let Some(line) = nothing_to_update_line(
+            st.list.is_empty(),
+            st.flatpak.is_empty(),
+            aur.is_empty(),
+            st.firmware.is_empty(),
+            st.flatpak_error.is_empty() && st.firmware_error.is_empty(),
+        ) {
+            if line.starts_with("Система уже") {
+                println!("\x1b[32m{line}\x1b[0m");
             } else {
-                println!("Системные пакеты обновлены; состояние дополнительных источников проверить не удалось.");
+                println!("{line}");
             }
             return state_check_failure(&st).is_some() as i32;
         }
@@ -669,6 +675,25 @@ const VPN_USAGE: &str = "upd vpn — VPN на ядре mihomo (как в FlClash
   upd vpn rules           править свои правила
 ";
 
+fn core_update_exit(changed: bool, active: bool, restart: Result<(), String>) -> Result<(), String> {
+    if changed && active {
+        restart.map_err(|e| format!("ядро обновлено на диске, но VPN не перезапустился: {e}"))?;
+    }
+    Ok(())
+}
+
+fn nothing_to_update_line(packages_empty: bool, flatpak_empty: bool, aur_empty: bool, firmware_empty: bool, optional_sources_ok: bool) -> Option<&'static str> {
+    if packages_empty && flatpak_empty && aur_empty && firmware_empty {
+        Some(if optional_sources_ok {
+            "Система уже обновлена."
+        } else {
+            "Системные пакеты обновлены; состояние дополнительных источников проверить не удалось."
+        })
+    } else {
+        None
+    }
+}
+
 fn cmd_vpn(c: &Config, pos: &[String]) -> i32 {
     let sub = pos.first().map(String::as_str).unwrap_or("status");
     let arg = pos.get(1).map(String::as_str);
@@ -852,10 +877,9 @@ fn cmd_vpn(c: &Config, pos: &[String]) -> i32 {
         "core" => match arg.unwrap_or("check") {
             a @ ("update" | "reinstall") => {
                 let r = vpn::core_install(&c, &stdlog, a == "reinstall").and_then(|changed| {
-                    if changed && vpn::service_active() {
-                        vpn::restart().map_err(|e| format!("ядро обновлено на диске, но VPN не перезапустился: {e}"))?;
-                    }
-                    Ok(())
+                    let active = vpn::service_active();
+                    let restart = if changed && active { vpn::restart() } else { Ok(()) };
+                    core_update_exit(changed, active, restart)
                 });
                 err_code(r)
             }
@@ -1550,5 +1574,133 @@ mod contract_tests {
         let message = vpn::core_restart_failure("код 1");
         assert!(message.contains("обновлено на диске"));
         assert!(message.contains("код 1"));
+        let err = core_update_exit(true, true, Err("код 1".into())).unwrap_err();
+        assert!(err.contains("не перезапустился"), "{err}");
+        assert!(core_update_exit(true, true, Ok(())).is_ok());
+        assert!(core_update_exit(false, true, Err("код 1".into())).is_ok());
+    }
+
+    fn write_stub(dir: &Path, name: &str, body: &str) {
+        let path = dir.join(name);
+        fs::write(&path, body).unwrap();
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o755)).unwrap();
+    }
+
+    #[test]
+    fn install02_removes_owned_units_and_keeps_foreign() {
+        let base = std::env::temp_dir().join(format!("upd-units-own-{}", std::process::id()));
+        let units = base.join("units");
+        let bin = base.join("bin");
+        fs::create_dir_all(&units).unwrap();
+        fs::create_dir_all(&bin).unwrap();
+        let timer = units.join("upd-auto.timer");
+        fs::write(&timer, "# Managed by upd\n[Timer]\nOnBootSec=1min\n").unwrap();
+        let foreign = units.join("upd-custom.service");
+        fs::write(&foreign, "[Unit]\nDescription=foreign\n[Service]\nExecStart=/bin/true\n").unwrap();
+        let err = owned_unit_files(units.to_str().unwrap(), &["upd-custom.service"]).unwrap_err();
+        assert!(err.contains("маркера upd"), "{err}");
+        assert!(foreign.exists());
+        write_stub(&bin, "systemctl", "#!/bin/sh\nexit 0\n");
+        let owned = owned_unit_files(units.to_str().unwrap(), &["upd-auto.timer"]).unwrap();
+        crate::common::contract_fixtures::with_prepend_path(&bin, || disable_and_remove_units(units.to_str().unwrap(), &owned, false).unwrap());
+        assert!(!timer.exists());
+        assert!(foreign.exists());
+        let _ = fs::remove_dir_all(&base);
+    }
+
+    fn vpn_fixture(name: &str) -> (std::path::PathBuf, std::path::PathBuf, std::path::PathBuf, std::path::PathBuf, std::path::PathBuf) {
+        let base = std::env::temp_dir().join(format!("upd-{name}-{}", std::process::id()));
+        let bin = base.join("bin");
+        let etc = base.join("etc");
+        let home = base.join("home");
+        let state = base.join("state");
+        fs::create_dir_all(&bin).unwrap();
+        fs::create_dir_all(&etc).unwrap();
+        fs::create_dir_all(home.join("profiles")).unwrap();
+        fs::create_dir_all(&state).unwrap();
+        (base, bin, etc, home, state)
+    }
+
+    #[test]
+    fn vpn01_last_subscription_stops_service() {
+        let _iso = crate::common::contract_fixtures::isolation_lock();
+        let (base, bin, etc, home, state) = vpn_fixture("vpn01-stop");
+        let log = base.join("cmd.log");
+        let log_s = log.to_str().unwrap().replace('\'', "");
+        write_stub(&bin, "systemctl", &format!("#!/bin/sh\necho \"$@\" >> '{log_s}'\nif [ \"$1\" = is-active ]; then echo active; fi\nexit 0\n"));
+        write_stub(&bin, "id", "#!/bin/sh\necho 1000\n");
+        write_stub(&bin, "gsettings", "#!/bin/sh\nexit 0\n");
+        write_stub(&bin, "runuser", &format!("#!/bin/sh\necho \"$@\" >> '{log_s}'\nexit 0\n"));
+        let subs = serde_json::json!({
+            "active": "a1",
+            "list": [{"id":"a1","name":"one","url":"https://example.com/sub","interval_h":24,"updated":0,"nodes":1,"kind":"yaml"}]
+        });
+        fs::write(etc.join("subs.json"), subs.to_string()).unwrap();
+        fs::write(home.join("profiles").join("a1.yaml"), "proxies: []\n").unwrap();
+        unsafe {
+            std::env::set_var("UPD_VPN_ETC", etc.to_str().unwrap());
+            std::env::set_var("UPD_VPN_HOME", home.to_str().unwrap());
+            std::env::set_var("UPD_STATE_DIR", state.to_str().unwrap());
+            std::env::set_var("SUDO_USER", "updtest");
+        }
+        let code = {
+            let _path = crate::common::contract_fixtures::prepend_path(&bin);
+            cmd_vpn(&Config::defaults(vec![]), &["del".into(), "1".into()])
+        };
+        let recorded = fs::read_to_string(&log).unwrap_or_default();
+        unsafe {
+            std::env::remove_var("UPD_VPN_ETC");
+            std::env::remove_var("UPD_VPN_HOME");
+            std::env::remove_var("UPD_STATE_DIR");
+            std::env::remove_var("SUDO_USER");
+        }
+        assert_eq!(code, 0, "{recorded}");
+        assert!(recorded.contains("stop upd-vpn.service"), "{recorded}");
+        assert!(recorded.contains("disable upd-vpn.service"), "{recorded}");
+        assert!(recorded.contains("mode") && recorded.contains("none"), "{recorded}");
+        let left = fs::read_to_string(etc.join("subs.json")).unwrap();
+        assert!(left.contains("\"list\":[]") || left.contains("\"list\": []"), "{left}");
+        let _ = fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn vpn01_stop_failure_is_an_error_after_delete() {
+        let _iso = crate::common::contract_fixtures::isolation_lock();
+        let (base, bin, etc, home, state) = vpn_fixture("vpn01-fail");
+        write_stub(&bin, "systemctl", "#!/bin/sh\nif [ \"$1\" = is-active ]; then echo active; exit 0; fi\nif [ \"$1\" = stop ]; then echo fail 1>&2; exit 1; fi\nexit 0\n");
+        write_stub(&bin, "id", "#!/bin/sh\nexit 0\n");
+        write_stub(&bin, "gsettings", "#!/bin/sh\nexit 0\n");
+        write_stub(&bin, "runuser", "#!/bin/sh\nexit 0\n");
+        fs::write(etc.join("subs.json"), r#"{"active":"a1","list":[{"id":"a1","name":"one","url":"https://example.com/sub","interval_h":24,"updated":0,"nodes":0,"kind":"yaml"}]}"#).unwrap();
+        unsafe {
+            std::env::set_var("UPD_VPN_ETC", etc.to_str().unwrap());
+            std::env::set_var("UPD_VPN_HOME", home.to_str().unwrap());
+            std::env::set_var("UPD_STATE_DIR", state.to_str().unwrap());
+            std::env::remove_var("SUDO_USER");
+        }
+        let code = {
+            let _path = crate::common::contract_fixtures::prepend_path(&bin);
+            cmd_vpn(&Config::defaults(vec![]), &["del".into(), "1".into()])
+        };
+        unsafe {
+            std::env::remove_var("UPD_VPN_ETC");
+            std::env::remove_var("UPD_VPN_HOME");
+            std::env::remove_var("UPD_STATE_DIR");
+        }
+        assert_eq!(code, 1);
+        let left = fs::read_to_string(etc.join("subs.json")).unwrap();
+        assert!(left.contains("\"list\":[]") || left.contains("\"list\": []"), "{left}");
+        let _ = fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn upd04c_full_update_line_needs_successful_empty_aur() {
+        assert_eq!(nothing_to_update_line(true, true, true, true, true), Some("Система уже обновлена."));
+        assert!(nothing_to_update_line(true, true, false, true, true).is_none());
+        assert_eq!(
+            nothing_to_update_line(true, true, true, true, false),
+            Some("Системные пакеты обновлены; состояние дополнительных источников проверить не удалось.")
+        );
     }
 }

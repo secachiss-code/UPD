@@ -249,6 +249,16 @@ pub fn candidates(b: &dyn Backend, c: &Config, extra: Option<&[String]>) -> Vec<
     r
 }
 
+fn mirror_needs_retry(src: &str, ok: bool, err: &str, had_prior_ok: bool) -> bool {
+    !ok && (err == "обрыв" || (src != "поиск" && src != "список") || had_prior_ok)
+}
+
+/// Второй проход запускается по списку повторов, в том числе когда первый проход не дал ни одного ответа.
+fn schedule_mirror_retry(any_ok: bool, retry_count: usize) -> bool {
+    let _ = any_ok;
+    retry_count > 0
+}
+
 /// Замер кандидатов и закрепление лучших. Возвращает число рабочих или ошибку применения.
 pub fn check_mirrors(b: &dyn Backend, c: &Config, log: Log, extra: Option<&[String]>, fallback: Option<&[String]>) -> Result<usize, String> {
     let net = fingerprint();
@@ -289,12 +299,10 @@ pub fn check_mirrors(b: &dyn Backend, c: &Config, log: Log, extra: Option<&[Stri
     let retry: Vec<Job> = res
         .iter()
         .enumerate()
-        .filter(|(_, p)| {
-            !p.ok && (p.err == "обрыв" || (p.src != "поиск" && p.src != "список") || mem0.stats.get(&p.url).map(|s| s.ok > 0).unwrap_or(false))
-        })
+        .filter(|(_, p)| mirror_needs_retry(&p.src, p.ok, &p.err, mem0.stats.get(&p.url).map(|s| s.ok > 0).unwrap_or(false)))
         .map(|(i, _)| mk(i, &cands[i]))
         .collect();
-    if !retry.is_empty() {
+    if schedule_mirror_retry(res.iter().any(|p| p.ok), retry.len()) {
         log(&format!("  повторный замер упавших: {}", retry.len()));
         for d in measure(retry, 1, c.timeout, &mut |d| {
             if d.ok {
@@ -624,8 +632,7 @@ pub fn gather(b: &dyn Backend, c: &Config, log: Log, quiet: bool, invoking_user:
     if !st.list.is_empty() {
         st.download_size = b.download_size(&pkg_names(&st.list));
         let (dir, space_dir) = cache_space_path(b);
-        let reserve = c.min_free_gb.saturating_mul(1 << 30);
-        let need = st.download_size.unwrap_or(0).saturating_add(reserve);
+        let need = required_free(st.download_size, c.min_free_gb);
         let location = if dir == space_dir {
             format!("кэш {dir}")
         } else {
@@ -633,10 +640,7 @@ pub fn gather(b: &dyn Backend, c: &Config, log: Log, quiet: bool, invoking_user:
         };
         match free_space(&space_dir) {
             Ok(free) if free == 0 || free < need => {
-                st.error = match st.download_size {
-                    Some(_) => format!("мало места ({location}): нужно {} (с запасом {} ГБ), свободно {}", fmt_bytes(need), c.min_free_gb, fmt_bytes(free)),
-                    None => format!("мало места ({location}) для резерва {} ГБ при неизвестном объёме загрузки, свободно {}", c.min_free_gb, fmt_bytes(free)),
-                };
+                st.error = low_space_message(st.download_size, c.min_free_gb, &location, free);
             }
             Ok(_) => {}
             Err(e) => {
@@ -672,6 +676,18 @@ pub fn gather(b: &dyn Backend, c: &Config, log: Log, quiet: bool, invoking_user:
     }
     let _ = save_json("updates.json", &st);
     st
+}
+
+fn required_free(download_size: Option<u64>, min_free_gb: u64) -> u64 {
+    download_size.unwrap_or(0).saturating_add(min_free_gb.saturating_mul(1 << 30))
+}
+
+fn low_space_message(download_size: Option<u64>, min_free_gb: u64, location: &str, free: u64) -> String {
+    let need = required_free(download_size, min_free_gb);
+    match download_size {
+        Some(_) => format!("мало места ({location}): нужно {} (с запасом {} ГБ), свободно {}", fmt_bytes(need), min_free_gb, fmt_bytes(free)),
+        None => format!("мало места ({location}) для резерва {} ГБ при неизвестном объёме загрузки, свободно {}", min_free_gb, fmt_bytes(free)),
+    }
 }
 
 /// Предзагрузка с повторами; на второй неудаче — переподбор зеркал.
@@ -763,37 +779,16 @@ mod contract_tests {
     }
 
     // --- NET-02 ---
-    fn mirror_retry_candidate(p: &Probe, had_ok_in_memory: bool) -> bool {
-        !p.ok && (p.err == "обрыв" || (p.src != "поиск" && p.src != "список") || had_ok_in_memory)
-    }
-
     #[test]
     fn net02_retries_pinned_after_all_fail() {
-        let pinned = Probe { url: "https://mirror/pinned".into(), src: "закреплено".into(), ok: false, err: "таймаут".into(), ..Default::default() };
-        assert!(mirror_retry_candidate(&pinned, false));
+        let pinned = Probe { url: "https://mirror/pinned".into(), src: "закреп".into(), ok: false, err: "таймаут".into(), ..Default::default() };
+        assert!(mirror_needs_retry(&pinned.src, pinned.ok, &pinned.err, false));
         let search = Probe { url: "https://mirror/new".into(), src: "поиск".into(), ok: false, err: "таймаут".into(), ..Default::default() };
-        assert!(!mirror_retry_candidate(&search, false));
+        assert!(!mirror_needs_retry(&search.src, search.ok, &search.err, false));
         let memory = Probe { url: "https://mirror/old".into(), src: "список".into(), ok: false, err: "таймаут".into(), ..Default::default() };
-        assert!(mirror_retry_candidate(&memory, true));
-    }
-
-    // --- SPACE-01A ---
-    fn low_space_message(download_size: Option<u64>, min_free_gb: u64, location: &str, free: u64) -> String {
-        let reserve = min_free_gb.saturating_mul(1 << 30);
-        let need = download_size.unwrap_or(0).saturating_add(reserve);
-        match download_size {
-            Some(_) => format!(
-                "мало места ({location}): нужно {} (с запасом {} ГБ), свободно {}",
-                fmt_bytes(need),
-                min_free_gb,
-                fmt_bytes(free)
-            ),
-            None => format!(
-                "мало места ({location}) для резерва {} ГБ при неизвестном объёме загрузки, свободно {}",
-                min_free_gb,
-                fmt_bytes(free)
-            ),
-        }
+        assert!(mirror_needs_retry(&memory.src, memory.ok, &memory.err, true));
+        assert!(schedule_mirror_retry(false, 1), "полный отказ первого прохода всё равно запускает повтор");
+        assert!(!schedule_mirror_retry(false, 0), "пустой список повторов не делает лишних запросов");
     }
 
     struct CacheDirsBackend {
@@ -1065,10 +1060,109 @@ mod contract_tests {
 
     #[test]
     fn space01a_unknown_size_message_is_distinct() {
+        assert!(required_free(None, 5) >= 5 << 30);
+        assert!(required_free(Some(0), 5) >= 5 << 30);
         let unknown = low_space_message(None, 5, "кэш /var", 1 << 30);
         let zero = low_space_message(Some(0), 5, "кэш /var", 1 << 30);
         assert!(unknown.contains("неизвестном объёме"));
-        assert!(!zero.contains("неизвестном объёме"));
+        assert!(zero.contains("нужно"));
         assert_ne!(unknown, zero);
+    }
+
+    struct PrefetchSpy {
+        called: std::sync::atomic::AtomicBool,
+    }
+
+    impl Backend for PrefetchSpy {
+        fn name(&self) -> String {
+            "prefetch".into()
+        }
+        fn mirrors_managed(&self) -> bool {
+            false
+        }
+        fn mirror_note(&self) -> String {
+            String::new()
+        }
+        fn probe_url(&self, m: &str) -> String {
+            m.into()
+        }
+        fn valid_mirror(&self, _: &str) -> Result<(), String> {
+            Ok(())
+        }
+        fn default_mirrors(&self) -> Vec<String> {
+            vec![]
+        }
+        fn pinned(&self) -> Vec<String> {
+            vec![]
+        }
+        fn list_mirrors(&self) -> Vec<String> {
+            vec![]
+        }
+        fn discover(&self, _: usize, _: Log) -> Result<(Vec<String>, Option<Vec<String>>), String> {
+            Ok((vec![], None))
+        }
+        fn apply_mirrors(&self, _: &[String], _: Option<&[String]>) -> Result<bool, String> {
+            Ok(false)
+        }
+        fn remove_mirrors(&self) -> Result<(), String> {
+            Ok(())
+        }
+        fn refresh(&self, _: bool) -> Result<(), String> {
+            Ok(())
+        }
+        fn updates(&self) -> Result<Vec<String>, String> {
+            Ok(vec![])
+        }
+        fn prefetch(&self, _: &[String], _: bool) -> Result<(), String> {
+            self.called.store(true, std::sync::atomic::Ordering::SeqCst);
+            Ok(())
+        }
+        fn upgrade(&self, _: bool) -> Result<(), String> {
+            Ok(())
+        }
+        fn clean(&self) -> Result<(), String> {
+            Ok(())
+        }
+        fn orphans(&self) -> Vec<String> {
+            vec![]
+        }
+        fn pending_configs(&self) -> Vec<String> {
+            vec![]
+        }
+        fn merge(&self) -> Result<(), String> {
+            Ok(())
+        }
+        fn cache_dirs(&self) -> Vec<&'static str> {
+            vec![]
+        }
+        fn db_path(&self) -> &'static str {
+            ""
+        }
+        fn history(&self, _: usize) -> Vec<String> {
+            vec![]
+        }
+    }
+
+    #[test]
+    fn space01a_unknown_size_skips_prefetch() {
+        let base = std::env::temp_dir().join(format!("upd-space-{}", std::process::id()));
+        fs::create_dir_all(&base).unwrap();
+        let _iso = crate::common::contract_fixtures::isolation_lock();
+        unsafe {
+            std::env::set_var("UPD_STATE_DIR", base.to_str().unwrap());
+        }
+        let spy = PrefetchSpy { called: std::sync::atomic::AtomicBool::new(false) };
+        let mut st = UpdState { list: vec!["nano 1 -> 2".into()], download_size: None, ..Default::default() };
+        download(&spy, &Config::defaults(vec![]), &mut st, &|_| {}, true, false);
+        assert!(!spy.called.load(std::sync::atomic::Ordering::SeqCst));
+        assert!(st.skipped.contains("неизвестен"), "{}", st.skipped);
+        st.download_size = Some(0);
+        st.skipped.clear();
+        download(&spy, &Config::defaults(vec![]), &mut st, &|_| {}, true, false);
+        assert!(spy.called.load(std::sync::atomic::Ordering::SeqCst));
+        unsafe {
+            std::env::remove_var("UPD_STATE_DIR");
+        }
+        let _ = fs::remove_dir_all(&base);
     }
 }

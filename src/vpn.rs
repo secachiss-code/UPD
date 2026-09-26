@@ -313,6 +313,40 @@ fn proc_ipv6_addr(raw: &str) -> Option<std::net::Ipv6Addr> {
     Some(std::net::Ipv6Addr::from(octets))
 }
 
+fn flclash_listen_ports(tcp: &str, tcp6: &str, inodes: &std::collections::HashSet<String>) -> Vec<(u16, bool)> {
+    let mut ports = vec![];
+    for line in tcp.lines().skip(1) {
+        let f: Vec<&str> = line.split_whitespace().collect();
+        // локальный адрес 127.0.0.1 или 0.0.0.0, состояние 0A — LISTEN
+        let Some((addr, port)) = f.get(1).and_then(|a| a.split_once(':')) else { continue };
+        if f.get(3) != Some(&"0A") || !["0100007F", "00000000"].contains(&addr) || !f.get(9).map(|i| inodes.contains(*i)).unwrap_or(false) {
+            continue;
+        }
+        if let Ok(p) = u16::from_str_radix(port, 16) {
+            if p != 9090 && !ports.iter().any(|(seen, _)| *seen == p) {
+                ports.push((p, false));
+            }
+        }
+    }
+    for line in tcp6.lines().skip(1) {
+        let f: Vec<&str> = line.split_whitespace().collect();
+        let Some((addr, port)) = f.get(1).and_then(|a| a.split_once(':')) else { continue };
+        let Some(addr) = proc_ipv6_addr(addr) else { continue };
+        if f.get(3) != Some(&"0A")
+            || !(addr.is_loopback() || addr.is_unspecified())
+            || !f.get(9).map(|i| inodes.contains(*i)).unwrap_or(false)
+        {
+            continue;
+        }
+        if let Ok(p) = u16::from_str_radix(port, 16) {
+            if p != 9090 && !ports.iter().any(|(seen, _)| *seen == p) {
+                ports.push((p, true));
+            }
+        }
+    }
+    ports
+}
+
 /// Локальные mixed-порты FlClashCore; bool указывает, что listener доступен по IPv6.
 fn flclash_ports() -> Vec<(u16, bool)> {
     let mut inodes = std::collections::HashSet::new();
@@ -330,37 +364,9 @@ fn flclash_ports() -> Vec<(u16, bool)> {
     if inodes.is_empty() {
         return vec![];
     }
-    let mut ports = vec![];
-    for line in fs::read_to_string("/proc/net/tcp").unwrap_or_default().lines().skip(1) {
-        let f: Vec<&str> = line.split_whitespace().collect();
-        // локальный адрес 127.0.0.1 или 0.0.0.0, состояние 0A — LISTEN
-        let Some((addr, port)) = f.get(1).and_then(|a| a.split_once(':')) else { continue };
-        if f.get(3) != Some(&"0A") || !["0100007F", "00000000"].contains(&addr) || !f.get(9).map(|i| inodes.contains(*i)).unwrap_or(false) {
-            continue;
-        }
-        if let Ok(p) = u16::from_str_radix(port, 16) {
-            if p != 9090 && !ports.iter().any(|(seen, _)| *seen == p) {
-                ports.push((p, false));
-            }
-        }
-    }
-    for line in fs::read_to_string("/proc/net/tcp6").unwrap_or_default().lines().skip(1) {
-        let f: Vec<&str> = line.split_whitespace().collect();
-        let Some((addr, port)) = f.get(1).and_then(|a| a.split_once(':')) else { continue };
-        let Some(addr) = proc_ipv6_addr(addr) else { continue };
-        if f.get(3) != Some(&"0A")
-            || !(addr.is_loopback() || addr.is_unspecified())
-            || !f.get(9).map(|i| inodes.contains(*i)).unwrap_or(false)
-        {
-            continue;
-        }
-        if let Ok(p) = u16::from_str_radix(port, 16) {
-            if p != 9090 && !ports.iter().any(|(seen, _)| *seen == p) {
-                ports.push((p, true));
-            }
-        }
-    }
-    ports
+    let tcp = fs::read_to_string("/proc/net/tcp").unwrap_or_default();
+    let tcp6 = fs::read_to_string("/proc/net/tcp6").unwrap_or_default();
+    flclash_listen_ports(&tcp, &tcp6, &inodes)
 }
 
 fn read_limited(r: ureq::Response, max: u64) -> Result<Vec<u8>, String> {
@@ -1203,6 +1209,28 @@ pub(crate) fn core_restart_failure(error: &str) -> String {
     format!("Ядро VPN обновлено на диске, но перезапуск не удался: {error}")
 }
 
+fn note_core_update(state: &mut VpnState, changed: bool, active: bool, restart: Result<(), String>, flclash_tag: &str) -> Option<String> {
+    match restart {
+        Err(error) => {
+            state.event = core_restart_failure(&error);
+            state.event_time = now();
+            Some(state.event.clone())
+        }
+        Ok(()) => {
+            state.flclash_applied = flclash_tag.to_string();
+            if changed {
+                state.event = if active {
+                    format!("Ядро VPN обновлено до {} (FlClash {})", state.core_version, flclash_tag)
+                } else {
+                    format!("Ядро VPN обновлено на диске до {} (FlClash {}); служба VPN не запущена", state.core_version, flclash_tag)
+                };
+                state.event_time = now();
+            }
+            None
+        }
+    }
+}
+
 /// Последние строки журнала службы — чтобы причину сбоя было видно сразу, без journalctl.
 pub fn journal_tail() -> String {
     let (s, _) = out("journalctl", &["-u", SERVICE, "-n", "8", "--no-pager", "-o", "cat"]);
@@ -1642,6 +1670,12 @@ fn validate_mmdb(data: &[u8]) -> Result<(), String> {
     Ok(())
 }
 
+fn save_geo_result(path: &Path, remote: &str, fetched: Result<Vec<u8>, String>) -> Result<(), String> {
+    let data = fetched?;
+    validate_geo_file(remote, &data)?;
+    atomic_write(path, &data, 0o644).map_err(|e| e.to_string())
+}
+
 fn validate_geo_file(remote: &str, data: &[u8]) -> Result<(), String> {
     if data.len() <= 1024 {
         return Err("файл слишком мал".into());
@@ -1673,7 +1707,7 @@ pub fn geo_update(c: &Config, log: Log, only_missing: bool) -> Result<(), String
             .and_then(|b| validate_geo_file(remote, &b).map(|()| b))
         {
             Ok(b) => {
-                if let Err(e) = atomic_write(Path::new(&path), &b, 0o644) {
+                if let Err(e) = save_geo_result(Path::new(&path), remote, Ok(b)) {
                     errs.push(format!("{remote}: {e}"));
                 }
             }
@@ -1764,20 +1798,8 @@ pub fn maintain(c: &Config, log: Log) {
                 let active = service_active();
                 let restart_result = if changed && active { restart() } else { Ok(()) };
                 let mut s2 = load_state();
-                if let Err(e) = restart_result {
-                    s2.event = core_restart_failure(&e);
-                    s2.event_time = now();
-                    log(&s2.event);
-                } else {
-                    s2.flclash_applied = st.flclash_tag.clone();
-                    if changed {
-                        s2.event = if active {
-                            format!("Ядро VPN обновлено до {} (FlClash {})", s2.core_version, st.flclash_tag)
-                        } else {
-                            format!("Ядро VPN обновлено на диске до {} (FlClash {}); служба VPN не запущена", s2.core_version, st.flclash_tag)
-                        };
-                        s2.event_time = now();
-                    }
+                if let Some(event) = note_core_update(&mut s2, changed, active, restart_result, &st.flclash_tag) {
+                    log(&event);
                 }
                 let _ = save_json("vpn.json", &s2);
             }
@@ -1994,6 +2016,36 @@ mod contract_tests {
         assert!(secret().is_err());
     }
 
+    #[test]
+    fn sec06_generates_secret_and_rereads_it() {
+        let _g = EnvGuard::vpn_dirs();
+        let first = secret().unwrap();
+        assert_eq!(first.len(), 32);
+        assert!(first.bytes().all(|b| b.is_ascii_hexdigit()));
+        assert_ne!(first, "0".repeat(32));
+        assert_eq!(secret().unwrap(), first);
+    }
+
+    #[test]
+    fn sec06_write_failure_does_not_create_secret() {
+        let _iso = crate::common::contract_fixtures::isolation_lock();
+        let base = std::env::temp_dir().join(format!("upd-secret-block-{}", std::process::id()));
+        fs::create_dir_all(&base).unwrap();
+        let blocker = base.join("blocker");
+        fs::write(&blocker, b"x").unwrap();
+        let etc_path = blocker.join("vpn");
+        unsafe {
+            std::env::set_var("UPD_VPN_ETC", etc_path.to_str().unwrap());
+        }
+        let err = secret().unwrap_err();
+        assert!(err.contains("blocker") || err.contains("vpn"), "{err}");
+        assert!(!etc_path.join("secret").exists());
+        unsafe {
+            std::env::remove_var("UPD_VPN_ETC");
+        }
+        let _ = fs::remove_dir_all(&base);
+    }
+
     // --- DATA-02 ---
     #[test]
     fn data02_missing_subs_is_ok_corrupt_is_error() {
@@ -2009,6 +2061,97 @@ mod contract_tests {
         // ::1 в формате /proc/net/tcp6 (native endian по словам)
         let raw = "00000000000000000000000001000000";
         assert!(proc_ipv6_addr(raw).unwrap().is_loopback());
+    }
+
+    #[test]
+    fn vpn02_listen_ports_keep_local_and_drop_foreign() {
+        let header = "sl local rem st tx rx tr retr uid timeout inode";
+        let tcp = format!(
+            "{header}\n 0: 0100007F:1F90 00000000:0000 0A 00000000:00000000 00:00000000 00000000 0 0 42 1 0 100 0 0 10 0\n 1: 00000000:2382 00000000:0000 0A 00000000:00000000 00:00000000 00000000 0 0 42 1 0 100 0 0 10 0\n 2: 0100007F:1F92 08080808:0050 01 00000000:00000000 00:00000000 00000000 0 0 42 1 0 100 0 0 10 0\n 3: 08080808:1F93 00000000:0000 0A 00000000:00000000 00:00000000 00000000 0 0 42 1 0 100 0 0 10 0\n"
+        );
+        let tcp6 = format!(
+            "{header}\n 0: 00000000000000000000000001000000:1F91 00000000000000000000000000000000:0000 0A 00000000:00000000 00:00000000 00000000 0 0 43 1 0 100 0 0 10 0\n 1: 00000000000000000000000001000000:1F94 00000000000000000000000000000000:0000 0A 00000000:00000000 00:00000000 00000000 0 0 99 1 0 100 0 0 10 0\n"
+        );
+        let inodes = ["42".to_string(), "43".to_string()].into_iter().collect();
+        let ports = flclash_listen_ports(&tcp, &tcp6, &inodes);
+        assert!(ports.contains(&(0x1F90, false)), "{ports:?}");
+        assert!(ports.contains(&(0x1F91, true)), "{ports:?}");
+        assert!(!ports.iter().any(|(port, _)| *port == 0x2382 || *port == 0x1F92 || *port == 0x1F93 || *port == 0x1F94), "{ports:?}");
+    }
+
+    #[test]
+    fn vpn03_restart_failure_is_recorded_and_success_applies_tag() {
+        let mut failed = VpnState { core_version: "v1.2.3".into(), ..Default::default() };
+        let event = note_core_update(&mut failed, true, true, Err("код 1".into()), "FlClash 9").unwrap();
+        assert!(event.contains("перезапуск не удался"));
+        assert!(event.contains("код 1"));
+        assert!(failed.flclash_applied.is_empty());
+        let mut ok = VpnState { core_version: "v1.2.3".into(), ..Default::default() };
+        assert!(note_core_update(&mut ok, true, true, Ok(()), "FlClash 9").is_none());
+        assert_eq!(ok.flclash_applied, "FlClash 9");
+        assert!(ok.event.contains("обновлено до v1.2.3"));
+        let mut inactive = VpnState { core_version: "v1.2.3".into(), ..Default::default() };
+        assert!(note_core_update(&mut inactive, true, false, Ok(()), "FlClash 9").is_none());
+        assert!(inactive.event.contains("не запущена"));
+    }
+
+    fn proto_varint(mut n: usize) -> Vec<u8> {
+        let mut out = vec![];
+        loop {
+            let mut byte = (n & 0x7f) as u8;
+            n >>= 7;
+            if n != 0 {
+                byte |= 0x80;
+            }
+            out.push(byte);
+            if n == 0 {
+                break;
+            }
+        }
+        out
+    }
+
+    fn proto_bytes(field: u32, data: &[u8]) -> Vec<u8> {
+        let mut out = proto_varint(((field as usize) << 3) | 2);
+        out.extend(proto_varint(data.len()));
+        out.extend_from_slice(data);
+        out
+    }
+
+    fn sample_geoip() -> Vec<u8> {
+        let mut cidr = proto_bytes(1, &[1, 2, 3, 0]);
+        cidr.extend(proto_varint((2 << 3) | 0));
+        cidr.push(24);
+        let mut entry = proto_bytes(1, b"US");
+        entry.extend(proto_bytes(2, &cidr));
+        entry.extend(proto_bytes(15, &vec![b'x'; 1200]));
+        proto_bytes(1, &entry)
+    }
+
+    #[test]
+    fn geo01_truncated_download_keeps_previous_file() {
+        let base = std::env::temp_dir().join(format!("upd-geo-{}", std::process::id()));
+        fs::create_dir_all(&base).unwrap();
+        let path = base.join("GeoIP.dat");
+        fs::write(&path, b"KEEP-PREVIOUS").unwrap();
+        let valid = sample_geoip();
+        assert!(valid.len() > 1024);
+        assert!(validate_geo_file("GeoIP.dat", &valid).is_ok());
+        let truncated = valid[..100].to_vec();
+        assert!(save_geo_result(&path, "GeoIP.dat", Ok(truncated)).is_err());
+        assert_eq!(fs::read(&path).unwrap(), b"KEEP-PREVIOUS");
+        assert!(save_geo_result(&path, "GeoIP.dat", Err("ответ превышает лимит".into())).is_err());
+        assert_eq!(fs::read(&path).unwrap(), b"KEEP-PREVIOUS");
+        save_geo_result(&path, "GeoIP.dat", Ok(valid.clone())).unwrap();
+        assert_eq!(fs::read(&path).unwrap(), valid);
+        let huge = format!("HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\nx", (100 << 20) + 1);
+        let response: ureq::Response = huge.parse().unwrap();
+        let err = read_limited(response, 100 << 20).unwrap_err();
+        assert!(err.contains("лимит"), "{err}");
+        let short = "HTTP/1.1 200 OK\r\nContent-Length: 100\r\n\r\nshort".parse::<ureq::Response>().unwrap();
+        let err = read_limited(short, 100 << 20).unwrap_err();
+        assert!(err.contains("closed before all bytes"), "{err}");
+        let _ = fs::remove_dir_all(&base);
     }
 
     // --- DATA-01 ---

@@ -552,6 +552,16 @@ mod contract_tests {
 
     // --- UPD-04C ---
     #[test]
+    fn upd04c_aur_empty_stdout_is_checked() {
+        let dir = bin_fixture("aur-empty");
+        write_executable(&dir.join("paru"), "#!/bin/sh\nexit 0\n");
+        write_executable(&dir.join("runuser"), "#!/bin/sh\nshift; shift; shift; exec \"$@\"\n");
+        let _g = DirGuard::new(dir.clone());
+        let updates = crate::common::contract_fixtures::with_prepend_path(&dir, || aur_updates("testuser")).unwrap();
+        assert!(updates.is_empty());
+    }
+
+    #[test]
     fn upd04c_aur_failure_is_not_empty_list() {
         let dir = bin_fixture("aur-err");
         write_executable(&dir.join("paru"), "#!/bin/sh\nexit 4\n");
@@ -562,6 +572,24 @@ mod contract_tests {
     }
 
     // --- UPD-06 ---
+    #[test]
+    fn upd06_flatpak_checks_user_and_system_scopes() {
+        let dir = bin_fixture("flatpak-both");
+        write_executable(
+            &dir.join("flatpak"),
+            "#!/bin/sh\ncase \"$*\" in *--user*) echo 'org.example.User 2.0';; *) echo 'org.example.Sys 1.0';; esac\nexit 0\n",
+        );
+        write_executable(&dir.join("getent"), "#!/bin/sh\necho 'updtest:x:1000:1000:upd:/tmp:/bin/sh'\n");
+        write_executable(&dir.join("runuser"), "#!/bin/sh\nflatpak \"$@\"\n");
+        let _g = DirGuard::new(dir.clone());
+        let result = crate::common::contract_fixtures::with_prepend_path(&dir, || flatpak_updates(Some("updtest")));
+        assert!(result.error.is_empty(), "{}", result.error);
+        assert!(result.updates.iter().any(|u| u == "[system] org.example.Sys 1.0"), "{:?}", result.updates);
+        assert!(result.updates.iter().any(|u| u == "[user] org.example.User 2.0"), "{:?}", result.updates);
+        let err = flatpak_upgrade(None, &["[user] org.example.User 2.0".into()]).unwrap_err();
+        assert!(err.contains("per-user"), "{err}");
+    }
+
     #[test]
     fn upd06_flatpak_checks_system_scope_without_user() {
         let dir = bin_fixture("flatpak-scope");
