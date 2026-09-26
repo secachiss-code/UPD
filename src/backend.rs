@@ -58,6 +58,10 @@ pub trait Backend {
     fn upgrade_handles_aur(&self) -> bool {
         false
     }
+    /// Спрашивает ли установщик подтверждение сам; если нет — спрашивает upd
+    fn upgrade_asks(&self) -> bool {
+        true
+    }
     fn clean(&self) -> Result<(), String>;
     fn orphans(&self) -> Vec<String>;
     fn pending_configs(&self) -> Vec<String>;
@@ -143,15 +147,26 @@ pub struct Pacman {
     mirrorlist: String,
     distro: String,
     manjaro: bool,
+    /// Почему upd не трогает mirrorlist; None — зеркала Arch, управляем
+    unmanaged: Option<String>,
 }
 
 impl Pacman {
     fn new(osr: &BTreeMap<String, String>) -> Self {
-        Pacman {
-            mirrorlist: env_or("UPD_MIRRORLIST", "/etc/pacman.d/mirrorlist"),
-            distro: osr["PRETTY_NAME"].clone(),
-            manjaro: osr.get("ID").map(|s| s == "manjaro").unwrap_or(false),
-        }
+        let mirrorlist = env_or("UPD_MIRRORLIST", "/etc/pacman.d/mirrorlist");
+        let field = |k: &str| osr.get(k).map(String::as_str).unwrap_or("");
+        // Manjaro и его редакции/форки (BigLinux и т.п.): свои зеркала с $branch и pacman-mirrors
+        let manjaro = field("ID").starts_with("manjaro") || field("ID_LIKE").split_whitespace().any(|s| s == "manjaro") || have("pacman-mirrors");
+        let conf = fs::read_to_string(env_or("UPD_PACMAN_CONF", "/etc/pacman.conf")).unwrap_or_default();
+        let unmanaged = if manjaro {
+            Some("в Manjaro зеркалами управляет pacman-mirrors (sudo pacman-mirrors --fasttrack)".to_string())
+        } else if !conf.is_empty() && !repo_uses(&conf, "core", &mirrorlist) {
+            // Artix и подобные: в mirrorlist зеркала своих репозиториев, а не Arch — подменять нельзя
+            Some(format!("{mirrorlist} не подключён к репозиторию Arch [core] — зеркалами управляет дистрибутив"))
+        } else {
+            None
+        };
+        Pacman { mirrorlist, distro: field("PRETTY_NAME").to_string(), manjaro, unmanaged }
     }
 
     fn read_list(&self) -> Vec<String> {
@@ -161,6 +176,29 @@ impl Pacman {
     fn sync_db() -> String {
         format!("{}/syncdb", state_dir())
     }
+}
+
+/// Берёт ли репозиторий [repo] из pacman.conf зеркала из файла mirrorlist.
+fn repo_uses(conf: &str, repo: &str, mirrorlist: &str) -> bool {
+    let mut inside = false;
+    for l in conf.lines().map(str::trim) {
+        if l.starts_with('[') {
+            inside = l == format!("[{repo}]");
+        } else if inside {
+            if let Some((k, v)) = l.split_once('=') {
+                if k.trim() == "Include" && v.trim() == mirrorlist {
+                    return true;
+                }
+            }
+        }
+    }
+    false
+}
+
+/// Загружена ли система из снапшота btrfs (snapper, timeshift): изменения пропадут при перезагрузке.
+fn booted_from_snapshot() -> bool {
+    let cmdline = fs::read_to_string("/proc/cmdline").unwrap_or_default();
+    cmdline.split_whitespace().any(|a| (a.starts_with("rootflags=") || a.starts_with("subvol=")) && (a.contains("/.snapshots/") || a.contains("timeshift-btrfs/snapshots")))
 }
 
 fn server_url(l: &str) -> Option<String> {
@@ -197,10 +235,10 @@ impl Backend for Pacman {
         format!("{} · pacman", self.distro)
     }
     fn mirrors_managed(&self) -> bool {
-        !self.manjaro
+        self.unmanaged.is_none()
     }
     fn mirror_note(&self) -> String {
-        "в Manjaro зеркалами управляет pacman-mirrors (sudo pacman-mirrors --fasttrack)".into()
+        self.unmanaged.clone().unwrap_or_default()
     }
     fn watch_path(&self) -> Option<String> {
         Some(self.mirrorlist.clone())
@@ -365,12 +403,33 @@ impl Backend for Pacman {
             if aur {
                 env.push(("UPDATE_AUR", "1"));
             }
-            return run(false, &env, "garuda-update", &[]);
+            // подтверждение уже спросил upd (ответ pacman «н» в русской раскладке отменял установку);
+            // конфликты пакетов auto-pacman из garuda-update разбирает сам
+            return run(false, &env, "garuda-update", &["--noconfirm"]);
         }
-        run(false, &[], "pacman", &["-Syu"])
+        if booted_from_snapshot() {
+            return Err("система загружена из снапшота — изменения пропадут при перезагрузке. Сначала восстанови снапшот (snapper rollback / btrfs-assistant) и перезагрузись".into());
+        }
+        // Как в garuda-update и eos-update: сначала ключи (archlinux-, manjaro-, endeavouros-, cachyos-, chaotic-keyring…),
+        // иначе после смены ключа сборщика всё обновление падает на проверке подписей.
+        // -Sy с последующим -S ключей и -Su — рекомендованное Arch исключение из запрета частичных обновлений.
+        run(false, &[], "pacman", &["-Sy"])?;
+        let (outdated, _) = out("pacman", &["-Qqu"]);
+        let keyrings: Vec<&str> = outdated.lines().map(str::trim).filter(|p| p.ends_with("-keyring")).collect();
+        if !keyrings.is_empty() {
+            println!("→ сначала ключи: {}", keyrings.join(", "));
+            let mut args = vec!["-S", "--needed", "--noconfirm"];
+            args.extend(&keyrings);
+            run(false, &[], "pacman", &args)?;
+        }
+        // подтверждение уже спросил upd; на конфликтах --noconfirm выбирает безопасное «нет» и прерывает установку
+        run(false, &[], "pacman", &["-Su", "--noconfirm"]).map_err(|e| format!("{e} — если pacman спрашивал про конфликт пакетов, запусти вручную: sudo pacman -Syu"))
     }
     fn upgrade_handles_aur(&self) -> bool {
         have("garuda-update")
+    }
+    fn upgrade_asks(&self) -> bool {
+        false
     }
 
     fn clean(&self) -> Result<(), String> {
@@ -1428,6 +1487,18 @@ impl Backend for Rpm {
 #[cfg(test)]
 mod contract_tests {
     use super::*;
+
+    #[test]
+    fn pacman_mirrorlist_managed_only_for_arch_core() {
+        let ml = "/etc/pacman.d/mirrorlist";
+        let arch = "[options]\nHoldPkg = pacman\n\n[core]\nInclude = /etc/pacman.d/mirrorlist\n\n[extra]\nInclude = /etc/pacman.d/mirrorlist\n";
+        assert!(repo_uses(arch, "core", ml));
+        // Artix: mirrorlist — зеркала Artix, репозитории Arch идут через mirrorlist-arch
+        let artix = "[system]\nInclude = /etc/pacman.d/mirrorlist\n\n[extra]\nInclude = /etc/pacman.d/mirrorlist-arch\n";
+        assert!(!repo_uses(artix, "core", ml));
+        // закомментированный [core] не считается
+        assert!(!repo_uses("#[core]\n#Include = /etc/pacman.d/mirrorlist\n", "core", ml));
+    }
     use std::collections::BTreeMap;
     use std::os::unix::fs::PermissionsExt;
     use std::path::{Path, PathBuf};

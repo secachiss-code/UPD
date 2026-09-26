@@ -202,6 +202,7 @@ pub fn pct_encode(s: &str) -> String {
         .collect()
 }
 
+#[cfg(test)]
 fn agent(timeout: u64, via_proxy: Option<(u16, bool)>) -> ureq::Agent {
     agent_with_redirects(timeout, via_proxy, 5)
 }

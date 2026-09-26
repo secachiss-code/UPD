@@ -651,6 +651,7 @@ pub fn gather(b: &dyn Backend, c: &Config, log: Log, quiet: bool, invoking_user:
         }
     }
     let size_label = match st.download_size {
+        Some(0) if !st.list.is_empty() => " (уже скачаны)".into(),
         Some(size) => format!(" ({})", fmt_bytes(size)),
         None if !st.list.is_empty() => " (полный объём неизвестен)".into(),
         None => String::new(),

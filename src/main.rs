@@ -50,6 +50,9 @@ fn main() {
     let no_download = args.iter().any(|a| a == "--no-download");
     let all = args.iter().any(|a| a == "--all");
     let pkg_mode = args.iter().any(|a| a == "--package");
+    if let Some(a) = args.first().filter(|a| matches!(a.as_str(), "--version" | "-V" | "--help")) {
+        args[0] = if a == "--help" { "help" } else { "version" }.into();
+    }
     args.retain(|a| !a.starts_with("--"));
     let cmd = args.first().cloned().unwrap_or_else(|| "tui".into());
     let pos: Vec<String> = args.iter().skip(1).cloned().collect();
@@ -346,12 +349,7 @@ fn cmd_update(b: &dyn Backend, c: &Config) -> i32 {
             }
             None => {}
         }
-        if !st.flatpak_error.is_empty() {
-            println!("\x1b[33mFlatpak: не удалось проверить обновления: {}\x1b[0m", st.flatpak_error);
-        }
-        if !st.firmware_error.is_empty() {
-            println!("\x1b[33mПрошивки: не удалось проверить обновления: {}\x1b[0m", st.firmware_error);
-        }
+        // ошибки Flatpak и прошивок gather уже вывел
         let aur_enabled = c.aur && extras::aur_helper().is_some();
         let aur = match (user.as_deref(), aur_enabled) {
             (Some(u), true) => match extras::aur_updates(u) {
@@ -439,6 +437,15 @@ fn cmd_update(b: &dyn Backend, c: &Config) -> i32 {
 
         step(5, "Установка");
         let aur_by_installer = c.aur && b.upgrade_handles_aur();
+        if !st.list.is_empty() && !b.upgrade_asks() {
+            for l in &st.list {
+                println!("  {l}");
+            }
+            if !confirm(&format!("Установить обновления ({} шт.)?", st.list.len()), true) {
+                println!("установка отменена");
+                return 1;
+            }
+        }
         let mut result = if st.list.is_empty() && !aur_by_installer { Ok(()) } else { b.upgrade(aur_by_installer) };
         let packages_installed = result.is_ok();
         if result.is_ok() && !aur.is_empty() && !aur_by_installer {
@@ -1232,6 +1239,112 @@ fn garuda_skip_mirrors(on: bool) -> Option<String> {
     })
 }
 
+// Garuda: в стандартных настройках fish/bash есть alias upd → garuda-update, он перехватывает команду.
+// Пользовательский конфиг подключает их строкой source — сразу после неё снимаем алиас.
+const UNALIAS_MARK: &str = "# upd: снять алиас Garuda upd → garuda-update";
+const GARUDA_SHELLS: [(&str, &str, &str); 2] = [
+    (".config/fish/config.fish", "/usr/share/garuda/garuda-fish-config/config.fish", "functions -e upd"),
+    (".bashrc", "/usr/share/garuda/garuda-bash-config/bashrc", "unalias upd 2>/dev/null"),
+];
+
+fn garuda_alias_defined() -> bool {
+    GARUDA_SHELLS
+        .iter()
+        .any(|(_, sys, _)| fs::read_to_string(sys).map(|t| t.lines().any(|l| l.trim_start().starts_with("alias upd"))).unwrap_or(false))
+}
+
+/// Конфиги обычных пользователей, которые подключают настройки Garuda: (путь, текст, строка-снятие).
+/// Ссылки и чужие файлы пропускаем — пишем от root в домашние каталоги.
+fn garuda_user_configs() -> Vec<(std::path::PathBuf, String, &'static str)> {
+    use std::os::unix::fs::MetadataExt;
+    let passwd = fs::read_to_string("/etc/passwd").unwrap_or_default();
+    let mut out = vec![];
+    for line in passwd.lines() {
+        let p: Vec<&str> = line.split(':').collect();
+        let Some(uid) = p.get(2).and_then(|u| u.parse::<u32>().ok()) else { continue };
+        if !(1000..60000).contains(&uid) || p.len() < 6 {
+            continue;
+        }
+        for (rel, sys, cmd) in GARUDA_SHELLS {
+            let path = Path::new(p[5]).join(rel);
+            let Ok(md) = fs::symlink_metadata(&path) else { continue };
+            if !md.is_file() || md.uid() != uid {
+                continue;
+            }
+            let Ok(text) = fs::read_to_string(&path) else { continue };
+            if text.lines().any(|l| l.trim_start().starts_with("source") && l.contains(sys)) {
+                out.push((path, text, cmd));
+            }
+        }
+    }
+    out
+}
+
+fn has_unalias(text: &str, cmd: &str) -> bool {
+    let key = cmd.split(" 2>").next().unwrap_or(cmd);
+    text.lines().any(|l| l.trim_start().starts_with(key))
+}
+
+/// on: вставить снятие алиаса туда, где его ещё нет; off: убрать только наши строки. Возвращает изменённые файлы.
+fn garuda_unalias(on: bool) -> Vec<String> {
+    let mut changed = vec![];
+    for (path, text, cmd) in garuda_user_configs() {
+        let body = unalias_body(&text, cmd, on);
+        // fs::write, а не atomic_write: файл остаётся тем же, с владельцем-пользователем и его правами
+        if body != text && fs::write(&path, &body).is_ok() {
+            changed.push(path.display().to_string());
+        }
+    }
+    changed
+}
+
+fn unalias_body(text: &str, cmd: &str, on: bool) -> String {
+    if on && has_unalias(text, cmd) {
+        return text.to_string();
+    }
+    let mut body = String::new();
+    for l in text.lines() {
+        if l.ends_with(UNALIAS_MARK) {
+            continue;
+        }
+        body += l;
+        body.push('\n');
+        if on && l.trim_start().starts_with("source") && l.contains("/usr/share/garuda/") {
+            body += &format!("{cmd}  {UNALIAS_MARK}\n");
+        }
+    }
+    if !text.ends_with('\n') {
+        body.pop();
+    }
+    body
+}
+
+fn garuda_unalias_install(pkg: bool, bin: &str) {
+    use std::io::IsTerminal;
+    if !garuda_alias_defined() {
+        return;
+    }
+    let todo: Vec<String> = garuda_user_configs()
+        .into_iter()
+        .filter(|(_, text, cmd)| !has_unalias(text, cmd))
+        .map(|(p, _, _)| p.display().to_string())
+        .collect();
+    if todo.is_empty() {
+        return;
+    }
+    // из пакетного менеджера не спрашиваем и в домашние каталоги не пишем
+    let ask = !pkg && std::io::stdin().is_terminal();
+    println!("\n\x1b[33m⚠ В Garuda команда `upd` занята алиасом на garuda-update:\x1b[0m {}", todo.join(", "));
+    if ask && confirm("Снять алиас, чтобы `upd` запускал эту утилиту?", true) {
+        for f in garuda_unalias(true) {
+            println!("✓ алиас снят: {f}");
+        }
+        println!("   в уже открытых терминалах: exec fish (или exec bash), новые — сразу");
+        return;
+    }
+    println!("   сними сам: fish — `functions -e upd`, bash — `unalias upd` в строке после source …garuda…, или запускай полным путём: {bin}");
+}
+
 fn write_file(path: &str, body: &str, mode: u32) -> Result<(), String> {
     if let Some(d) = Path::new(path).parent() {
         fs::create_dir_all(d).map_err(|e| format!("{}: {e}", d.display()))?;
@@ -1342,6 +1455,17 @@ fn remove_manual_files() -> Result<(), String> {
     Ok(())
 }
 
+fn logged_in_users() -> Vec<String> {
+    let (s, _) = out("loginctl", &["list-users", "--no-legend"]);
+    s.lines()
+        .filter_map(|l| {
+            let mut f = l.split_whitespace();
+            let uid: u32 = f.next()?.parse().ok()?;
+            (uid >= 1000).then(|| f.next().map(String::from)).flatten()
+        })
+        .collect()
+}
+
 fn enable_units(b: &dyn Backend, c: &Config, ok: &dyn Fn(String)) -> Result<(), String> {
     let _ = run(true, &[], "systemctl", &["daemon-reload"]);
     let mut enable = vec!["upd-auto.timer", "upd-net.timer"];
@@ -1352,6 +1476,12 @@ fn enable_units(b: &dyn Backend, c: &Config, ok: &dyn Fn(String)) -> Result<(), 
     args.extend(enable.iter().copied());
     run(false, &[], "systemctl", &args)?;
     let _ = run(true, &[], "systemctl", &["--global", "enable", "upd-notify.timer"]);
+    // --global действует со следующего входа; тем, кто уже вошёл, перечитываем юниты и запускаем таймер сразу
+    for user in logged_in_users() {
+        let m = format!("{user}@");
+        let _ = run(true, &[], "systemctl", &["--user", "-M", &m, "daemon-reload"]);
+        let _ = run(true, &[], "systemctl", &["--user", "-M", &m, "start", "upd-notify.timer"]);
+    }
     ok(format!("службы: {}", enable.join(", ")));
     ok("уведомления: upd-notify.timer (для всех пользователей, после входа)".into());
     match vpn::load_subs() {
@@ -1428,16 +1558,7 @@ fn cmd_install(b: &dyn Backend, c: &Config, pkg: bool) -> i32 {
         let _ = run(true, &[], "systemctl", &["start", "--no-block", "upd-auto.service"]);
         println!("\nПервая проверка обновлений{} запущена в фоне: journalctl -u upd-auto -f", if pkg { " и подбор зеркал" } else { "" });
     }
-    // Garuda: в стандартных настройках fish/bash есть alias upd → garuda-update, он перехватывает команду
-    let shadowed = ["/usr/share/garuda/garuda-fish-config/config.fish", "/usr/share/garuda/garuda-bash-config/bashrc"]
-        .iter()
-        .any(|f| fs::read_to_string(f).map(|t| t.lines().any(|l| l.trim_start().starts_with("alias upd"))).unwrap_or(false));
-    if shadowed {
-        println!("\n\x1b[33m⚠ В Garuda команда `upd` занята алиасом на garuda-update. Сними его в своих настройках:\x1b[0m");
-        println!("   fish: добавь `functions -e upd` в ~/.config/fish/config.fish (ниже строки source …garuda-fish-config…)");
-        println!("   bash: добавь `unalias upd 2>/dev/null` в ~/.bashrc (ниже строки source …garuda-bash-config…)");
-        println!("   или запускай полным путём: {}", l.bin);
-    }
+    garuda_unalias_install(pkg, l.bin);
     println!("\nГотово. Запуск интерфейса: upd");
     0
 }
@@ -1461,6 +1582,9 @@ fn cmd_uninstall(b: &dyn Backend, pkg: bool) -> i32 {
         let mut names: Vec<&str> = system_units(PKG_BIN, Some("-")).iter().map(|x| x.0).collect();
         names.retain(|n| !n.ends_with(".service") || *n == vpn::SERVICE);
         let _ = run(true, &[], "systemctl", &["--global", "disable", "upd-notify.timer"]);
+        for user in logged_in_users() {
+            let _ = run(true, &[], "systemctl", &["--user", "-M", &format!("{user}@"), "stop", "upd-notify.timer"]);
+        }
         let mut args = vec!["disable", "--now"];
         args.extend(names.iter().copied());
         let _ = run(true, &[], "systemctl", &args);
@@ -1475,6 +1599,9 @@ fn cmd_uninstall(b: &dyn Backend, pkg: bool) -> i32 {
     vpn::sysproxy(&c);
     let _ = fs::remove_file(CRON_PATH);
     garuda_skip_mirrors(false);
+    for f in garuda_unalias(false) {
+        println!("убрано снятие алиаса upd: {f}");
+    }
     println!(
         "upd удалён. Оставлены настройки и данные: {}, {} (подписки VPN), {} — удали вручную, если не нужны.",
         conf_path(),
@@ -1585,6 +1712,19 @@ mod contract_tests {
         fs::write(&path, body).unwrap();
         use std::os::unix::fs::PermissionsExt;
         fs::set_permissions(&path, fs::Permissions::from_mode(0o755)).unwrap();
+    }
+
+    #[test]
+    fn install03_garuda_unalias_after_source_and_back() {
+        let fish = "# conf\nsource /usr/share/garuda/garuda-fish-config/config.fish # defaults\n\n__garuda_fastfetch\n";
+        let on = unalias_body(fish, "functions -e upd", true);
+        assert_eq!(on, format!("# conf\nsource /usr/share/garuda/garuda-fish-config/config.fish # defaults\nfunctions -e upd  {UNALIAS_MARK}\n\n__garuda_fastfetch\n"));
+        assert_eq!(unalias_body(&on, "functions -e upd", true), on);
+        assert_eq!(unalias_body(&on, "functions -e upd", false), fish);
+        // пользователь снял алиас сам — не дублируем и при удалении не трогаем
+        let manual = "source /usr/share/garuda/garuda-bash-config/bashrc\nunalias upd\n";
+        assert_eq!(unalias_body(manual, "unalias upd 2>/dev/null", true), manual);
+        assert_eq!(unalias_body(manual, "unalias upd 2>/dev/null", false), manual);
     }
 
     #[test]

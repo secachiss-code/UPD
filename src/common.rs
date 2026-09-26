@@ -502,14 +502,28 @@ pub fn is_root() -> bool {
 
 pub fn confirm(q: &str, default_yes: bool) -> bool {
     print!("{q} {} ", if default_yes { "[Y/n]" } else { "[y/N]" });
-    let _ = std::io::stdout().flush();
-    let mut s = String::new();
-    let _ = std::io::stdin().lock().read_line(&mut s);
-    let s = s.trim().to_lowercase();
-    if s.is_empty() {
-        return default_yes;
+    loop {
+        let _ = std::io::stdout().flush();
+        let mut s = String::new();
+        if std::io::stdin().lock().read_line(&mut s).unwrap_or(0) == 0 {
+            return default_yes;
+        }
+        match confirm_answer(&s) {
+            Some(a) => return a.unwrap_or(default_yes),
+            // «н» — это и Y в русской раскладке, и «нет»: переспрашиваем, а не угадываем
+            None => print!("не понял ответ «{}»: y или д — да, n или т — нет, Enter — {} ", s.trim(), if default_yes { "да" } else { "нет" }),
+        }
     }
-    matches!(s.as_str(), "y" | "yes" | "д" | "да")
+}
+
+/// Some(None) — пустой ответ (по умолчанию), None — непонятный. «т» — это N в русской раскладке.
+fn confirm_answer(s: &str) -> Option<Option<bool>> {
+    match s.trim().to_lowercase().as_str() {
+        "" => Some(None),
+        "y" | "yes" | "д" | "да" => Some(Some(true)),
+        "n" | "no" | "т" | "нет" => Some(Some(false)),
+        _ => None,
+    }
 }
 
 // ---------- форматирование ----------
@@ -1084,6 +1098,20 @@ pub(crate) mod contract_fixtures {
 #[cfg(test)]
 mod contract_tests {
     use super::*;
+
+    #[test]
+    fn confirm_answer_handles_russian_layout() {
+        assert_eq!(confirm_answer("\n"), Some(None));
+        for yes in ["y", "Yes", "д", "Да"] {
+            assert_eq!(confirm_answer(yes), Some(Some(true)), "{yes}");
+        }
+        for no in ["n", "NO", "т", "нет"] {
+            assert_eq!(confirm_answer(no), Some(Some(false)), "{no}");
+        }
+        // «н»: Y в русской раскладке или «нет» — переспросить
+        assert_eq!(confirm_answer("н"), None);
+        assert_eq!(confirm_answer("maybe"), None);
+    }
 
     // --- NET-01 ---
     #[test]

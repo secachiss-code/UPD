@@ -205,9 +205,19 @@ pub fn aur_updates(user: &str) -> Result<Vec<String>, String> {
     let Some(h) = aur_helper() else { return Ok(vec![]) };
     let (cmd, args) = as_user(user, h, &["-Qua"]);
     let a: Vec<&str> = args.iter().map(String::as_str).collect();
-    let (output, code) = out(&cmd, &a);
+    let o = Command::new(&cmd).args(&a).env("LC_ALL", "C").stdin(Stdio::null()).output().map_err(|e| format!("{cmd}: {e}"))?;
+    let output = String::from_utf8_lossy(&o.stdout);
+    let code = o.status.code().unwrap_or(-1);
+    // как и pacman -Qu, paru/yay -Qua выходят с кодом 1 без вывода, когда обновлений нет
+    if code == 1 && output.trim().is_empty() && o.stderr.iter().all(u8::is_ascii_whitespace) {
+        return Ok(vec![]);
+    }
     if code != 0 {
-        return Err(format!("{h} -Qua завершился с кодом {code}"));
+        let err = String::from_utf8_lossy(&o.stderr);
+        return Err(match last_line(&err) {
+            Some(l) => format!("{h} -Qua завершился с кодом {code}: {l}"),
+            None => format!("{h} -Qua завершился с кодом {code}"),
+        });
     }
     let mut updates = Vec::new();
     for (index, line) in lines(&output).into_iter().enumerate() {
@@ -234,7 +244,12 @@ pub fn has_fwupd() -> bool {
 }
 
 pub fn firmware_refresh() -> Result<(), String> {
-    run(true, &[], "fwupdmgr", &["refresh", "--assume-yes"])
+    let o = Command::new("fwupdmgr").args(["refresh", "--assume-yes"]).stdin(Stdio::null()).output().map_err(|e| format!("fwupdmgr: {e}"))?;
+    // код 2 — «нечего делать»: метаданные и так свежие
+    match o.status.code() {
+        Some(0 | 2) => Ok(()),
+        _ => Err(format!("fwupdmgr: {}", last_line(&String::from_utf8_lossy(&o.stderr)).unwrap_or("ошибка"))),
+    }
 }
 
 pub fn firmware_updates() -> Result<Vec<String>, String> {
@@ -550,7 +565,34 @@ mod contract_tests {
         assert!(err.contains("JSON"));
     }
 
+    #[test]
+    fn upd04b_fwupd_refresh_nothing_to_do_is_ok() {
+        let dir = bin_fixture("fwupd-fresh");
+        write_executable(&dir.join("fwupdmgr"), "#!/bin/sh\necho 'Metadata is up to date' >&2\nexit 2\n");
+        let _g = DirGuard::new(dir.clone());
+        assert!(crate::common::contract_fixtures::with_prepend_path(&dir, firmware_refresh).is_ok());
+    }
+
     // --- UPD-04C ---
+    #[test]
+    fn upd04c_aur_exit1_without_output_is_empty() {
+        let dir = bin_fixture("aur-none");
+        write_executable(&dir.join("paru"), "#!/bin/sh\nexit 1\n");
+        write_executable(&dir.join("runuser"), "#!/bin/sh\nshift; shift; shift; exec \"$@\"\n");
+        let _g = DirGuard::new(dir.clone());
+        assert!(crate::common::contract_fixtures::with_prepend_path(&dir, || aur_updates("testuser")).unwrap().is_empty());
+    }
+
+    #[test]
+    fn upd04c_aur_exit1_with_stderr_is_error() {
+        let dir = bin_fixture("aur-fail");
+        write_executable(&dir.join("paru"), "#!/bin/sh\necho 'error: failed to connect' >&2\nexit 1\n");
+        write_executable(&dir.join("runuser"), "#!/bin/sh\nshift; shift; shift; exec \"$@\"\n");
+        let _g = DirGuard::new(dir.clone());
+        let err = crate::common::contract_fixtures::with_prepend_path(&dir, || aur_updates("testuser")).unwrap_err();
+        assert!(err.contains("failed to connect"), "{err}");
+    }
+
     #[test]
     fn upd04c_aur_empty_stdout_is_checked() {
         let dir = bin_fixture("aur-empty");
