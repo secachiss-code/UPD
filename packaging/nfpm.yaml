@@ -17,6 +17,10 @@ homepage: https://github.com/somovas/upd
 provides:
   - upd
 contents:
+  - src: LICENSE
+    dst: /usr/share/licenses/upd/LICENSE
+    file_info:
+      mode: 0644
   - src: ${STAGE}/usr/bin/upd
     dst: /usr/bin/upd
     file_info:

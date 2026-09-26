@@ -2,27 +2,190 @@
 
 use crate::common::*;
 use std::path::Path;
+use std::process::{Command, Stdio};
 
 // ---------- Flatpak ----------
 
-pub fn flatpak_updates() -> Vec<String> {
-    if !have("flatpak") {
-        return vec![];
+#[derive(Default)]
+pub struct FlatpakCheck {
+    pub updates: Vec<String>,
+    pub error: String,
+}
+
+#[derive(Clone, Copy)]
+enum FlatpakScope {
+    System,
+    User,
+}
+
+impl FlatpakScope {
+    fn label(self) -> &'static str {
+        match self {
+            Self::System => "system",
+            Self::User => "user",
+        }
     }
-    out("flatpak", &["remote-ls", "--updates", "--columns=application,version"])
-        .0
-        .lines()
-        .filter(|l| l.split_whitespace().next().map(|a| a.contains('.')).unwrap_or(false))
-        .map(|l| l.split_whitespace().collect::<Vec<_>>().join(" "))
-        .collect()
+
+    fn option(self) -> &'static str {
+        match self {
+            Self::System => "--system",
+            Self::User => "--user",
+        }
+    }
 }
 
-pub fn flatpak_prefetch(quiet: bool) -> Result<(), String> {
-    run(quiet, &[], "flatpak", &["update", "--no-deploy", "--noninteractive", "-y"])
+fn invoking_user_command(user: &str, args: &[&str]) -> Result<(String, Vec<String>), String> {
+    let (passwd, code) = out("getent", &["passwd", user]);
+    if code != 0 {
+        return Err(format!("не удалось получить данные пользователя {user}"));
+    }
+    let fields: Vec<&str> = passwd.lines().find(|line| line.split(':').next() == Some(user)).ok_or_else(|| format!("пользователь {user} не найден в NSS"))?.split(':').collect();
+    if fields.len() < 7 {
+        return Err(format!("неверная запись NSS для пользователя {user}"));
+    }
+    let uid: u32 = fields[2].parse().map_err(|_| format!("неверный UID пользователя {user}"))?;
+    let home = fields[5];
+    if !Path::new(home).is_absolute() {
+        return Err(format!("неверный HOME пользователя {user}"));
+    }
+    let runtime = format!("/run/user/{uid}");
+    let mut command = if have("runuser") {
+        vec!["-u".into(), user.into(), "--".into(), "env".into()]
+    } else if have("sudo") {
+        vec!["-u".into(), user.into(), "--".into(), "env".into()]
+    } else {
+        return Err("для запуска Flatpak от имени пользователя нужен runuser или sudo".into());
+    };
+    command.push(format!("HOME={home}"));
+    command.push(format!("XDG_RUNTIME_DIR={runtime}"));
+    command.push("LC_ALL=C".into());
+    if Path::new(&runtime).join("bus").exists() {
+        command.push(format!("DBUS_SESSION_BUS_ADDRESS=unix:path={runtime}/bus"));
+    }
+    command.extend(args.iter().map(|arg| (*arg).to_string()));
+    Ok((if have("runuser") { "runuser" } else { "sudo" }.into(), command))
 }
 
-pub fn flatpak_upgrade() -> Result<(), String> {
-    run(false, &[], "flatpak", &["update", "--noninteractive", "-y"])
+fn out_as_user(user: &str, args: &[&str]) -> Result<(String, i32), String> {
+    let (runner, command_args) = invoking_user_command(user, args)?;
+    let output = Command::new(&runner).args(&command_args).output().map_err(|e| format!("{runner}: {e}"))?;
+    Ok((String::from_utf8_lossy(&output.stdout).into_owned(), output.status.code().unwrap_or(-1)))
+}
+
+fn run_as_user(quiet: bool, user: &str, args: &[&str]) -> Result<(), String> {
+    let (runner, command_args) = invoking_user_command(user, args)?;
+    let mut command = Command::new(&runner);
+    command.args(&command_args);
+    if quiet {
+        command.stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::piped());
+        let output = command.output().map_err(|e| format!("{runner}: {e}"))?;
+        if output.status.success() {
+            return Ok(());
+        }
+        let error = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("{runner}: {}", last_line(&error).unwrap_or("ошибка")));
+    }
+    let status = command.status().map_err(|e| format!("{runner}: {e}"))?;
+    if status.success() { Ok(()) } else { Err(format!("{runner}: код {}", status.code().unwrap_or(-1))) }
+}
+
+fn parse_flatpak_updates(output: &str, scope: FlatpakScope) -> Result<Vec<String>, String> {
+    let mut updates = Vec::new();
+    for line in output.lines().filter(|line| !line.trim().is_empty()) {
+        let fields: Vec<&str> = line.split_whitespace().collect();
+        if fields.len() != 2 || !fields[0].contains('.') {
+            return Err("flatpak remote-ls вернул некорректный список обновлений".into());
+        }
+        updates.push(format!("[{}] {}", scope.label(), fields.join(" ")));
+    }
+    Ok(updates)
+}
+
+fn flatpak_scope_updates(scope: FlatpakScope, invoking_user: Option<&str>) -> Result<Vec<String>, String> {
+    let (output, code) = match scope {
+        FlatpakScope::System => {
+            let args = ["remote-ls", scope.option(), "--updates", "--columns=application,version"];
+            let (output, code) = out("flatpak", &args);
+            (output, code)
+        }
+        FlatpakScope::User => {
+            let user = invoking_user.ok_or("нет вызывающего пользователя")?;
+            let args = ["flatpak", "remote-ls", scope.option(), "--updates", "--columns=application,version"];
+            out_as_user(user, &args)?
+        }
+    };
+    if code != 0 {
+        return Err(format!("flatpak remote-ls завершился с кодом {code}"));
+    }
+    parse_flatpak_updates(&output, scope)
+}
+
+pub fn flatpak_updates(invoking_user: Option<&str>) -> FlatpakCheck {
+    if !have("flatpak") {
+        return FlatpakCheck::default();
+    }
+    let mut result = FlatpakCheck::default();
+    let mut errors = Vec::new();
+    for scope in [FlatpakScope::System, FlatpakScope::User] {
+        if matches!(scope, FlatpakScope::User) && invoking_user.is_none() {
+            continue;
+        }
+        match flatpak_scope_updates(scope, invoking_user) {
+            Ok(updates) => result.updates.extend(updates),
+            Err(e) => errors.push(format!("{}: {e}", scope.label())),
+        }
+    }
+    if !errors.is_empty() {
+        result.error = errors.join("; ");
+    }
+    result
+}
+
+fn flatpak_scopes(updates: &[String]) -> Vec<FlatpakScope> {
+    let mut system = false;
+    let mut user = false;
+    for update in updates {
+        if update.starts_with("[user] ") {
+            user = true;
+        } else if update.starts_with("[system] ") {
+            system = true;
+        } else {
+            // Older saved state had no scope marker; treat it as a system update.
+            system = true;
+        }
+    }
+    [system.then_some(FlatpakScope::System), user.then_some(FlatpakScope::User)].into_iter().flatten().collect()
+}
+
+fn flatpak_operation(quiet: bool, invoking_user: Option<&str>, updates: &[String], extra: &[&str]) -> Result<(), String> {
+    let mut errors = Vec::new();
+    for scope in flatpak_scopes(updates) {
+        let mut args = vec!["update", scope.option()];
+        args.extend_from_slice(extra);
+        let result = match scope {
+            FlatpakScope::System => run(quiet, &[], "flatpak", &args),
+            FlatpakScope::User => match invoking_user {
+                Some(user) => {
+                    let mut user_args = vec!["flatpak"];
+                    user_args.extend(args);
+                    run_as_user(quiet, user, &user_args)
+                }
+                None => Err("невозможно обновить per-user Flatpak без вызывающего пользователя".into()),
+            },
+        };
+        if let Err(e) = result {
+            errors.push(format!("{}: {e}", scope.label()));
+        }
+    }
+    if errors.is_empty() { Ok(()) } else { Err(errors.join("; ")) }
+}
+
+pub fn flatpak_prefetch(quiet: bool, invoking_user: Option<&str>, updates: &[String]) -> Result<(), String> {
+    flatpak_operation(quiet, invoking_user, updates, &["--no-deploy", "--noninteractive", "-y"])
+}
+
+pub fn flatpak_upgrade(invoking_user: Option<&str>, updates: &[String]) -> Result<(), String> {
+    flatpak_operation(false, invoking_user, updates, &["--noninteractive", "-y"])
 }
 
 // ---------- AUR (paru / yay) — только от имени пользователя, не root ----------
@@ -38,11 +201,23 @@ fn as_user(user: &str, cmd: &str, args: &[&str]) -> (String, Vec<String>) {
     (if have("runuser") { "runuser" } else { "sudo" }.into(), a)
 }
 
-pub fn aur_updates(user: &str) -> Vec<String> {
-    let Some(h) = aur_helper() else { return vec![] };
+pub fn aur_updates(user: &str) -> Result<Vec<String>, String> {
+    let Some(h) = aur_helper() else { return Ok(vec![]) };
     let (cmd, args) = as_user(user, h, &["-Qua"]);
     let a: Vec<&str> = args.iter().map(String::as_str).collect();
-    lines(&out(&cmd, &a).0).into_iter().filter(|l| l.contains("->")).collect()
+    let (output, code) = out(&cmd, &a);
+    if code != 0 {
+        return Err(format!("{h} -Qua завершился с кодом {code}"));
+    }
+    let mut updates = Vec::new();
+    for (index, line) in lines(&output).into_iter().enumerate() {
+        let parts: Vec<&str> = line.split("->").collect();
+        if parts.len() != 2 || parts.iter().any(|part| part.trim().is_empty()) {
+            return Err(format!("{h} вернул некорректный список обновлений AUR (строка {})", index + 1));
+        }
+        updates.push(line.trim().to_string());
+    }
+    Ok(updates)
 }
 
 pub fn aur_upgrade(user: &str) -> Result<(), String> {
@@ -58,26 +233,44 @@ pub fn has_fwupd() -> bool {
     have("fwupdmgr")
 }
 
-pub fn firmware_refresh() {
-    let _ = run(true, &[], "fwupdmgr", &["refresh", "--assume-yes"]);
+pub fn firmware_refresh() -> Result<(), String> {
+    run(true, &[], "fwupdmgr", &["refresh", "--assume-yes"])
 }
 
-pub fn firmware_updates() -> Vec<String> {
-    let (s, _) = out("fwupdmgr", &["get-updates", "--json", "--assume-yes"]);
-    let Ok(v) = serde_json::from_str::<serde_json::Value>(&s) else { return vec![] };
-    v["Devices"]
-        .as_array()
-        .map(|a| {
-            a.iter()
-                .filter_map(|d| {
-                    let name = d["Name"].as_str()?;
-                    let cur = d["Version"].as_str().unwrap_or("?");
-                    let new = d["Releases"].as_array().and_then(|r| r.first()).and_then(|r| r["Version"].as_str()).unwrap_or("?");
-                    Some(format!("{name} {cur} -> {new}"))
-                })
-                .collect()
+pub fn firmware_updates() -> Result<Vec<String>, String> {
+    let (s, code) = out("fwupdmgr", &["get-updates", "--json", "--assume-yes"]);
+    // Код 2 — штатный пустой результат, но его нужно подтвердить JSON-ответом.
+    // Остальные ненулевые коды сообщаем до разбора stdout: при сбое он часто пустой.
+    if code != 0 && code != 2 {
+        return Err(format!("fwupdmgr get-updates завершился с кодом {code}"));
+    }
+    let v: serde_json::Value = serde_json::from_str(&s).map_err(|e| format!("fwupdmgr вернул неверный JSON: {e}"))?;
+    let devices = v
+        .get("Devices")
+        .and_then(serde_json::Value::as_array)
+        .ok_or("fwupdmgr JSON не содержит массив Devices")?;
+    // fwupd использует код 2, когда обновлений нет; JSON в этом случае содержит пустой Devices.
+    if code == 2 && devices.is_empty() {
+        return Ok(vec![]);
+    }
+    if code != 0 {
+        return Err(format!("fwupdmgr get-updates завершился с кодом {code}"));
+    }
+    devices
+        .iter()
+        .map(|d| {
+            let name = d.get("Name").and_then(serde_json::Value::as_str).filter(|s| !s.is_empty()).ok_or("fwupdmgr JSON содержит запись Devices без Name")?;
+            let cur = d.get("Version").and_then(serde_json::Value::as_str).unwrap_or("?");
+            let new = d
+                .get("Releases")
+                .and_then(serde_json::Value::as_array)
+                .and_then(|r| r.first())
+                .and_then(|r| r.get("Version"))
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or("?");
+            Ok(format!("{name} {cur} -> {new}"))
         })
-        .unwrap_or_default()
+        .collect()
 }
 
 pub fn firmware_upgrade() -> Result<(), String> {
@@ -226,7 +419,7 @@ pub fn restart_services(list: &[String]) {
 }
 
 pub fn print_restart(r: &Restart) {
-    if r.services.is_empty() && r.critical.is_empty() && r.apps.is_empty() {
+    if r.services.is_empty() && r.critical.is_empty() && r.apps.is_empty() && r.unknown.is_empty() {
         println!("перезапускать ничего не нужно");
         return;
     }
@@ -238,5 +431,144 @@ pub fn print_restart(r: &Restart) {
     }
     if !r.apps.is_empty() {
         println!("программы — перезапусти вручную или перелогинься: {}", r.apps.join(", "));
+    }
+    if !r.unknown.is_empty() {
+        println!("процессы без распознанного cgroup: {}", r.unknown.join(", "));
+    }
+}
+
+#[cfg(test)]
+mod contract_tests {
+    use super::*;
+    use std::fs;
+    use std::os::unix::fs::PermissionsExt;
+    use std::path::{Path, PathBuf};
+
+    struct DirGuard(PathBuf);
+
+    impl DirGuard {
+        fn new(path: PathBuf) -> Self {
+            Self(path)
+        }
+    }
+
+    impl Drop for DirGuard {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.0);
+        }
+    }
+
+    fn write_executable(path: &Path, body: &str) {
+        fs::write(path, body).unwrap();
+        fs::set_permissions(path, fs::Permissions::from_mode(0o755)).unwrap();
+    }
+
+    fn bin_fixture(name: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("upd-{name}-{}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    // --- UPD-04A ---
+    #[test]
+    fn upd04a_missing_optional_flatpak_is_skipped() {
+        let _isolation = crate::common::contract_fixtures::isolation_lock();
+        let dir = bin_fixture("flatpak-absent");
+        let _guard = DirGuard::new(dir.clone());
+        let old_path = std::env::var_os("PATH");
+        unsafe { std::env::set_var("PATH", &dir); }
+        let result = flatpak_updates(None);
+        match old_path {
+            Some(path) => unsafe { std::env::set_var("PATH", path); },
+            None => unsafe { std::env::remove_var("PATH"); },
+        }
+        assert!(result.updates.is_empty());
+        assert!(result.error.is_empty());
+    }
+
+    #[test]
+    fn upd04a_flatpak_error_is_not_empty_list() {
+        let dir = bin_fixture("flatpak-err");
+        let _g = DirGuard::new(dir.clone());
+        write_executable(&dir.join("flatpak"), "#!/bin/sh\nexit 3\n");
+        let result = crate::common::contract_fixtures::with_prepend_path(&dir, || flatpak_updates(None));
+        assert!(result.error.contains('3'), "ожидали код в ошибке: {}", result.error);
+    }
+
+    #[test]
+    fn upd04a_flatpak_empty_stdout_is_ok() {
+        let dir = bin_fixture("flatpak-empty");
+        write_executable(&dir.join("flatpak"), "#!/bin/sh\nexit 0\n");
+        let _g = DirGuard::new(dir.clone());
+        let result = crate::common::contract_fixtures::with_prepend_path(&dir, || flatpak_updates(None));
+        assert!(result.error.is_empty());
+        assert!(result.updates.is_empty());
+    }
+
+    #[test]
+    fn upd04a_flatpak_valid_line_parsed() {
+        let dir = bin_fixture("flatpak-line");
+        write_executable(&dir.join("flatpak"), "#!/bin/sh\necho 'org.example.App 1.2.3'\nexit 0\n");
+        let _g = DirGuard::new(dir.clone());
+        let result = crate::common::contract_fixtures::with_prepend_path(&dir, || flatpak_updates(None));
+        assert!(result.error.is_empty());
+        assert_eq!(result.updates, vec!["[system] org.example.App 1.2.3"]);
+    }
+
+    #[test]
+    fn upd04a_flatpak_malformed_is_error() {
+        let dir = bin_fixture("flatpak-bad");
+        write_executable(&dir.join("flatpak"), "#!/bin/sh\necho 'not-a-flatpak-ref'\nexit 0\n");
+        let _g = DirGuard::new(dir.clone());
+        assert!(!crate::common::contract_fixtures::with_prepend_path(&dir, || flatpak_updates(None)).error.is_empty());
+    }
+
+    // --- UPD-04B ---
+    #[test]
+    fn upd04b_fwupd_command_failure_is_error() {
+        let dir = bin_fixture("fwupd-err");
+        write_executable(&dir.join("fwupdmgr"), "#!/bin/sh\nexit 5\n");
+        let _g = DirGuard::new(dir.clone());
+        let err = crate::common::contract_fixtures::with_prepend_path(&dir, firmware_updates).unwrap_err();
+        assert!(err.contains('5'), "ожидали код в ошибке: {err}");
+    }
+
+    #[test]
+    fn upd04b_fwupd_empty_devices_is_ok() {
+        let dir = bin_fixture("fwupd-empty");
+        write_executable(&dir.join("fwupdmgr"), "#!/bin/sh\necho '{\"Devices\":[]}'\nexit 2\n");
+        let _g = DirGuard::new(dir.clone());
+        assert!(crate::common::contract_fixtures::with_prepend_path(&dir, || firmware_updates().unwrap().is_empty()));
+    }
+
+    #[test]
+    fn upd04b_fwupd_invalid_json_is_error() {
+        let dir = bin_fixture("fwupd-json");
+        write_executable(&dir.join("fwupdmgr"), "#!/bin/sh\necho 'not-json'\nexit 0\n");
+        let _g = DirGuard::new(dir.clone());
+        let err = crate::common::contract_fixtures::with_prepend_path(&dir, firmware_updates).unwrap_err();
+        assert!(err.contains("JSON"));
+    }
+
+    // --- UPD-04C ---
+    #[test]
+    fn upd04c_aur_failure_is_not_empty_list() {
+        let dir = bin_fixture("aur-err");
+        write_executable(&dir.join("paru"), "#!/bin/sh\nexit 4\n");
+        write_executable(&dir.join("runuser"), "#!/bin/sh\nshift; shift; shift; exec \"$@\"\n");
+        let _g = DirGuard::new(dir.clone());
+        let err = crate::common::contract_fixtures::with_prepend_path(&dir, || aur_updates("testuser")).unwrap_err();
+        assert!(err.contains('4'), "{err}");
+    }
+
+    // --- UPD-06 ---
+    #[test]
+    fn upd06_flatpak_checks_system_scope_without_user() {
+        let dir = bin_fixture("flatpak-scope");
+        write_executable(&dir.join("flatpak"), "#!/bin/sh\necho 'org.example.App 1.0'\nexit 0\n");
+        let _g = DirGuard::new(dir.clone());
+        let result = crate::common::contract_fixtures::with_prepend_path(&dir, || flatpak_updates(None));
+        assert!(result.error.is_empty());
+        assert_eq!(result.updates, vec!["[system] org.example.App 1.0"]);
     }
 }

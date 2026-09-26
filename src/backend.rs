@@ -3,7 +3,18 @@
 use crate::common::*;
 use std::collections::BTreeMap;
 use std::fs;
-use std::path::Path;
+use std::io::{Read, Write};
+use std::os::unix::fs::{DirBuilderExt, MetadataExt, OpenOptionsExt, PermissionsExt, chown};
+use std::path::{Path, PathBuf};
+use std::process::Command;
+use std::sync::atomic::{AtomicU64, Ordering};
+
+#[derive(Clone, Copy)]
+pub enum ProbeKind {
+    Generic,
+    PacmanDb,
+    AptInRelease,
+}
 
 pub trait Backend {
     fn name(&self) -> String;
@@ -16,6 +27,9 @@ pub trait Backend {
     }
 
     fn probe_url(&self, m: &str) -> String;
+    fn probe_kind(&self) -> ProbeKind {
+        ProbeKind::Generic
+    }
     /// Адрес, по которому видно, когда зеркало синхронизировалось в последний раз
     fn fresh_url(&self, _m: &str) -> Option<String> {
         None
@@ -83,8 +97,37 @@ pub fn detect() -> Result<Box<dyn Backend>, String> {
     }
 }
 
-fn tmp_path(tag: &str) -> String {
-    format!("/tmp/upd-{tag}.{}", std::process::id())
+struct PrivateTempDir(PathBuf);
+
+impl PrivateTempDir {
+    fn new() -> std::io::Result<Self> {
+        for _ in 0..8 {
+            let mut random = [0u8; 16];
+            fs::File::open("/dev/urandom")?.read_exact(&mut random)?;
+            let suffix: String = random.iter().map(|b| format!("{b:02x}")).collect();
+            let path = PathBuf::from(format!("/tmp/upd-mirrors-{suffix}"));
+            let mut builder = fs::DirBuilder::new();
+            builder.mode(0o700);
+            match builder.create(&path) {
+                Ok(()) => {
+                    if let Err(e) = fs::set_permissions(&path, fs::Permissions::from_mode(0o700)) {
+                        let _ = fs::remove_dir_all(&path);
+                        return Err(e);
+                    }
+                    return Ok(Self(path));
+                }
+                Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => continue,
+                Err(e) => return Err(e),
+            }
+        }
+        Err(std::io::Error::new(std::io::ErrorKind::AlreadyExists, "не удалось подобрать имя временного каталога"))
+    }
+}
+
+impl Drop for PrivateTempDir {
+    fn drop(&mut self) {
+        let _ = fs::remove_dir_all(&self.0);
+    }
 }
 
 fn hist_from(path: &str, n: usize, keep: impl Fn(&str) -> bool) -> Vec<String> {
@@ -162,6 +205,9 @@ impl Backend for Pacman {
     fn watch_path(&self) -> Option<String> {
         Some(self.mirrorlist.clone())
     }
+    fn probe_kind(&self) -> ProbeKind {
+        ProbeKind::PacmanDb
+    }
     fn probe_url(&self, m: &str) -> String {
         format!("{}/extra.db", m.replace("$repo", "extra").replace("$arch", "x86_64").trim_end_matches('/'))
     }
@@ -189,23 +235,32 @@ impl Backend for Pacman {
     }
 
     fn discover(&self, n: usize, log: Log) -> Result<(Vec<String>, Option<Vec<String>>), String> {
-        let tmp = tmp_path("mirrors");
         let mut file: Vec<String> = vec![];
-        let tool = if have("rate-mirrors") {
-            log("  rate-mirrors: зеркала рядом с тобой...");
-            Some(run(true, &[], "rate-mirrors", &["--allow-root", &format!("--save={tmp}"), "arch", "--max-delay=21600"]))
-        } else if have("reflector") {
-            log("  reflector: свежие зеркала...");
-            Some(run(true, &[], "reflector", &["--latest", "40", "--protocol", "https", "--sort", "score", "--save", &tmp]))
-        } else {
-            None
-        };
-        match tool {
-            Some(Ok(())) => file = fs::read_to_string(&tmp).unwrap_or_default().lines().map(String::from).collect(),
-            Some(Err(e)) => log(&format!("  не сработал: {e}")),
-            None => {}
+        let rate_mirrors = have("rate-mirrors");
+        let reflector = !rate_mirrors && have("reflector");
+        if rate_mirrors || reflector {
+            log(if rate_mirrors { "  rate-mirrors: зеркала рядом с тобой..." } else { "  reflector: свежие зеркала..." });
+            match PrivateTempDir::new() {
+                Ok(tmp_dir) => {
+                    let output = tmp_dir.0.join("mirrors");
+                    let output_arg = output.to_string_lossy().into_owned();
+                    let result = if rate_mirrors {
+                        let save_arg = format!("--save={output_arg}");
+                        run(true, &[], "rate-mirrors", &["--allow-root", &save_arg, "arch", "--max-delay=21600"])
+                    } else {
+                        run(true, &[], "reflector", &["--latest", "40", "--protocol", "https", "--sort", "score", "--save", &output_arg])
+                    };
+                    match result {
+                        Ok(()) => match fs::read_to_string(&output) {
+                            Ok(body) => file = body.lines().map(String::from).collect(),
+                            Err(e) => log(&format!("  не удалось прочитать результат автопоиска: {e}")),
+                        },
+                        Err(e) => log(&format!("  не сработал: {e}")),
+                    }
+                }
+                Err(e) => log(&format!("  не удалось создать закрытый временный каталог: {e}")),
+            }
         }
-        let _ = fs::remove_file(&tmp);
         let mut servers: Vec<String> = file.iter().filter_map(|l| server_url(l)).collect();
         if servers.len() < 5 {
             log("  список зеркал с archlinux.org...");
@@ -270,11 +325,22 @@ impl Backend for Pacman {
         if !Path::new(&format!("{}/sync", Self::sync_db())).is_dir() {
             return Err("временная база ещё не скачана".into());
         }
-        let (s, code) = out("pacman", &["-Qu", "--dbpath", &Self::sync_db()]);
-        if code > 1 {
-            return Err(format!("pacman -Qu: код {code}"));
+        let output = Command::new("pacman")
+            .args(["-Qu", "--dbpath", &Self::sync_db()])
+            .env("LC_ALL", "C")
+            .output()
+            .map_err(|e| format!("pacman -Qu: не удалось запустить: {e}"))?;
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let detail = last_line(&stderr).map(|line| format!(": {line}")).unwrap_or_default();
+        let Some(code) = output.status.code() else {
+            return Err(format!("pacman -Qu: процесс завершился без кода выхода{detail}"));
+        };
+        let updates: Vec<String> = lines(&stdout).into_iter().filter(|line| !line.contains("[ignored]")).collect();
+        if code > 1 || (code == 1 && (!stderr.trim().is_empty() || !updates.is_empty())) {
+            return Err(format!("pacman -Qu: код {code}{detail}"));
         }
-        Ok(lines(&s).into_iter().filter(|l| !l.contains("[ignored]")).collect())
+        Ok(updates)
     }
 
     fn download_size(&self, pkgs: &[String]) -> Option<u64> {
@@ -395,6 +461,477 @@ fn arch_status_mirrors() -> Result<Vec<String>, String> {
 // зеркал, apt берёт первое и сам переходит к следующему при ошибке. upd переписывает только этот список.
 
 const APT_LIST: &str = "/etc/apt/upd-mirrors.list";
+const APT_BACKUP: &str = "apt-backup.json";
+const APT_ORIGINAL_URI: &str = "apt-original-uri";
+
+fn apt_backup_dir() -> PathBuf {
+    PathBuf::from(state_dir()).join("private")
+}
+
+fn apt_backup_path() -> PathBuf {
+    apt_backup_dir().join(APT_BACKUP)
+}
+
+fn legacy_apt_backup_path() -> PathBuf {
+    PathBuf::from(state_dir()).join(APT_BACKUP)
+}
+
+fn apt_original_uri_path() -> PathBuf {
+    apt_backup_dir().join(APT_ORIGINAL_URI)
+}
+
+fn legacy_apt_original_uri_path() -> PathBuf {
+    PathBuf::from(state_dir()).join(APT_ORIGINAL_URI)
+}
+
+fn load_apt_original_uri() -> Result<String, String> {
+    let private = apt_original_uri_path();
+    let legacy = legacy_apt_original_uri_path();
+    ensure_private_dir(&apt_backup_dir())?;
+    let has_private = secure_backup_file(&private)?;
+    let has_legacy = secure_backup_file(&legacy)?;
+    if has_private {
+        let uri = fs::read_to_string(&private).map_err(|e| format!("{}: {e}", private.display()))?;
+        if has_legacy {
+            remove_file_if_exists(&legacy)?;
+        }
+        return Ok(uri);
+    }
+    if has_legacy {
+        let uri = fs::read_to_string(&legacy).map_err(|e| format!("{}: {e}", legacy.display()))?;
+        atomic_write(&private, uri.as_bytes(), 0o600).map_err(|e| e.to_string())?;
+        sync_parent_dir(&private)?;
+        remove_file_if_exists(&legacy)?;
+        return Ok(uri);
+    }
+    Ok(String::new())
+}
+
+fn peek_apt_original_uri() -> Result<String, String> {
+    for path in [apt_original_uri_path(), legacy_apt_original_uri_path()] {
+        match fs::symlink_metadata(&path) {
+            Ok(metadata) if metadata.file_type().is_file() => return fs::read_to_string(&path).map_err(|e| format!("{}: {e}", path.display())),
+            Ok(_) => return Err(format!("{}: ожидался обычный файл", path.display())),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+            Err(e) => return Err(format!("{}: {e}", path.display())),
+        }
+    }
+    Ok(String::new())
+}
+
+fn remove_file_if_exists(path: &Path) -> Result<(), String> {
+    match fs::remove_file(path) {
+        Ok(()) => sync_parent_dir(path),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(e) => Err(format!("{}: {e}", path.display())),
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+struct AptSourceVersion {
+    content: String,
+    mode: u32,
+    uid: u32,
+    gid: u32,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+struct AptSourceBackup {
+    content: String,
+    mode: u32,
+    uid: u32,
+    gid: u32,
+    #[serde(default)]
+    applied: Option<AptSourceVersion>,
+}
+
+const APT_TRANSACTION: &str = "apt-transaction.json";
+
+#[derive(serde::Serialize, serde::Deserialize)]
+struct AptTransaction {
+    files: BTreeMap<String, Option<AptSourceBackup>>,
+    prepared_file: Option<String>,
+}
+
+static APT_SOURCE_TEMP_COUNTER: AtomicU64 = AtomicU64::new(0);
+
+fn apt_transaction_path() -> PathBuf {
+    apt_backup_dir().join(APT_TRANSACTION)
+}
+
+fn sync_parent_dir(path: &Path) -> Result<(), String> {
+    let parent = path.parent().ok_or_else(|| format!("{}: нет родительского каталога", path.display()))?;
+    fs::File::open(parent).and_then(|dir| dir.sync_all()).map_err(|e| format!("{}: {e}", parent.display()))
+}
+
+fn apt_is_source_path(path: &Path) -> bool {
+    path == Path::new("/etc/apt/sources.list")
+        || (path.parent() == Some(Path::new("/etc/apt/sources.list.d")) && matches!(path.extension().and_then(|ext| ext.to_str()), Some("list" | "sources")))
+}
+
+fn apt_transaction_path_allowed(path: &Path) -> bool {
+    path == Path::new(APT_LIST)
+        || path == apt_backup_path().as_path()
+        || path == legacy_apt_backup_path().as_path()
+        || path == apt_original_uri_path().as_path()
+        || path == legacy_apt_original_uri_path().as_path()
+        || apt_is_source_path(path)
+}
+
+fn apt_temp_path_allowed(path: &Path) -> bool {
+    path.parent() == Path::new(APT_LIST).parent()
+        && path.file_name().and_then(|name| name.to_str()).map(|name| name.starts_with(".upd-source-") && name.ends_with(".tmp")).unwrap_or(false)
+}
+
+fn snapshot_apt_file(path: &Path) -> Result<Option<AptSourceBackup>, String> {
+    match fs::symlink_metadata(path) {
+        Ok(metadata) if metadata.file_type().is_file() => {
+            let content = fs::read_to_string(path).map_err(|e| format!("{}: {e}", path.display()))?;
+            Ok(Some(AptSourceBackup {
+                content,
+                mode: metadata.permissions().mode() & 0o7777,
+                uid: metadata.uid(),
+                gid: metadata.gid(),
+                applied: None,
+            }))
+        }
+        Ok(_) => Err(format!("{}: ожидался обычный файл", path.display())),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(e) => Err(format!("{}: {e}", path.display())),
+    }
+}
+
+fn write_apt_transaction(transaction: &AptTransaction) -> Result<(), String> {
+    let path = apt_transaction_path();
+    ensure_private_dir(&apt_backup_dir())?;
+    secure_backup_file(&path)?;
+    let data = serde_json::to_vec_pretty(transaction).map_err(|e| e.to_string())?;
+    atomic_write(&path, &data, 0o600).map_err(|e| e.to_string())?;
+    sync_parent_dir(&path)
+}
+
+fn rollback_apt_transaction(transaction: &AptTransaction) -> Result<(), String> {
+    let mut paths: Vec<_> = transaction.files.iter().collect();
+    paths.sort_by_key(|(path, _)| apt_is_source_path(Path::new(path)));
+    let mut errors = Vec::new();
+    for (path, previous) in paths {
+        let path = Path::new(path);
+        if !apt_transaction_path_allowed(path) {
+            errors.push(format!("{}: путь отката APT не разрешён", path.display()));
+            continue;
+        }
+        let result = match snapshot_apt_file(path) {
+            Ok(current) if &current == previous => continue,
+            Err(e) => Err(e),
+            Ok(_) => match previous {
+                Some(file) => atomic_write_apt_source(path, file.content.as_bytes(), file.mode, file.uid, file.gid),
+                None => remove_file_if_exists(path),
+            },
+        };
+        if let Err(e) = result {
+            errors.push(e);
+        }
+    }
+    if let Some(prepared) = &transaction.prepared_file {
+        let path = Path::new(prepared);
+        if !apt_temp_path_allowed(path) {
+            errors.push(format!("{}: временный путь APT не разрешён", path.display()));
+        } else if let Err(e) = remove_file_if_exists(path) {
+            errors.push(e);
+        }
+    }
+    if !errors.is_empty() {
+        return Err(errors.join("; "));
+    }
+    remove_file_if_exists(&apt_transaction_path())
+}
+
+fn recover_apt_transaction() -> Result<(), String> {
+    ensure_private_dir(&apt_backup_dir())?;
+    let path = apt_transaction_path();
+    if !secure_backup_file(&path)? {
+        return Ok(());
+    }
+    let data = fs::read(&path).map_err(|e| format!("{}: {e}", path.display()))?;
+    let transaction: AptTransaction = serde_json::from_slice(&data).map_err(|e| format!("{}: {e}", path.display()))?;
+    if transaction.files.keys().any(|p| !apt_transaction_path_allowed(Path::new(p)))
+        || transaction.prepared_file.as_deref().map(|p| !apt_temp_path_allowed(Path::new(p))).unwrap_or(false)
+    {
+        return Err(format!("{}: журнал APT содержит недопустимый путь", path.display()));
+    }
+    rollback_apt_transaction(&transaction)
+}
+
+fn run_apt_transaction<T>(paths: &[PathBuf], prepared_file: Option<&Path>, action: impl FnOnce() -> Result<T, String>) -> Result<T, String> {
+    recover_apt_transaction()?;
+    if let Some(path) = prepared_file {
+        if !apt_temp_path_allowed(path) {
+            return Err(format!("{}: временный путь транзакции APT не разрешён", path.display()));
+        }
+    }
+    let mut files = BTreeMap::new();
+    for path in paths {
+        if !apt_transaction_path_allowed(path) {
+            return Err(format!("{}: путь транзакции APT не разрешён", path.display()));
+        }
+        files.insert(path.to_string_lossy().into_owned(), snapshot_apt_file(path)?);
+    }
+    let transaction = AptTransaction { files, prepared_file: prepared_file.map(|path| path.to_string_lossy().into_owned()) };
+    if let Err(e) = write_apt_transaction(&transaction) {
+        if let Some(path) = prepared_file {
+            let _ = remove_file_if_exists(path);
+        }
+        return Err(e);
+    }
+    match action() {
+        Err(error) => match rollback_apt_transaction(&transaction) {
+            Ok(()) => Err(error),
+            Err(rollback) => Err(format!("{error}; откат APT не завершён: {rollback}")),
+        },
+        Ok(value) => match remove_file_if_exists(&apt_transaction_path()) {
+            Ok(()) => Ok(value),
+            Err(error) => {
+                let journal_error = write_apt_transaction(&transaction).err();
+                let rollback = rollback_apt_transaction(&transaction);
+                let details = journal_error.map(|e| format!("; журнал не восстановлен: {e}")).unwrap_or_default();
+                match rollback {
+                    Ok(()) => Err(format!("не удалось зафиксировать транзакцию APT: {error}{details}")),
+                    Err(e) => Err(format!("не удалось зафиксировать транзакцию APT: {error}{details}; откат: {e}")),
+                }
+            }
+        },
+    }
+}
+
+/// Подготовить APT-файл закрытым временным файлом и синхронизировать его до rename.
+fn prepare_apt_file(path: &Path, data: &[u8], mode: u32, uid: u32, gid: u32) -> Result<PathBuf, String> {
+    let dir = path.parent().unwrap_or(Path::new("."));
+    let mut created = None;
+    for _ in 0..8 {
+        let n = APT_SOURCE_TEMP_COUNTER.fetch_add(1, Ordering::Relaxed);
+        let tmp = dir.join(format!(".upd-source-{}-{n}.tmp", std::process::id()));
+        match fs::OpenOptions::new().write(true).create_new(true).mode(0o600).open(&tmp) {
+            Ok(file) => {
+                created = Some((tmp, file));
+                break;
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {}
+            Err(e) => return Err(format!("{}: {e}", path.display())),
+        }
+    }
+    let Some((tmp, mut file)) = created else {
+        return Err(format!("{}: не удалось создать временный файл", path.display()));
+    };
+    let result = (|| -> std::io::Result<()> {
+        file.write_all(data)?;
+        file.sync_all()?;
+        let metadata = file.metadata()?;
+        if metadata.uid() != uid || metadata.gid() != gid {
+            chown(&tmp, Some(uid), Some(gid))?;
+        }
+        fs::set_permissions(&tmp, fs::Permissions::from_mode(mode))?;
+        file.sync_all()?;
+        Ok(())
+    })();
+    if let Err(e) = result {
+        let _ = fs::remove_file(&tmp);
+        return Err(format!("{}: {e}", path.display()));
+    }
+    if let Err(e) = sync_parent_dir(&tmp) {
+        let _ = fs::remove_file(&tmp);
+        return Err(e);
+    }
+    Ok(tmp)
+}
+
+fn install_prepared_apt_file(prepared: &Path, path: &Path) -> Result<(), String> {
+    fs::rename(prepared, path).map_err(|e| format!("{}: {e}", path.display()))?;
+    sync_parent_dir(path)
+}
+
+/// Записать APT source атомарно: временный файл остаётся закрытым до установки owner и mode.
+fn atomic_write_apt_source(path: &Path, data: &[u8], mode: u32, uid: u32, gid: u32) -> Result<(), String> {
+    let tmp = prepare_apt_file(path, data, mode, uid, gid)?;
+    if let Err(e) = install_prepared_apt_file(&tmp, path) {
+        let _ = remove_file_if_exists(&tmp);
+        return Err(e);
+    }
+    Ok(())
+}
+
+fn ensure_private_dir(path: &Path) -> Result<(), String> {
+    let parent = path.parent().ok_or("нет родительского каталога для APT backup")?;
+    fs::create_dir_all(parent).map_err(|e| format!("{}: {e}", parent.display()))?;
+    match fs::symlink_metadata(path) {
+        Ok(metadata) if metadata.file_type().is_dir() => {}
+        Ok(_) => return Err(format!("{}: ожидался каталог", path.display())),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            let mut builder = fs::DirBuilder::new();
+            builder.mode(0o700);
+            match builder.create(path) {
+                Ok(()) => {}
+                Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {}
+                Err(e) => return Err(format!("{}: {e}", path.display())),
+            }
+        }
+        Err(e) => return Err(format!("{}: {e}", path.display())),
+    }
+    let metadata = fs::symlink_metadata(path).map_err(|e| format!("{}: {e}", path.display()))?;
+    if !metadata.file_type().is_dir() {
+        return Err(format!("{}: ожидался каталог", path.display()));
+    }
+    fs::set_permissions(path, fs::Permissions::from_mode(0o700)).map_err(|e| format!("{}: {e}", path.display()))?;
+    sync_parent_dir(path)
+}
+
+/// Проверить обычный файл и закрыть его до чтения или перезаписи.
+fn secure_backup_file(path: &Path) -> Result<bool, String> {
+    match fs::symlink_metadata(path) {
+        Ok(metadata) => {
+            if !metadata.file_type().is_file() {
+                return Err(format!("{}: ожидался обычный файл", path.display()));
+            }
+            fs::set_permissions(path, fs::Permissions::from_mode(0o600)).map_err(|e| format!("{}: {e}", path.display()))?;
+            Ok(true)
+        }
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(false),
+        Err(e) => Err(format!("{}: {e}", path.display())),
+    }
+}
+
+fn read_apt_backup(path: &Path) -> Result<BTreeMap<String, AptSourceBackup>, String> {
+    let data = fs::read(path).map_err(|e| format!("{}: {e}", path.display()))?;
+    let raw: BTreeMap<String, serde_json::Value> = serde_json::from_slice(&data).map_err(|e| format!("{}: {e}", path.display()))?;
+    raw.into_iter()
+        .map(|(source, entry)| {
+            let backup = if let Some(content) = entry.as_str() {
+                // Старый формат хранил только текст; его прежнее поведение было 0644 root:root.
+                AptSourceBackup { content: content.to_string(), mode: 0o644, uid: 0, gid: 0, applied: None }
+            } else {
+                serde_json::from_value(entry).map_err(|e| format!("{}: {e}", path.display()))?
+            };
+            Ok((source, backup))
+        })
+        .collect()
+}
+
+fn merge_apt_source_after_apply(path: &str, original: &AptSourceBackup, current: AptSourceBackup, original_uri: &str) -> Result<AptSourceBackup, String> {
+    let reference = format!("mirror+file:{APT_LIST}");
+    if current.content == original.content {
+        return Ok(current);
+    }
+    let legacy_applied = if original.applied.is_none() && !original_uri.is_empty() {
+        Some(AptSourceVersion {
+            content: original.content.replace(original_uri, &reference),
+            mode: original.mode,
+            uid: original.uid,
+            gid: original.gid,
+        })
+    } else {
+        None
+    };
+    let applied = original.applied.as_ref().or(legacy_applied.as_ref());
+    if let Some(applied) = applied {
+        if current.content == applied.content {
+            let metadata_unchanged = current.mode == applied.mode && current.uid == applied.uid && current.gid == applied.gid;
+            return Ok(AptSourceBackup {
+                content: original.content.clone(),
+                mode: if metadata_unchanged { original.mode } else { current.mode },
+                uid: if metadata_unchanged { original.uid } else { current.uid },
+                gid: if metadata_unchanged { original.gid } else { current.gid },
+                applied: None,
+            });
+        }
+    }
+    if current.content.contains(&reference) && original_uri.is_empty() {
+        return Err(format!("{path}: нет исходного URI для восстановления; backup сохранён"));
+    }
+    let restored = if let Some(applied) = applied {
+        let applied_lines: Vec<&str> = applied.content.split_inclusive('\n').collect();
+        let original_lines: Vec<&str> = original.content.split_inclusive('\n').collect();
+        let mut next_applied = 0;
+        let mut merged = String::new();
+        for line in current.content.split_inclusive('\n') {
+            let found = (next_applied..applied_lines.len()).find(|index| applied_lines[*index] == line);
+            if let Some(index) = found {
+                next_applied = index + 1;
+                if line.contains(&reference) {
+                    let Some(original_line) = original_lines.get(index) else {
+                        return Err(format!("{path}: applied snapshot не совпадает с backup; backup сохранён для ручного merge"));
+                    };
+                    if original_line.contains(&reference) {
+                        return Err(format!("{path}: исходный source уже ссылался на список upd; backup сохранён для ручного merge"));
+                    }
+                    merged.push_str(original_line);
+                } else {
+                    merged.push_str(line);
+                }
+            } else {
+                if line.contains(&reference) {
+                    return Err(format!("{path}: source изменён после применения upd и всё ещё ссылается на его список зеркал; backup сохранён"));
+                }
+                merged.push_str(line);
+            }
+        }
+        merged
+    } else if current.content.contains(&reference) {
+        if original.content.contains(&reference) {
+            return Err(format!("{path}: нельзя отличить исходную ссылку от подстановки upd; backup сохранён для ручного merge"));
+        }
+        current.content.replace(&reference, original_uri)
+    } else {
+        current.content.clone()
+    };
+    if restored.contains(&reference) {
+        return Err(format!("{path}: после восстановления остаётся ссылка на список зеркал upd; backup сохранён"));
+    }
+    Ok(AptSourceBackup { content: restored, mode: current.mode, uid: current.uid, gid: current.gid, applied: None })
+}
+
+fn restore_apt_source(path: &str, original: &AptSourceBackup, original_uri: &str) -> Result<(), String> {
+    let path_ref = Path::new(path);
+    let Some(current) = snapshot_apt_file(path_ref)? else {
+        return Ok(()); // Администратор удалил source-файл после установки upd.
+    };
+    let restored = merge_apt_source_after_apply(path, original, current.clone(), original_uri)?;
+    if restored == current {
+        return Ok(());
+    }
+    atomic_write_apt_source(path_ref, restored.content.as_bytes(), restored.mode, restored.uid, restored.gid)
+}
+
+fn save_apt_backup(backup: &BTreeMap<String, AptSourceBackup>) -> Result<(), String> {
+    let dir = apt_backup_dir();
+    ensure_private_dir(&dir)?;
+    let path = apt_backup_path();
+    secure_backup_file(&path)?;
+    let data = serde_json::to_vec_pretty(backup).map_err(|e| e.to_string())?;
+    atomic_write(&path, &data, 0o600).map_err(|e| e.to_string())?;
+    sync_parent_dir(&path)
+}
+
+fn load_apt_backup() -> Result<BTreeMap<String, AptSourceBackup>, String> {
+    let dir = apt_backup_dir();
+    ensure_private_dir(&dir)?;
+    let path = apt_backup_path();
+    let legacy = legacy_apt_backup_path();
+    let has_private = secure_backup_file(&path)?;
+    let has_legacy = secure_backup_file(&legacy)?;
+    if has_private {
+        let backup = read_apt_backup(&path)?;
+        if has_legacy {
+            remove_file_if_exists(&legacy)?;
+        }
+        return Ok(backup);
+    }
+    if has_legacy {
+        let backup = read_apt_backup(&legacy)?;
+        save_apt_backup(&backup)?;
+        remove_file_if_exists(&legacy)?;
+        return Ok(backup);
+    }
+    Ok(BTreeMap::new())
+}
 
 pub struct Apt {
     distro: String,
@@ -475,6 +1012,9 @@ impl Backend for Apt {
     fn mirror_note(&self) -> String {
         "для этой системы зеркала apt не настраиваются автоматически".into()
     }
+    fn probe_kind(&self) -> ProbeKind {
+        ProbeKind::AptInRelease
+    }
     fn probe_url(&self, m: &str) -> String {
         format!("{}/dists/{}/InRelease", m.trim_end_matches('/'), self.codename)
     }
@@ -522,47 +1062,143 @@ impl Backend for Apt {
     }
 
     fn apply_mirrors(&self, best: &[String], _: Option<&[String]>) -> Result<bool, String> {
+        recover_apt_transaction()?;
         let prim = self.primary_uri().ok_or("не нашёл основной источник apt")?;
-        let orig_file = format!("{}/apt-original-uri", state_dir());
-        let mut orig = fs::read_to_string(&orig_file).unwrap_or_default();
-        let mut changed = false;
-        if !prim.starts_with("mirror+file:") {
-            // первый запуск: перевести источники на список зеркал, оригиналы сохранить
-            let mut backup: BTreeMap<String, String> = load_json("apt-backup.json");
-            for f in Self::source_files() {
-                let Ok(t) = fs::read_to_string(&f) else { continue };
-                if !t.contains(&prim) {
-                    continue;
-                }
-                backup.entry(f.clone()).or_insert_with(|| t.clone());
-                save_json("apt-backup.json", &backup).map_err(|e| e.to_string())?;
-                atomic_write(Path::new(&f), t.replace(&prim, &format!("mirror+file:{APT_LIST}")).as_bytes(), 0o644).map_err(|e| e.to_string())?;
-            }
-            let _ = fs::write(&orig_file, &prim);
-            orig = prim;
-            changed = true;
+        let switching_to_mirror_file = !prim.starts_with("mirror+file:");
+        let mut original_uri = if switching_to_mirror_file { prim.clone() } else { peek_apt_original_uri()? };
+        if original_uri.is_empty() && switching_to_mirror_file {
+            original_uri = prim.clone();
         }
         let mut list = best.to_vec();
-        let o = orig.trim();
+        let o = original_uri.trim();
         if !o.is_empty() && !contains(&list, o) {
             list.push(o.to_string()); // исходное зеркало — последним запасным
         }
         let body = format!("# upd: зеркала apt по убыванию скорости (управляется автоматически)\n{}\n", list.join("\n"));
-        if fs::read_to_string(APT_LIST).map(|c| c == body).unwrap_or(false) {
-            return Ok(changed);
+        let list_changed = !fs::read_to_string(APT_LIST).map(|current| current == body).unwrap_or(false);
+        if !switching_to_mirror_file && !list_changed {
+            return Ok(false);
         }
-        atomic_write(Path::new(APT_LIST), body.as_bytes(), 0o644).map_err(|e| e.to_string())?;
-        Ok(true)
+        let mut sources = Vec::new();
+        if switching_to_mirror_file {
+            for file in Self::source_files() {
+                let Ok(content) = fs::read_to_string(&file) else { continue };
+                if !content.contains(&prim) {
+                    continue;
+                }
+                let metadata = fs::metadata(&file).map_err(|e| format!("{file}: {e}"))?;
+                sources.push((
+                    file,
+                    content,
+                    AptSourceBackup { content: String::new(), mode: metadata.permissions().mode() & 0o7777, uid: metadata.uid(), gid: metadata.gid(), applied: None },
+                ));
+            }
+        }
+        let prepared = prepare_apt_file(Path::new(APT_LIST), body.as_bytes(), 0o644, 0, 0)?;
+        let mut paths = vec![
+            PathBuf::from(APT_LIST),
+            apt_backup_path(),
+            legacy_apt_backup_path(),
+            apt_original_uri_path(),
+            legacy_apt_original_uri_path(),
+        ];
+        paths.extend(sources.iter().map(|(file, _, _)| PathBuf::from(file)));
+        let result = run_apt_transaction(&paths, Some(&prepared), || {
+            let stored_original_uri = load_apt_original_uri()?;
+            if !switching_to_mirror_file && stored_original_uri != original_uri {
+                return Err("исходный URI APT изменился во время подготовки зеркал".into());
+            }
+            let mut backup = load_apt_backup()?;
+            if backup.keys().any(|path| !apt_is_source_path(Path::new(path))) {
+                return Err("backup APT содержит недопустимый путь source-файла".into());
+            }
+            if switching_to_mirror_file {
+                let reference = format!("mirror+file:{APT_LIST}");
+                let mut replacements = Vec::new();
+                for (file, content, metadata) in &sources {
+                    let current_text = fs::read_to_string(file).map_err(|e| format!("{file}: {e}"))?;
+                    let current_meta = fs::metadata(file).map_err(|e| format!("{file}: {e}"))?;
+                    if current_text.as_str() != content.as_str()
+                        || current_meta.permissions().mode() & 0o7777 != metadata.mode
+                        || current_meta.uid() != metadata.uid
+                        || current_meta.gid() != metadata.gid
+                    {
+                        return Err(format!("{file}: source изменился во время подготовки зеркал"));
+                    }
+                    let current = AptSourceBackup { content: content.clone(), mode: metadata.mode, uid: metadata.uid, gid: metadata.gid, applied: None };
+                    let baseline = match backup.get(file) {
+                        Some(previous) => merge_apt_source_after_apply(file, previous, current, &stored_original_uri)?,
+                        None => current,
+                    };
+                    let original = backup.entry(file.clone()).or_insert_with(|| baseline.clone());
+                    // A direct or edited source is the new baseline before this application.
+                    original.content = baseline.content;
+                    original.mode = baseline.mode;
+                    original.uid = baseline.uid;
+                    original.gid = baseline.gid;
+                    let replaced = content.replace(&prim, &reference);
+                    original.applied = Some(AptSourceVersion { content: replaced.clone(), mode: original.mode, uid: original.uid, gid: original.gid });
+                    replacements.push((file.clone(), replaced, original.mode, original.uid, original.gid));
+                }
+                if !sources.is_empty() {
+                    save_apt_backup(&backup)?;
+                }
+                ensure_private_dir(&apt_backup_dir())?;
+                atomic_write(&apt_original_uri_path(), prim.as_bytes(), 0o600).map_err(|e| e.to_string())?;
+                sync_parent_dir(&apt_original_uri_path())?;
+                install_prepared_apt_file(&prepared, Path::new(APT_LIST))?;
+                for (file, replaced, mode, uid, gid) in replacements {
+                    atomic_write_apt_source(Path::new(&file), replaced.as_bytes(), mode, uid, gid)?;
+                }
+            } else {
+                install_prepared_apt_file(&prepared, Path::new(APT_LIST))?;
+            }
+            Ok(true)
+        });
+        if result.is_err() {
+            let _ = remove_file_if_exists(&prepared);
+        }
+        result
     }
 
     fn remove_mirrors(&self) -> Result<(), String> {
-        let backup: BTreeMap<String, String> = load_json("apt-backup.json");
-        for (dst, body) in &backup {
-            atomic_write(Path::new(dst), body.as_bytes(), 0o644).map_err(|e| e.to_string())?;
+        recover_apt_transaction()?;
+        let backup = load_apt_backup()?;
+        let mut paths = vec![
+            PathBuf::from(APT_LIST),
+            apt_backup_path(),
+            legacy_apt_backup_path(),
+            apt_original_uri_path(),
+            legacy_apt_original_uri_path(),
+        ];
+        for dst in backup.keys() {
+            let path = PathBuf::from(dst);
+            if !apt_is_source_path(&path) {
+                return Err(format!("{dst}: недопустимый путь APT source в backup"));
+            }
+            paths.push(path);
         }
-        let _ = fs::remove_file(format!("{}/apt-backup.json", state_dir()));
-        let _ = fs::remove_file(APT_LIST);
-        Ok(())
+        run_apt_transaction(&paths, None, || {
+            let original_uri = load_apt_original_uri()?;
+            for (dst, original) in &backup {
+                restore_apt_source(dst, original, &original_uri)?;
+            }
+            let reference = format!("mirror+file:{APT_LIST}");
+            for file in Self::source_files() {
+                match fs::read_to_string(&file) {
+                    Ok(content) if content.contains(&reference) => return Err(format!("{file}: источник всё ещё ссылается на список зеркал upd")),
+                    Ok(_) => {}
+                    Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+                    Err(e) => return Err(format!("{file}: не удалось проверить источник APT: {e}")),
+                }
+            }
+            remove_file_if_exists(&apt_backup_path())?;
+            remove_file_if_exists(&legacy_apt_backup_path())?;
+            remove_file_if_exists(&apt_original_uri_path())?;
+            remove_file_if_exists(&legacy_apt_original_uri_path())?;
+            remove_file_if_exists(Path::new(APT_LIST))?;
+            Ok(())
+        })
     }
 
     fn refresh(&self, quiet: bool) -> Result<(), String> {
@@ -712,8 +1348,11 @@ impl Backend for Rpm {
             if self.tumbleweed {
                 args.push("--all");
             }
-            return Ok(out("zypper", &args)
-                .0
+            let (s, code) = out("zypper", &args);
+            if code != 0 {
+                return Err(format!("zypper list-updates: код {code}"));
+            }
+            return Ok(s
                 .lines()
                 .filter_map(|l| {
                     let f: Vec<&str> = l.split('|').map(str::trim).collect();
@@ -771,6 +1410,8 @@ impl Backend for Rpm {
     fn cache_dirs(&self) -> Vec<&'static str> {
         if self.zyp() {
             vec!["/var/cache/zypp/packages"]
+        } else if self.bin == "dnf5" {
+            vec!["/var/cache/libdnf5"]
         } else {
             vec!["/var/cache/dnf", "/var/cache/libdnf5"]
         }
@@ -781,5 +1422,231 @@ impl Backend for Rpm {
     fn history(&self, n: usize) -> Vec<String> {
         let p = if self.zyp() { "/var/log/zypp/history" } else { "/var/log/dnf.rpm.log" };
         hist_from(p, n, |l| !l.starts_with('#'))
+    }
+}
+
+#[cfg(test)]
+mod contract_tests {
+    use super::*;
+    use std::collections::BTreeMap;
+    use std::os::unix::fs::PermissionsExt;
+    use std::path::{Path, PathBuf};
+
+    struct EnvGuard {
+        _iso: std::sync::MutexGuard<'static, ()>,
+        saved: Vec<(String, Option<String>)>,
+        cleanup: Vec<PathBuf>,
+    }
+
+    impl EnvGuard {
+        fn state_dir(path: &Path) -> Self {
+            let _iso = crate::common::contract_fixtures::isolation_lock();
+            let mut g = Self { _iso, saved: vec![], cleanup: vec![] };
+            g.set("UPD_STATE_DIR", path.to_str().unwrap());
+            g.cleanup.push(path.to_path_buf());
+            g
+        }
+
+        fn set(&mut self, key: &str, val: &str) {
+            self.saved.push((key.to_string(), std::env::var(key).ok()));
+            unsafe {
+                std::env::set_var(key, val);
+            }
+        }
+    }
+
+    impl Drop for EnvGuard {
+        fn drop(&mut self) {
+            for (k, v) in &self.saved {
+                match v {
+                    Some(val) => unsafe {
+                        std::env::set_var(k, val);
+                    },
+                    None => unsafe {
+                        std::env::remove_var(k);
+                    },
+                }
+            }
+            for p in &self.cleanup {
+                let _ = fs::remove_dir_all(p);
+            }
+        }
+    }
+
+    fn write_executable(path: &Path, body: &str) {
+        fs::write(path, body).unwrap();
+        fs::set_permissions(path, fs::Permissions::from_mode(0o755)).unwrap();
+    }
+
+    fn zypper_osr() -> BTreeMap<String, String> {
+        let mut m = BTreeMap::new();
+        m.insert("PRETTY_NAME".into(), "Test".into());
+        m.insert("ID".into(), "opensuse-tumbleweed".into());
+        m
+    }
+
+    // --- FS-01 ---
+    #[test]
+    fn fs01_private_temp_dir_mode_and_cleanup() {
+        let dir = PrivateTempDir::new().unwrap();
+        let mode = fs::metadata(&dir.0).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode, 0o700);
+        let path = dir.0.clone();
+        drop(dir);
+        assert!(!path.exists());
+    }
+
+    #[test]
+    fn fs01_does_not_use_predictable_tmp_path() {
+        let pid = std::process::id();
+        let bait = PathBuf::from(format!("/tmp/upd-mirrors.{pid}"));
+        fs::write(&bait, b"attacker").unwrap();
+        let dir = PrivateTempDir::new().unwrap();
+        assert_ne!(dir.0, bait);
+        assert_eq!(fs::read_to_string(&bait).unwrap(), "attacker");
+        drop(dir);
+        let _ = fs::remove_file(&bait);
+    }
+
+    // --- SEC-04A ---
+    #[test]
+    fn sec04a_apt_backup_is_private() {
+        let base = std::env::temp_dir().join(format!("upd-apt-backup-{}", std::process::id()));
+        fs::create_dir_all(&base).unwrap();
+        let _g = EnvGuard::state_dir(&base);
+        let mut backup = BTreeMap::new();
+        backup.insert(
+            "/etc/apt/sources.list".into(),
+            AptSourceBackup { content: "deb http://secret:token@mirror.example/ubuntu jammy main".into(), mode: 0o600, uid: 0, gid: 0, applied: None },
+        );
+        save_apt_backup(&backup).unwrap();
+        let file_mode = fs::metadata(apt_backup_path()).unwrap().permissions().mode() & 0o777;
+        let dir_mode = fs::metadata(apt_backup_dir()).unwrap().permissions().mode() & 0o777;
+        assert_eq!(file_mode, 0o600);
+        assert_eq!(dir_mode, 0o700);
+        let loaded = load_apt_backup().unwrap();
+        assert_eq!(loaded.get("/etc/apt/sources.list").map(|b| b.content.as_str()), Some("deb http://secret:token@mirror.example/ubuntu jammy main"));
+    }
+
+    // --- UPD-05 ---
+    #[test]
+    fn upd05_zypper_failure_is_not_empty_list() {
+        let bin = std::env::temp_dir().join(format!("upd-zypper-bin-{}", std::process::id()));
+        fs::create_dir_all(&bin).unwrap();
+        write_executable(&bin.join("zypper"), "#!/bin/sh\nexit 9\n");
+        let err = crate::common::contract_fixtures::with_prepend_path(&bin, || Rpm::zypper(&zypper_osr()).updates()).unwrap_err();
+        assert!(err.contains("9"), "ожидали код ошибки в сообщении: {err}");
+    }
+
+    #[test]
+    fn upd05_zypper_empty_stdout_is_ok() {
+        let bin = std::env::temp_dir().join(format!("upd-zypper-empty-{}", std::process::id()));
+        fs::create_dir_all(&bin).unwrap();
+        write_executable(&bin.join("zypper"), "#!/bin/sh\nexit 0\n");
+        assert!(crate::common::contract_fixtures::with_prepend_path(&bin, || Rpm::zypper(&zypper_osr()).updates()).unwrap().is_empty());
+    }
+
+    #[test]
+    fn upd05_zypper_parses_update_lines() {
+        let bin = std::env::temp_dir().join(format!("upd-zypper-parse-{}", std::process::id()));
+        fs::create_dir_all(&bin).unwrap();
+        write_executable(
+            &bin.join("zypper"),
+            "#!/bin/sh\necho 'v | i | nano | 7.2-1.1 | 7.2-1.2 | repo'\nexit 0\n",
+        );
+        let ups = crate::common::contract_fixtures::with_prepend_path(&bin, || Rpm::zypper(&zypper_osr()).updates()).unwrap();
+        assert_eq!(ups, vec!["nano 7.2-1.1 -> 7.2-1.2"]);
+    }
+
+    // --- SEC-04B ---
+    #[test]
+    fn sec04b_apt_original_uri_file_is_private() {
+        let base = std::env::temp_dir().join(format!("upd-apt-uri-{}", std::process::id()));
+        fs::create_dir_all(&base).unwrap();
+        let _g = EnvGuard::state_dir(&base);
+        let uri = "http://secret:token@mirror.example/debian";
+        save_apt_backup(&BTreeMap::new()).unwrap();
+        atomic_write(&apt_original_uri_path(), uri.as_bytes(), 0o600).unwrap();
+        let mode = fs::metadata(apt_original_uri_path()).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode, 0o600);
+        assert_eq!(load_apt_original_uri().unwrap(), uri);
+    }
+
+    // --- UPD-07 ---
+    #[test]
+    fn upd07_pacman_missing_exit_code_is_error() {
+        let base = std::env::temp_dir().join(format!("upd-pacman-miss-{}", std::process::id()));
+        let bin = base.join("bin");
+        fs::create_dir_all(&bin).unwrap();
+        fs::create_dir_all(base.join("syncdb").join("sync")).unwrap();
+        write_executable(&bin.join("pacman"), "#!/bin/sh\nexit 127\n");
+        let osr = BTreeMap::from([("PRETTY_NAME".to_string(), "Test".to_string())]);
+        let _g = EnvGuard::state_dir(&base);
+        let _path = crate::common::contract_fixtures::prepend_path(&bin);
+        let p = Pacman::new(&osr);
+        let err = p.updates().unwrap_err();
+        assert!(err.contains("127"), "{err}");
+    }
+
+    // --- SEC-04C ---
+    #[test]
+    fn sec04c_atomic_write_preserves_private_mode() {
+        let base = std::env::temp_dir().join(format!("upd-apt-mode-{}", std::process::id()));
+        fs::create_dir_all(&base).unwrap();
+        let path = base.join("sources.list");
+        fs::write(&path, "deb http://example/debian stable main\n").unwrap();
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o600)).unwrap();
+        let uid = fs::metadata(&path).unwrap().uid();
+        let gid = fs::metadata(&path).unwrap().gid();
+        atomic_write_apt_source(&path, b"deb http://mirror/debian stable main\n", 0o600, uid, gid).unwrap();
+        let mode = fs::metadata(&path).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode, 0o600);
+        let _ = fs::remove_dir_all(&base);
+    }
+
+    // --- APT-01 ---
+    #[test]
+    fn apt01_merge_keeps_admin_line_after_mirror_apply() {
+        let uri = "http://mirror.example/debian";
+        let reference = format!("mirror+file:{APT_LIST}");
+        let original = AptSourceBackup {
+            content: format!("deb {uri} stable main\n"),
+            mode: 0o644,
+            uid: 0,
+            gid: 0,
+            applied: None,
+        };
+        let applied_content = original.content.replace(uri, &reference);
+        let current = AptSourceBackup {
+            content: format!("{applied_content}deb http://admin-added/local extra\n"),
+            mode: 0o644,
+            uid: 0,
+            gid: 0,
+            applied: None,
+        };
+        let merged = merge_apt_source_after_apply("/etc/apt/sources.list", &original, current, uri).unwrap();
+        assert!(merged.content.contains("admin-added"));
+        assert!(!merged.content.contains(&reference));
+    }
+
+    // --- APT-02 ---
+    #[test]
+    fn apt02_merge_rejects_orphan_mirror_list_reference() {
+        let reference = format!("mirror+file:{APT_LIST}");
+        let original = AptSourceBackup {
+            content: "deb http://mirror.example/debian stable main\n".into(),
+            mode: 0o644,
+            uid: 0,
+            gid: 0,
+            applied: None,
+        };
+        let current = AptSourceBackup {
+            content: format!("deb {reference} stable main\n"),
+            mode: 0o644,
+            uid: 0,
+            gid: 0,
+            applied: None,
+        };
+        assert!(merge_apt_source_after_apply("/etc/apt/sources.list", &original, current, "").is_err());
     }
 }

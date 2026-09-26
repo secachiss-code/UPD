@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::fs;
 use std::io::{BufRead, Write};
+use std::net::Ipv6Addr;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
@@ -140,9 +141,14 @@ impl Config {
         }
     }
 
-    pub fn load(default_mirrors: Vec<String>) -> Self {
+    pub fn load(default_mirrors: Vec<String>) -> Result<Self, String> {
         let mut c = Config::defaults(default_mirrors);
-        let Ok(text) = fs::read_to_string(conf_path()) else { return c };
+        let path = conf_path();
+        let text = match fs::read_to_string(&path) {
+            Ok(text) => text,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(c),
+            Err(e) => return Err(format!("{path}: {e}")),
+        };
         c.mirrors.clear();
         for line in text.lines() {
             let line = line.trim();
@@ -194,7 +200,7 @@ impl Config {
                 _ => {}
             }
         }
-        c
+        Ok(c)
     }
 
     fn value(&self, k: &str) -> i64 {
@@ -304,6 +310,16 @@ pub struct MirrorState {
     #[serde(default)]
     pub fingerprint: String,
     #[serde(default)]
+    pub pending_apply: bool,
+    #[serde(default)]
+    pub pending_fingerprint: String,
+    #[serde(default)]
+    pub pending_label: String,
+    #[serde(default)]
+    pub pending_fallback: Option<Vec<String>>,
+    #[serde(default)]
+    pub apply_error: String,
+    #[serde(default)]
     pub label: String,
     #[serde(default)]
     pub networks: BTreeMap<String, NetMem>,
@@ -322,6 +338,13 @@ pub struct News {
     pub link: String,
 }
 
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum PackageCheckFailure {
+    Refresh,
+    UpdateList,
+}
+
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]
 pub struct UpdState {
     #[serde(default)]
@@ -331,15 +354,23 @@ pub struct UpdState {
     #[serde(default)]
     pub downloaded: bool,
     #[serde(default)]
-    pub download_size: u64,
+    pub download_size: Option<u64>,
     #[serde(default)]
     pub error: String,
+    #[serde(default)]
+    pub package_check_failure: Option<PackageCheckFailure>,
+    #[serde(default)]
+    pub space_check_error: Option<String>,
     #[serde(default)]
     pub skipped: String,
     #[serde(default)]
     pub flatpak: Vec<String>,
     #[serde(default)]
+    pub flatpak_error: String,
+    #[serde(default)]
     pub firmware: Vec<String>,
+    #[serde(default)]
+    pub firmware_error: String,
     #[serde(default)]
     pub news: Vec<News>,
 }
@@ -374,7 +405,10 @@ pub fn atomic_write(path: &Path, data: &[u8], mode: u32) -> std::io::Result<()> 
 /// Блокировка: одна тяжёлая задача за раз. Освобождается при закрытии файла.
 pub struct Lock(#[allow(dead_code)] fs::File);
 
-pub fn lock(block: bool) -> Result<Lock, String> {
+fn named_lock(name: &str, block: bool) -> Result<Lock, String> {
+    if name.is_empty() || Path::new(name).components().count() != 1 {
+        return Err("некорректное имя блокировки".into());
+    }
     let dir = state_dir();
     fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     let f = fs::OpenOptions::new()
@@ -382,7 +416,7 @@ pub fn lock(block: bool) -> Result<Lock, String> {
         .truncate(false)
         .read(true)
         .write(true)
-        .open(Path::new(&dir).join(".lock"))
+        .open(Path::new(&dir).join(name))
         .map_err(|e| e.to_string())?;
     use std::os::fd::AsRawFd;
     let op = if block { libc::LOCK_EX } else { libc::LOCK_EX | libc::LOCK_NB };
@@ -390,6 +424,14 @@ pub fn lock(block: bool) -> Result<Lock, String> {
         return Err("busy".into());
     }
     Ok(Lock(f))
+}
+
+pub fn lock(block: bool) -> Result<Lock, String> {
+    named_lock(".lock", block)
+}
+
+pub fn subscriptions_lock(block: bool) -> Result<Lock, String> {
+    named_lock(".vpn-subs.lock", block)
 }
 
 // ---------- команды ----------
@@ -585,40 +627,109 @@ pub struct NetInfo {
     pub dev: String,
 }
 
-/// Отпечаток сети: шлюз, его MAC и поднятые VPN/TUN. Только /proc и /sys, без запросов в интернет.
-pub fn fingerprint() -> NetInfo {
-    let (gw, dev) = default_route();
-    let mac = arp_mac(&gw);
+fn net_info_from_routes(routes: Vec<DefaultRoute>) -> NetInfo {
+    let mac = routes.iter().find(|r| r.family == "IPv4").map(|r| arp_mac(&r.gateway)).unwrap_or_default();
     let vpn = vpn_ifaces();
-    let raw = format!("{dev}|{gw}|{mac}|{}", vpn.join(","));
+    let route_key = routes.iter().map(|r| format!("{}|{}|{}|{}", r.family, r.gateway, r.dev, r.metric)).collect::<Vec<_>>().join(";");
+    let raw = format!("{route_key}|{mac}|{}", vpn.join(","));
     let id = sha1_smol::Sha1::from(raw.as_bytes()).digest().to_string()[..10].to_string();
-    let mut label = if dev.is_empty() { "нет сети".to_string() } else { dev.clone() };
-    if !gw.is_empty() {
-        label += &format!(" через {gw}");
-    }
+    let dev = routes.iter().find(|r| r.family == "IPv4").or_else(|| routes.first()).map(|r| r.dev.clone()).unwrap_or_default();
+    let mut label = if routes.is_empty() {
+        "нет сети".to_string()
+    } else {
+        routes.iter().map(|r| format!("{} {} через {}", r.family, r.dev, r.gateway)).collect::<Vec<_>>().join(", ")
+    };
     if !vpn.is_empty() {
         label += &format!(" + VPN {}", vpn.join(","));
     }
-    NetInfo { id, label, online: !gw.is_empty() || !vpn.is_empty(), vpn: !vpn.is_empty(), dev }
+    NetInfo { id, label, online: !routes.is_empty(), vpn: !vpn.is_empty(), dev }
 }
 
-fn default_route() -> (String, String) {
-    let Ok(data) = fs::read_to_string("/proc/net/route") else { return Default::default() };
-    let mut best: Option<(i64, String, String)> = None;
+/// Отпечаток сети: шлюз, его MAC и поднятые VPN/TUN. Только /proc и /sys, без запросов в интернет.
+pub fn fingerprint() -> NetInfo {
+    net_info_from_routes(default_routes())
+}
+
+struct DefaultRoute {
+    family: &'static str,
+    gateway: String,
+    dev: String,
+    metric: u64,
+}
+
+fn default_routes() -> Vec<DefaultRoute> {
+    [default_ipv4_route(), default_ipv6_route()].into_iter().flatten().collect()
+}
+
+fn default_ipv4_route() -> Option<DefaultRoute> {
+    let data = fs::read_to_string("/proc/net/route").ok()?;
+    let mut best: Option<DefaultRoute> = None;
     for l in data.lines().skip(1) {
         let f: Vec<&str> = l.split_whitespace().collect();
         if f.len() < 8 || f[1] != "00000000" || f[7] != "00000000" {
             continue;
         }
-        let metric: i64 = f[6].parse().unwrap_or(0);
+        let metric: u64 = f[6].parse().unwrap_or(0);
         let Ok(g) = u32::from_str_radix(f[2], 16) else { continue };
         let b = g.to_le_bytes();
-        let gw = format!("{}.{}.{}.{}", b[0], b[1], b[2], b[3]);
-        if best.as_ref().map(|x| metric < x.0).unwrap_or(true) {
-            best = Some((metric, gw, f[0].to_string()));
+        let route = DefaultRoute {
+            family: "IPv4",
+            gateway: format!("{}.{}.{}.{}", b[0], b[1], b[2], b[3]),
+            dev: f[0].to_string(),
+            metric,
+        };
+        if best.as_ref().map(|x| metric < x.metric).unwrap_or(true) {
+            best = Some(route);
         }
     }
-    best.map(|(_, g, d)| (g, d)).unwrap_or_default()
+    best
+}
+
+fn select_default_ipv6_route_with(data: &str, iface_up: fn(&str) -> bool) -> Option<DefaultRoute> {
+    let mut best: Option<DefaultRoute> = None;
+    for line in data.lines() {
+        let f: Vec<&str> = line.split_whitespace().collect();
+        if f.len() < 10 || f[0] != "00000000000000000000000000000000" || f[1] != "00" || f[2] != "00000000000000000000000000000000" || f[3] != "00" {
+            continue;
+        }
+        let Ok(metric) = u64::from_str_radix(f[5], 16) else { continue };
+        let Ok(flags) = u32::from_str_radix(f[8], 16) else { continue };
+        if flags & 0x1 == 0 || flags & 0x200 != 0 || !iface_up(f[9]) {
+            continue;
+        }
+        let Some(gateway) = ipv6_route_address(f[4]) else { continue };
+        let route = DefaultRoute { family: "IPv6", gateway, dev: f[9].to_string(), metric };
+        if best.as_ref().map(|x| metric < x.metric).unwrap_or(true) {
+            best = Some(route);
+        }
+    }
+    best
+}
+
+fn select_default_ipv6_route(data: &str) -> Option<DefaultRoute> {
+    select_default_ipv6_route_with(data, route_interface_up)
+}
+
+fn default_ipv6_route() -> Option<DefaultRoute> {
+    let data = fs::read_to_string("/proc/net/ipv6_route").ok()?;
+    select_default_ipv6_route(&data)
+}
+
+fn ipv6_route_address(hex: &str) -> Option<String> {
+    if hex.len() != 32 {
+        return None;
+    }
+    let mut octets = [0u8; 16];
+    for (i, octet) in octets.iter_mut().enumerate() {
+        *octet = u8::from_str_radix(&hex[i * 2..i * 2 + 2], 16).ok()?;
+    }
+    Some(Ipv6Addr::from(octets).to_string())
+}
+
+fn route_interface_up(dev: &str) -> bool {
+    let flags = fs::read_to_string(format!("/sys/class/net/{dev}/flags")).ok().and_then(|s| u32::from_str_radix(s.trim().trim_start_matches("0x"), 16).ok());
+    let operstate = fs::read_to_string(format!("/sys/class/net/{dev}/operstate")).unwrap_or_default();
+    flags.map(|f| f & 0x1 != 0).unwrap_or(false) && matches!(operstate.trim(), "up" | "unknown")
 }
 
 fn arp_mac(ip: &str) -> String {
@@ -679,13 +790,13 @@ pub fn on_battery() -> bool {
 
 // ---------- система ----------
 
-pub fn free_space(path: &str) -> u64 {
-    let Ok(c) = std::ffi::CString::new(path) else { return 0 };
+pub fn free_space(path: &str) -> std::io::Result<u64> {
+    let c = std::ffi::CString::new(path).map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidInput, e))?;
     let mut s: libc::statvfs = unsafe { std::mem::zeroed() };
     if unsafe { libc::statvfs(c.as_ptr(), &mut s) } != 0 {
-        return 0;
+        return Err(std::io::Error::last_os_error());
     }
-    s.f_bavail as u64 * s.f_frsize as u64
+    Ok(s.f_bavail as u64 * s.f_frsize as u64)
 }
 
 fn boot_time() -> i64 {
@@ -700,26 +811,43 @@ fn kernel_release() -> String {
     fs::read_to_string("/proc/sys/kernel/osrelease").unwrap_or_default().trim().to_string()
 }
 
+fn module_dirs() -> Vec<PathBuf> {
+    let mut dirs = vec![];
+    for path in ["/usr/lib/modules", "/lib/modules"] {
+        if !Path::new(path).is_dir() {
+            continue;
+        }
+        let canonical = fs::canonicalize(path).unwrap_or_else(|_| PathBuf::from(path));
+        if !dirs.contains(&canonical) {
+            dirs.push(canonical);
+        }
+    }
+    dirs
+}
+
 /// Нужна перезагрузка: отметка дистрибутива, пропали модули запущенного ядра, или новое ядро после загрузки.
 pub fn reboot_needed() -> bool {
     if Path::new("/run/reboot-required").exists() {
         return true;
     }
+    let dirs = module_dirs();
     let rel = kernel_release();
-    if !rel.is_empty() && !Path::new("/usr/lib/modules").join(&rel).exists() {
+    if !rel.is_empty() && !dirs.iter().any(|dir| dir.join(&rel).is_dir()) {
         return true;
     }
     let boot = boot_time();
-    fs::read_dir("/usr/lib/modules")
-        .map(|rd| {
-            rd.flatten().any(|e| {
-                fs::metadata(e.path().join("modules.dep"))
-                    .and_then(|m| m.modified())
-                    .map(|t| boot > 0 && t.duration_since(UNIX_EPOCH).map(|d| d.as_secs() as i64).unwrap_or(0) > boot + 60)
-                    .unwrap_or(false)
+    dirs.iter().any(|dir| {
+        fs::read_dir(dir)
+            .map(|rd| {
+                rd.flatten().any(|e| {
+                    fs::metadata(e.path().join("modules.dep"))
+                        .and_then(|m| m.modified())
+                        .map(|t| boot > 0 && t.duration_since(UNIX_EPOCH).map(|d| d.as_secs() as i64).unwrap_or(0) > boot + 60)
+                        .unwrap_or(false)
+                })
             })
-        })
-        .unwrap_or(false)
+            .unwrap_or(false)
+    })
 }
 
 pub fn dir_size(dirs: &[&str]) -> u64 {
@@ -801,11 +929,39 @@ pub struct Restart {
     pub critical: Vec<String>,
     /// программы пользователя — перезапустить вручную или перелогиниться
     pub apps: Vec<String>,
+    /// процессы с удалёнными библиотеками, cgroup которых не удалось отнести к службе или приложению
+    pub unknown: Vec<String>,
 }
 
 const CRITICAL: &[&str] = &[
     "dbus", "dbus-broker", "systemd-logind", "gdm", "sddm", "lightdm", "display-manager", "systemd-journald", "polkit",
 ];
+
+fn systemd_cgroup_path(cgroups: &str) -> Option<&str> {
+    if let Some(path) = cgroups.lines().find_map(|line| line.strip_prefix("0::")).filter(|path| path.starts_with('/')) {
+        return Some(path);
+    }
+    cgroups.lines().find_map(|line| {
+        let mut fields = line.splitn(3, ':');
+        let hierarchy = fields.next()?;
+        let controllers = fields.next()?;
+        let path = fields.next()?;
+        (!hierarchy.is_empty()
+            && hierarchy.bytes().all(|b| b.is_ascii_digit())
+            && controllers.split(',').any(|controller| controller == "name=systemd")
+            && path.starts_with('/'))
+        .then_some(path)
+    })
+}
+
+fn systemd_service(path: &str) -> Option<&str> {
+    let unit = path.strip_prefix("/system.slice/")?.split('/').next()?;
+    unit.strip_suffix(".service").filter(|stem| !stem.is_empty()).map(|_| unit)
+}
+
+fn process_label(comm: &str, pid: &str) -> String {
+    if comm.is_empty() { format!("PID {pid}") } else { format!("{comm} (PID {pid})") }
+}
 
 pub fn needs_restart() -> Restart {
     let mut r = Restart::default();
@@ -823,27 +979,39 @@ pub fn needs_restart() -> Restart {
             continue;
         }
         let cg = fs::read_to_string(base.join("cgroup")).unwrap_or_default();
-        let path = cg.lines().find_map(|l| l.strip_prefix("0::")).unwrap_or("").to_string();
+        let path = systemd_cgroup_path(&cg);
         let comm = fs::read_to_string(base.join("comm")).unwrap_or_default().trim().to_string();
-        let last = path.rsplit('/').next().unwrap_or("");
-        if path.starts_with("/system.slice/") && last.ends_with(".service") {
-            let unit = last.to_string();
+        if let Some(unit) = path.and_then(systemd_service) {
+            let unit = unit.to_string();
             let stem = unit.trim_end_matches(".service");
             let target = if CRITICAL.iter().any(|c| stem == *c || stem.starts_with(&format!("{c}@"))) { &mut r.critical } else { &mut r.services };
             if !target.contains(&unit) {
                 target.push(unit);
             }
-        } else if path.contains("/user@") || path.starts_with("/user.slice") {
+        } else if path.map(|p| p == "/user.slice" || p.starts_with("/user.slice/")).unwrap_or(false) {
             if !comm.is_empty() && !r.apps.contains(&comm) {
-                r.apps.push(comm);
+                r.apps.push(comm.clone());
+            } else if comm.is_empty() {
+                let process = process_label(&comm, pid);
+                if !r.unknown.contains(&process) {
+                    r.unknown.push(process);
+                }
             }
-        } else if (path == "/init.scope" || pid == "1") && !r.critical.contains(&"systemd (PID 1)".to_string()) {
-            r.critical.push("systemd (PID 1)".into());
+        } else if path == Some("/init.scope") || pid == "1" {
+            if !r.critical.contains(&"systemd (PID 1)".to_string()) {
+                r.critical.push("systemd (PID 1)".into());
+            }
+        } else {
+            let process = process_label(&comm, pid);
+            if !r.unknown.contains(&process) {
+                r.unknown.push(process);
+            }
         }
     }
     r.services.sort();
     r.critical.sort();
     r.apps.sort();
+    r.unknown.sort();
     r
 }
 
@@ -863,4 +1031,155 @@ pub fn os_release() -> BTreeMap<String, String> {
     }
     m.entry("PRETTY_NAME".into()).or_insert_with(|| "Linux".into());
     m
+}
+
+#[cfg(test)]
+pub(crate) mod contract_fixtures {
+    use std::path::Path;
+    use std::sync::{Mutex, OnceLock};
+
+    pub(crate) fn isolation_lock() -> std::sync::MutexGuard<'static, ()> {
+        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+        LOCK.get_or_init(|| Mutex::new(()))
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+    }
+
+    pub struct PathGuard {
+        old: String,
+    }
+
+    impl Drop for PathGuard {
+        fn drop(&mut self) {
+            unsafe {
+                std::env::set_var("PATH", &self.old);
+            }
+        }
+    }
+
+    /// Меняет PATH; вызывать только под `isolation_lock` или из `with_prepend_path`.
+    pub fn prepend_path(bin_dir: &Path) -> PathGuard {
+        let old = std::env::var("PATH").unwrap_or_default();
+        unsafe {
+            std::env::set_var("PATH", format!("{}:{}", bin_dir.display(), old));
+        }
+        PathGuard { old }
+    }
+
+    pub fn with_prepend_path<R>(bin_dir: &Path, f: impl FnOnce() -> R) -> R {
+        let _g = isolation_lock();
+        let _path = prepend_path(bin_dir);
+        f()
+    }
+}
+
+#[cfg(test)]
+mod contract_tests {
+    use super::*;
+
+    // --- NET-01 ---
+    #[test]
+    fn net01_ipv6_gateway_decodes() {
+        assert_eq!(ipv6_route_address("20010db8000000000000000000000001"), Some("2001:db8::1".to_string()));
+    }
+
+    #[test]
+    fn net01_ipv6_only_route_is_online() {
+        let routes = vec![DefaultRoute {
+            family: "IPv6",
+            gateway: "2001:db8::1".into(),
+            dev: "eth0".into(),
+            metric: 100,
+        }];
+        let info = net_info_from_routes(routes);
+        assert!(info.online);
+        assert!(info.label.contains("IPv6"));
+        assert!(info.label.contains("2001:db8::1"));
+    }
+
+    #[test]
+    fn net01_gateway_change_changes_fingerprint_id() {
+        let a = net_info_from_routes(vec![DefaultRoute {
+            family: "IPv6",
+            gateway: "2001:db8::1".into(),
+            dev: "eth0".into(),
+            metric: 0,
+        }]);
+        let b = net_info_from_routes(vec![DefaultRoute {
+            family: "IPv6",
+            gateway: "2001:db8::2".into(),
+            dev: "eth0".into(),
+            metric: 0,
+        }]);
+        assert_ne!(a.id, b.id);
+    }
+
+    #[test]
+    fn net01_no_default_routes_offline() {
+        let info = net_info_from_routes(vec![]);
+        assert!(!info.online);
+        assert!(info.label.contains("нет сети"));
+    }
+
+    #[test]
+    fn net01_parses_ipv6_default_from_fixture() {
+        // flags 0x201 — UP, не expired; gateway 2001:db8::1; dev lo обычно поднят
+        let fixture = "00000000000000000000000000000000 00 00000000000000000000000000000000 00 \
+            20010db8000000000000000000000001 0000000000000000 0000000000000000 0000000000000064 00000001 lo";
+        let route = select_default_ipv6_route_with(fixture, |_| true);
+        assert_eq!(route.as_ref().map(|r| r.gateway.as_str()), Some("2001:db8::1"));
+        assert_eq!(route.as_ref().map(|r| r.dev.as_str()), Some("lo"));
+    }
+
+    // --- SYS-01 ---
+    #[test]
+    fn sys01_systemd_cgroup_v2_path() {
+        let cg = "0::/system.slice/ssh.service\n";
+        assert_eq!(systemd_cgroup_path(cg), Some("/system.slice/ssh.service"));
+    }
+
+    #[test]
+    fn sys01_systemd_cgroup_v1_path() {
+        let cg = "9:devices:/user.slice\n2:name=systemd:/system.slice/cups.service\n";
+        assert_eq!(systemd_cgroup_path(cg), Some("/system.slice/cups.service"));
+    }
+
+    #[test]
+    fn sys01_systemd_service_from_cgroup() {
+        assert_eq!(systemd_service("/system.slice/ssh.service"), Some("ssh.service"));
+        assert_eq!(systemd_service("/user.slice/user-1000.slice"), None);
+    }
+
+    // --- SYS-02 ---
+    #[test]
+    fn sys02_module_dirs_has_no_duplicates() {
+        let dirs = module_dirs();
+        let mut seen = std::collections::HashSet::new();
+        for d in dirs {
+            assert!(seen.insert(d.clone()), "дубликат каталога модулей: {d:?}");
+        }
+    }
+
+    // --- DATA-04 ---
+    #[test]
+    fn data04_unreadable_config_is_error_without_clobber() {
+        let base = std::env::temp_dir().join(format!("upd-conf-{}", std::process::id()));
+        fs::create_dir_all(&base).unwrap();
+        let conf = base.join("upd.conf");
+        fs::write(&conf, "keep=7\n").unwrap();
+        let before = fs::read_to_string(&conf).unwrap();
+        unsafe {
+            std::env::set_var("UPD_CONF", conf.to_str().unwrap());
+        }
+        fs::set_permissions(&conf, fs::Permissions::from_mode(0o000)).unwrap();
+        assert!(Config::load(vec![]).is_err());
+        fs::set_permissions(&conf, fs::Permissions::from_mode(0o644)).unwrap();
+        assert_eq!(fs::read_to_string(&conf).unwrap(), before);
+        let c = Config::load(vec![]).unwrap();
+        assert_eq!(c.keep, 7);
+        unsafe {
+            std::env::remove_var("UPD_CONF");
+        }
+        let _ = fs::remove_dir_all(&base);
+    }
 }

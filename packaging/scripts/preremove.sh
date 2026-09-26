@@ -4,4 +4,4 @@
 case "$1" in
 upgrade | failed-upgrade | 1) exit 0 ;;
 esac
-/usr/bin/upd uninstall --package || true
+UPD_PACKAGE_SCRIPT=1 /usr/bin/upd uninstall --package || true

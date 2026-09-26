@@ -35,8 +35,39 @@ const MENU: &[&str] = &[
     "Выход",
 ];
 
+trait UiData {
+    fn config(&self, mirrors: Vec<String>) -> Result<Config, String> {
+        Config::load(mirrors)
+    }
+    fn mirror_state(&self) -> MirrorState {
+        load_mirror_state()
+    }
+    fn fingerprint(&self) -> NetInfo {
+        crate::common::fingerprint()
+    }
+    fn vpn_state(&self) -> vpn::VpnState {
+        vpn::load_state()
+    }
+    fn service_state(&self, unit: &str) -> String {
+        crate::common::unit_state(unit)
+    }
+    fn flclash_warning(&self) -> Option<String> {
+        vpn::flclash_running()
+    }
+    fn geo_files(&self) -> Vec<(String, i64, u64)> {
+        vpn::geo_files()
+    }
+    fn user_rules(&self) -> Result<Vec<String>, String> {
+        vpn::user_rules()
+    }
+}
+
+struct HostUiData;
+impl UiData for HostUiData {}
+
 struct App<'a> {
     b: &'a dyn Backend,
+    ui: &'a dyn UiData,
     st: Option<Status>,
     rx: Option<mpsc::Receiver<Status>>,
     scr: Screen,
@@ -78,22 +109,8 @@ fn cmd(a: &[&str]) -> Args {
 }
 
 pub fn run(b: &dyn Backend) -> i32 {
-    let mut app = App {
-        b,
-        st: None,
-        rx: None,
-        scr: Screen::Menu,
-        sel: 0,
-        msg: String::new(),
-        p_title: String::new(),
-        p_lines: vec![],
-        p_off: 0,
-        m_state: TableState::default().with_selected(Some(0)),
-        input: None,
-        input_key: "",
-        v: VpnUi::default(),
-        quit: false,
-    };
+    let ui = HostUiData;
+    let mut app = App::new(b, &ui, None, vpn::Snapshot::default());
     app.reload();
     let mut term = ratatui::init();
     let r = app.main_loop(&mut term);
@@ -105,7 +122,29 @@ pub fn run(b: &dyn Backend) -> i32 {
     0
 }
 
-impl App<'_> {
+impl<'a> App<'a> {
+    fn new(b: &'a dyn Backend, ui: &'a dyn UiData, st: Option<Status>, snap: vpn::Snapshot) -> Self {
+        let mut v = VpnUi::default();
+        v.snap = snap;
+        App {
+            b,
+            ui,
+            st,
+            rx: None,
+            scr: Screen::Menu,
+            sel: 0,
+            msg: String::new(),
+            p_title: String::new(),
+            p_lines: vec![],
+            p_off: 0,
+            m_state: TableState::default().with_selected(Some(0)),
+            input: None,
+            input_key: "",
+            v,
+            quit: false,
+        }
+    }
+
     /// Состояние собирается в фоне: там обход кэша, /proc и вызовы пакетного менеджера.
     fn reload(&mut self) {
         let (tx, rx) = mpsc::channel();
@@ -228,6 +267,12 @@ impl App<'_> {
                 if !u.error.is_empty() {
                     l.push(format!("⚠ {}", u.error));
                 }
+                if !u.flatpak_error.is_empty() {
+                    l.push(format!("⚠ Flatpak: ошибка проверки: {}", u.flatpak_error));
+                }
+                if !u.firmware_error.is_empty() {
+                    l.push(format!("⚠ Прошивки: ошибка проверки: {}", u.firmware_error));
+                }
                 if !u.news.is_empty() {
                     l.push(String::new());
                     l.push("── Новости Arch (прочитай до обновления) ──".into());
@@ -236,7 +281,11 @@ impl App<'_> {
                         l.push(format!("      {}", n.link));
                     }
                 }
-                let size = if u.download_size > 0 { format!(", {}", fmt_bytes(u.download_size)) } else { String::new() };
+                let size = match u.download_size {
+                    Some(bytes) => format!(", {}", fmt_bytes(bytes)),
+                    None if !u.list.is_empty() => ", размер неизвестен".into(),
+                    None => String::new(),
+                };
                 l.push(String::new());
                 l.push(format!("── Пакеты: {}{size}{} ──", u.list.len(), if u.downloaded { ", скачаны" } else { "" }));
                 l.extend(u.list.iter().cloned());
@@ -283,10 +332,9 @@ impl App<'_> {
         None
     }
 
-    fn mirror_rows(&self) -> Vec<Probe> {
-        let c = Config::load(self.b.default_mirrors());
-        let st = load_mirror_state();
-        let mut r: Vec<Probe> = candidates(self.b, &c, None)
+    fn mirror_rows(&self, c: &Config) -> Vec<Probe> {
+        let st = self.ui.mirror_state();
+        let mut r: Vec<Probe> = candidates(self.b, c, None)
             .into_iter()
             .map(|cd| {
                 let mut p = st.results.iter().find(|p| p.url == cd.url).cloned().unwrap_or(Probe { url: cd.url.clone(), err: "не замерено".into(), ..Default::default() });
@@ -300,19 +348,30 @@ impl App<'_> {
     }
 
     fn key_mirrors(&mut self, k: KeyCode) -> Args {
+        if matches!(k, KeyCode::Char('q') | KeyCode::Esc | KeyCode::Backspace) {
+            self.scr = Screen::Menu;
+            return None;
+        }
         let managed = self.b.mirrors_managed();
-        let rows = self.mirror_rows();
+        let mut c = match self.cfg() {
+            Ok(c) => c,
+            Err(e) => {
+                self.msg = format!("конфиг не прочитан: {e}");
+                return None;
+            }
+        };
+        let rows = self.mirror_rows(&c);
         let sel = self.m_state.selected().unwrap_or(0);
-        let mut c = Config::load(self.b.default_mirrors());
         match k {
-            KeyCode::Char('q') | KeyCode::Esc | KeyCode::Backspace => self.scr = Screen::Menu,
             KeyCode::Up | KeyCode::Char('k') => self.m_state.select(Some(sel.saturating_sub(1))),
             KeyCode::Down | KeyCode::Char('j') => self.m_state.select(Some((sel + 1).min(rows.len().saturating_sub(1)))),
             KeyCode::Char('c') if managed => return cmd(&["mirrors", "check"]),
             KeyCode::Char('s') if managed => return cmd(&["mirrors", "rescan"]),
             KeyCode::Char('a') if managed => {
                 let log = std::cell::RefCell::new(vec![]);
-                apply_mirrors(self.b, &c, &load_mirror_state(), None, &|s| log.borrow_mut().push(s.to_string()));
+                if let Err(e) = apply_mirrors(self.b, &c, &self.ui.mirror_state(), None, &|s| log.borrow_mut().push(s.to_string())) {
+                    log.borrow_mut().push(e);
+                }
                 self.msg = log.into_inner().join("; ");
                 self.reload();
             }
@@ -364,7 +423,13 @@ impl App<'_> {
                     self.msg = format!("неверный URL: {e}");
                     return;
                 }
-                let mut c = Config::load(self.b.default_mirrors());
+                let mut c = match self.cfg() {
+                    Ok(c) => c,
+                    Err(e) => {
+                        self.msg = format!("конфиг не прочитан: {e}");
+                        return;
+                    }
+                };
                 if !contains(&c.mirrors, &u) {
                     c.mirrors.push(u);
                     let _ = c.save();
@@ -450,9 +515,15 @@ impl App<'_> {
             f.render_widget(Paragraph::new(self.b.mirror_note()).block(Block::bordered().title(" Зеркала ")), area);
             return;
         }
-        let c = Config::load(self.b.default_mirrors());
-        let st = load_mirror_state();
-        let net = fingerprint();
+        let c = match self.cfg() {
+            Ok(c) => c,
+            Err(e) => {
+                f.render_widget(Paragraph::new(format!("конфиг не прочитан: {e}")).block(Block::bordered().title(" Зеркала ")), area);
+                return;
+            }
+        };
+        let st = self.ui.mirror_state();
+        let net = self.ui.fingerprint();
         let pinned = self.b.pinned();
         let hints = st.hints.len() as u16;
         let [info, table, hint_area] = Layout::vertical([Constraint::Length(2), Constraint::Min(3), Constraint::Length(if hints > 0 { hints * 2 + 1 } else { 0 })]).areas(area);
@@ -463,12 +534,15 @@ impl App<'_> {
         ])];
         if let Some(buf) = &self.input {
             info_lines.push(Line::from(vec![Span::raw("Новое зеркало: "), Span::styled(format!("{buf}▏"), Style::new().fg(Color::Cyan))]));
+        } else if st.pending_apply {
+            let error = if st.apply_error.is_empty() { "повтор будет при следующей проверке сети" } else { st.apply_error.as_str() };
+            info_lines.push(Line::styled(format!("⚠ зеркала ожидают применения: {error}"), Style::new().fg(Color::Red)));
         } else {
             info_lines.push(Line::styled("● закреплено · скорость сглажена по истории замеров в этой сети · отстающие зеркала не берутся", dim()));
         }
         f.render_widget(Paragraph::new(info_lines), info);
         let rows: Vec<Row> = self
-            .mirror_rows()
+            .mirror_rows(&c)
             .into_iter()
             .map(|p| {
                 let color = if p.ok {
@@ -521,8 +595,8 @@ fn delay_span(d: Option<&u64>) -> Span<'static> {
 }
 
 impl App<'_> {
-    fn cfg(&self) -> Config {
-        Config::load(self.b.default_mirrors())
+    fn cfg(&self) -> Result<Config, String> {
+        self.ui.config(self.b.default_mirrors())
     }
 
     /// Состояние ядра опрашивается в фоне раз в 3 секунды, пока открыт экран VPN.
@@ -554,18 +628,19 @@ impl App<'_> {
         }
     }
 
-    fn vpn_opts(&self) -> Vec<Opt> {
-        let c = self.cfg();
-        let st = vpn::load_state();
-        let unit = unit_state(vpn::SERVICE);
-        let geo = vpn::geo_files().iter().map(|g| g.1).filter(|t| *t > 0).min();
+    fn vpn_opts(&self) -> Result<Vec<Opt>, String> {
+        let c = self.cfg()?;
+        let rules_count = self.ui.user_rules()?.len();
+        let st = self.ui.vpn_state();
+        let unit = self.ui.service_state(vpn::SERVICE);
+        let geo = self.ui.geo_files().iter().map(|g| g.1).filter(|t| *t > 0).min();
         let core = match (st.core_version.as_str(), st.core_latest.as_str()) {
             ("", _) => "не скачано — скачать".to_string(),
             (v, l) if !l.is_empty() && l != v => format!("{v} → есть {l}, обновить"),
             (v, _) => format!("{v}, проверено {}", fmt_ago(st.checked)),
         };
         let o = |key, label, value| Opt { key, label, value };
-        vec![
+        Ok(vec![
             o(
                 "run",
                 "VPN",
@@ -588,10 +663,10 @@ impl App<'_> {
             o("allow_lan", "Прокси для устройств в сети", on_off(c.vpn_allow_lan)),
             o("vpn_port", "Порт прокси", c.vpn_port.to_string()),
             o("vpn_sub_update_h", "Обновлять подписки, ч", c.vpn_sub_update_h.to_string()),
-            o("rules", "Свои правила", format!("{} шт. — открыть редактор", vpn::user_rules().len())),
+            o("rules", "Свои правила", format!("{} шт. — открыть редактор", rules_count)),
             o("core", "Ядро mihomo", core),
             o("geo", "Геофайлы", geo.map(|t| format!("от {} — обновить", fmt_ago(t))).unwrap_or_else(|| "не скачаны — скачать".into())),
-        ]
+        ])
     }
 
     /// Сохранить настройки и применить к работающему ядру; итог — в строку сообщений.
@@ -610,7 +685,13 @@ impl App<'_> {
 
     fn vpn_set_number(&mut self, s: &str) {
         let key = std::mem::take(&mut self.input_key);
-        let mut c = self.cfg();
+        let mut c = match self.cfg() {
+            Ok(c) => c,
+            Err(e) => {
+                self.msg = format!("конфиг не прочитан: {e}");
+                return;
+            }
+        };
         match (key, s.parse::<i64>()) {
             ("vpn_port", Ok(n)) if (1024..=65535).contains(&n) && n != 9097 => c.vpn_port = n as u16,
             ("vpn_sub_update_h", Ok(n)) if n >= 1 => c.vpn_sub_update_h = n,
@@ -629,7 +710,7 @@ impl App<'_> {
             KeyCode::Tab => self.v.tab = (self.v.tab + 1) % VPN_TABS.len(),
             KeyCode::BackTab => self.v.tab = (self.v.tab + VPN_TABS.len() - 1) % VPN_TABS.len(),
             KeyCode::Char(c @ '1'..='3') => self.v.tab = c as usize - '1' as usize,
-            KeyCode::Char('s') => return cmd(&["vpn", if vpn::service_active() { "stop" } else { "start" }]),
+            KeyCode::Char('s') => return cmd(&["vpn", if self.ui.service_state(vpn::SERVICE) == "active" { "stop" } else { "start" }]),
             _ => {
                 return match self.v.tab {
                     0 => self.key_vpn_servers(k),
@@ -692,7 +773,7 @@ impl App<'_> {
     }
 
     fn key_vpn_subs(&mut self, k: KeyCode, del: Option<usize>) -> Args {
-        let subs = vpn::load_state().subs;
+        let subs = self.ui.vpn_state().subs;
         let sel = self.v.subs.selected().unwrap_or(0);
         let n = (sel + 1).to_string();
         match k {
@@ -715,15 +796,27 @@ impl App<'_> {
     }
 
     fn key_vpn_opts(&mut self, k: KeyCode) -> Args {
-        let opts = self.vpn_opts();
+        let opts = match self.vpn_opts() {
+            Ok(opts) => opts,
+            Err(e) => {
+                self.msg = format!("не удалось открыть настройки VPN: {e}");
+                return None;
+            }
+        };
         let sel = self.v.opts.selected().unwrap_or(0).min(opts.len() - 1);
         match k {
             KeyCode::Up | KeyCode::Char('k') => self.v.opts.select(Some(sel.saturating_sub(1))),
             KeyCode::Down | KeyCode::Char('j') => self.v.opts.select(Some((sel + 1).min(opts.len() - 1))),
             KeyCode::Enter | KeyCode::Char(' ') => {
-                let mut c = self.cfg();
+                let mut c = match self.cfg() {
+                    Ok(c) => c,
+                    Err(e) => {
+                        self.msg = format!("конфиг не прочитан: {e}");
+                        return None;
+                    }
+                };
                 match opts[sel].key {
-                    "run" => return cmd(&["vpn", if vpn::service_active() { "stop" } else { "start" }]),
+                    "run" => return cmd(&["vpn", if self.ui.service_state(vpn::SERVICE) == "active" { "stop" } else { "start" }]),
                     "tun" => return cmd(&["vpn", if c.vpn_tun { "proxy" } else { "tun" }]),
                     "rules" => return cmd(&["vpn", "rules"]),
                     "geo" => return cmd(&["vpn", "geo"]),
@@ -741,7 +834,7 @@ impl App<'_> {
                     "autostart" => {
                         c.vpn_autostart = !c.vpn_autostart;
                         let _ = c.save();
-                        self.msg = match unit_state(vpn::SERVICE).as_str() {
+                        self.msg = match self.ui.service_state(vpn::SERVICE).as_str() {
                             "" => "сохранено; служба появится после sudo upd install".into(),
                             _ => match vpn::autostart(c.vpn_autostart) {
                                 Ok(()) => format!("запуск при загрузке: {}", on_off(c.vpn_autostart)),
@@ -785,10 +878,10 @@ impl App<'_> {
             };
             l1.push(Span::raw(format!(" · {} · {mode} · mihomo {}", if s.tun { "TUN" } else { "прокси" }, s.version)));
         } else {
-            let st = unit_state(vpn::SERVICE);
+            let st = self.ui.service_state(vpn::SERVICE);
             l1.push(Span::styled(if st == "failed" { "● ошибка запуска (journalctl -u upd-vpn)" } else { "○ выключен" }, Style::new().fg(if st == "failed" { Color::Red } else { Color::DarkGray })));
         }
-        let st = vpn::load_state();
+        let st = self.ui.vpn_state();
         if let Some(a) = st.subs.iter().find(|x| x.active) {
             l1.push(Span::styled(format!(" · «{}»{}", a.name, a.info.as_ref().map(sub_info).unwrap_or_default()), dim()));
         }
@@ -801,7 +894,7 @@ impl App<'_> {
         };
         let l3 = if let Some(buf) = &self.input {
             Line::from(vec![Span::raw("Новое значение: "), Span::styled(format!("{buf}▏"), Style::new().fg(Color::Cyan))])
-        } else if let Some(w) = vpn::flclash_running() {
+        } else if let Some(w) = self.ui.flclash_warning() {
             Line::styled(format!("⚠ {w}"), Style::new().fg(Color::Red))
         } else {
             Line::raw("")
@@ -886,9 +979,14 @@ impl App<'_> {
                 f.render_stateful_widget(t, body, &mut self.v.subs);
             }
             _ => {
-                let rows: Vec<Row> = self.vpn_opts().into_iter().map(|o| Row::new(vec![Cell::from(o.label), Cell::from(o.value)])).collect();
-                let t = Table::new(rows, [Constraint::Length(30), Constraint::Min(20)]).row_highlight_style(hl).block(blk(" Настройки ".into()));
-                f.render_stateful_widget(t, body, &mut self.v.opts);
+                match self.vpn_opts() {
+                    Ok(opts) => {
+                        let rows: Vec<Row> = opts.into_iter().map(|o| Row::new(vec![Cell::from(o.label), Cell::from(o.value)])).collect();
+                        let t = Table::new(rows, [Constraint::Length(30), Constraint::Min(20)]).row_highlight_style(hl).block(blk(" Настройки ".into()));
+                        f.render_stateful_widget(t, body, &mut self.v.opts);
+                    }
+                    Err(e) => f.render_widget(Paragraph::new(format!("не удалось открыть настройки VPN: {e}")).block(blk(" Настройки ".into())), body),
+                }
             }
         }
     }
@@ -910,7 +1008,7 @@ fn status_lines(s: &Status) -> Vec<Line<'static>> {
     let u = &s.upd;
     let mut upd = vec![];
     let total = u.list.len() + u.flatpak.len();
-    if total == 0 {
+    if total == 0 && u.flatpak_error.is_empty() {
         upd.push(ok("нет".into()));
     } else {
         upd.push(warn(format!("пакетов {}", u.list.len())));
@@ -921,8 +1019,14 @@ fn status_lines(s: &Status) -> Vec<Line<'static>> {
             upd.push(ok(" · скачаны".into()));
         }
     }
+    if !u.flatpak_error.is_empty() {
+        upd.push(bad(format!(" · ошибка проверки Flatpak: {}", u.flatpak_error)));
+    }
     if !u.firmware.is_empty() {
         upd.push(warn(format!(" · прошивок {}", u.firmware.len())));
+    }
+    if !u.firmware_error.is_empty() {
+        upd.push(bad(format!(" · ошибка проверки прошивок: {}", u.firmware_error)));
     }
     if !u.error.is_empty() {
         upd.push(bad(format!(" · {}", u.error)));
@@ -940,6 +1044,9 @@ fn status_lines(s: &Status) -> Vec<Line<'static>> {
     let mut rb = vec![if s.reboot || !rs.critical.is_empty() { bad("перезагрузка НУЖНА".into()) } else { ok("перезагрузка не нужна".into()) }];
     if !rs.services.is_empty() {
         rb.push(warn(format!(" · служб к перезапуску {} (пункт 7)", rs.services.len())));
+    }
+    if !rs.unknown.is_empty() {
+        rb.push(bad(format!(" · процессов с нераспознанным cgroup {}", rs.unknown.len())));
     }
     out.push(row("После обновл.", rb));
     let mut net = vec![Span::raw(s.net_label.clone())];
@@ -976,7 +1083,7 @@ fn status_lines(s: &Status) -> Vec<Line<'static>> {
         vec![
             Span::raw("новых настроек "),
             pend,
-            Span::raw(format!(" · сирот {} · кэш {} · свободно {} · упавших служб ", s.orphans, fmt_bytes(s.cache), fmt_bytes(s.free))),
+            Span::raw(format!(" · сирот {} · кэш {} · свободно {} · упавших служб ", s.orphans, fmt_bytes(s.cache), s.free.map(fmt_bytes).unwrap_or_else(|| "неизвестно".into()))),
             fail,
         ],
     ));
@@ -994,6 +1101,106 @@ mod tests {
     use ratatui::backend::TestBackend;
     use ratatui::Terminal;
 
+    struct FixtureBackend;
+
+    impl Backend for FixtureBackend {
+        fn name(&self) -> String {
+            "Fixture Linux".into()
+        }
+        fn mirrors_managed(&self) -> bool {
+            false
+        }
+        fn mirror_note(&self) -> String {
+            "fixture".into()
+        }
+        fn probe_url(&self, mirror: &str) -> String {
+            mirror.into()
+        }
+        fn valid_mirror(&self, _mirror: &str) -> Result<(), String> {
+            Ok(())
+        }
+        fn default_mirrors(&self) -> Vec<String> {
+            vec![]
+        }
+        fn pinned(&self) -> Vec<String> {
+            vec![]
+        }
+        fn list_mirrors(&self) -> Vec<String> {
+            vec![]
+        }
+        fn discover(&self, _n: usize, _log: Log) -> Result<(Vec<String>, Option<Vec<String>>), String> {
+            Err("fixture".into())
+        }
+        fn apply_mirrors(&self, _best: &[String], _fallback: Option<&[String]>) -> Result<bool, String> {
+            Ok(false)
+        }
+        fn remove_mirrors(&self) -> Result<(), String> {
+            Ok(())
+        }
+        fn refresh(&self, _quiet: bool) -> Result<(), String> {
+            Ok(())
+        }
+        fn updates(&self) -> Result<Vec<String>, String> {
+            Ok(vec![])
+        }
+        fn prefetch(&self, _pkgs: &[String], _quiet: bool) -> Result<(), String> {
+            Ok(())
+        }
+        fn upgrade(&self, _aur: bool) -> Result<(), String> {
+            Ok(())
+        }
+        fn clean(&self) -> Result<(), String> {
+            Ok(())
+        }
+        fn orphans(&self) -> Vec<String> {
+            vec![]
+        }
+        fn pending_configs(&self) -> Vec<String> {
+            vec![]
+        }
+        fn merge(&self) -> Result<(), String> {
+            Ok(())
+        }
+        fn cache_dirs(&self) -> Vec<&'static str> {
+            vec![]
+        }
+        fn db_path(&self) -> &'static str {
+            ""
+        }
+        fn history(&self, _n: usize) -> Vec<String> {
+            vec![]
+        }
+    }
+
+    struct FixtureUiData;
+
+    impl UiData for FixtureUiData {
+        fn config(&self, mirrors: Vec<String>) -> Result<Config, String> {
+            Ok(Config::defaults(mirrors))
+        }
+        fn mirror_state(&self) -> MirrorState {
+            MirrorState::default()
+        }
+        fn fingerprint(&self) -> NetInfo {
+            NetInfo { id: "fixture".into(), label: "fixture network".into(), online: false, vpn: false, dev: String::new() }
+        }
+        fn vpn_state(&self) -> vpn::VpnState {
+            vpn::VpnState::default()
+        }
+        fn service_state(&self, _unit: &str) -> String {
+            String::new()
+        }
+        fn flclash_warning(&self) -> Option<String> {
+            None
+        }
+        fn geo_files(&self) -> Vec<(String, i64, u64)> {
+            vec![]
+        }
+        fn user_rules(&self) -> Result<Vec<String>, String> {
+            Ok(vec![])
+        }
+    }
+
     fn dump(t: &Terminal<TestBackend>) -> String {
         let b = t.backend().buffer();
         (0..b.area.height)
@@ -1003,34 +1210,34 @@ mod tests {
     }
 
     #[test]
-    fn screens() {
-        let b = backend::detect().unwrap();
-        let mut app = App {
-            b: b.as_ref(),
-            st: Some(gather_status(b.as_ref())),
-            rx: None,
-            scr: Screen::Menu,
-            sel: 0,
-            msg: String::new(),
-            p_title: String::new(),
-            p_lines: vec![],
-            p_off: 0,
-            m_state: TableState::default().with_selected(Some(0)),
-            input: None,
-            input_key: "",
-            v: VpnUi::default(),
-            quit: false,
-        };
+    fn test01_menu_vpn_navigation_uses_fixed_state() {
+        let b = FixtureBackend;
+        let ui = FixtureUiData;
+        let mut app = App::new(&b, &ui, Some(Status::default()), vpn::Snapshot::default());
         let mut t = Terminal::new(TestBackend::new(118, 30)).unwrap();
-        for k in [None, Some(KeyCode::Char('4')), Some(KeyCode::Esc), Some(KeyCode::Char('5')), Some(KeyCode::Right), Some(KeyCode::Down), Some(KeyCode::Enter), Some(KeyCode::Char('2')), Some(KeyCode::Char('3')), Some(KeyCode::Esc), Some(KeyCode::Char('3'))] {
-            if let Some(k) = k {
-                app.key(k);
-            }
-            if app.scr == Screen::Vpn {
-                app.v.snap = vpn::snapshot();
-            }
-            t.draw(|f| app.draw(f)).unwrap();
-            println!("{}\n{}", dump(&t), "=".repeat(118));
-        }
+
+        t.draw(|f| app.draw(f)).unwrap();
+        assert!(dump(&t).contains("Обновить всё"));
+        assert!(dump(&t).contains("Fixture Linux"));
+
+        app.key(KeyCode::Down);
+        assert_eq!(app.sel, 1, "стрелка вниз выбирает следующую строку меню");
+        t.draw(|f| app.draw(f)).unwrap();
+        assert!(dump(&t).contains("Проверить и скачать обновления"));
+
+        app.key(KeyCode::Char('5'));
+        assert!(matches!(&app.scr, Screen::Vpn), "клавиша 5 открывает VPN");
+        t.draw(|f| app.draw(f)).unwrap();
+        assert!(dump(&t).contains("Серверы"));
+
+        app.key(KeyCode::Down);
+        assert_eq!(app.msg, "VPN не запущен — s, чтобы включить");
+        t.draw(|f| app.draw(f)).unwrap();
+        assert!(dump(&t).contains("VPN не запущен — s, чтобы включить"));
+
+        app.key(KeyCode::Esc);
+        assert!(matches!(&app.scr, Screen::Menu), "Esc возвращает в меню");
+        t.draw(|f| app.draw(f)).unwrap();
+        assert!(dump(&t).contains("Обновить всё"));
     }
 }

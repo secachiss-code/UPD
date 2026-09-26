@@ -70,7 +70,13 @@ fn main() {
     if !user_cmd {
         become_root();
     }
-    let c = Config::load(b.default_mirrors());
+    let c = match Config::load(b.default_mirrors()) {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("upd: {e}");
+            std::process::exit(1);
+        }
+    };
     if is_root() && !Path::new(&conf_path()).exists() {
         let _ = c.save();
     }
@@ -79,11 +85,12 @@ fn main() {
         "tui" => tui::run(b),
         "update" => cmd_update(b, &c),
         "check" => with_lock(true, || {
-            let mut st = gather(b, &c, &stdlog, false);
+            let user = invoking_user();
+            let mut st = gather(b, &c, &stdlog, false, user.as_deref());
             if !no_download && st.error.is_empty() {
-                download(b, &c, &mut st, &stdlog, false);
+                download(b, &c, &mut st, &stdlog, false, false);
             }
-            (!st.error.is_empty()) as i32
+            state_check_failure(&st).is_some() as i32
         }),
         "list" => cmd_list(),
         "status" => {
@@ -129,8 +136,10 @@ fn main() {
                 println!("{why}: замер зеркал пропущен");
                 return 0;
             }
-            handle_network(b, &c, &stdlog, false);
-            0
+            match handle_network(b, &c, &stdlog, false) {
+                Ok(_) => 0,
+                Err(e) => err_code(Err(e)),
+            }
         }),
         "notify" => {
             cmd_notify();
@@ -159,6 +168,33 @@ fn err_code(r: Result<(), String>) -> i32 {
             eprintln!("ошибка: {e}");
             1
         }
+    }
+}
+
+fn state_check_failure(st: &UpdState) -> Option<&str> {
+    [st.error.as_str(), st.flatpak_error.as_str(), st.firmware_error.as_str()]
+        .into_iter().find(|error| !error.is_empty())
+}
+
+fn auto_state_failure(st: &UpdState) -> Option<&str> {
+    if st.package_check_failure.is_some() {
+        Some(st.error.as_str())
+    } else if let Some(error) = st.space_check_error.as_deref() {
+        Some(error)
+    } else if !st.error.is_empty() && !st.error.starts_with("мало места") {
+        Some(st.error.as_str())
+    } else if !st.flatpak_error.is_empty() {
+        Some(st.flatpak_error.as_str())
+    } else if !st.firmware_error.is_empty() {
+        Some(st.firmware_error.as_str())
+    } else {
+        None
+    }
+}
+
+fn record_upgrade_error(result: &mut Result<(), String>, error: String) {
+    if result.is_ok() {
+        *result = Err(error);
     }
 }
 
@@ -212,24 +248,55 @@ fn cmd_auto(b: &dyn Backend, c: &Config) -> i32 {
         println!("{}: пропускаю всё", block.as_deref().unwrap_or(""));
         let mut st: UpdState = load_json("updates.json");
         st.skipped = block.unwrap_or_default();
-        let _ = save_json("updates.json", &st);
-        return 0;
+        return match save_json("updates.json", &st) {
+            Ok(()) => 0,
+            Err(e) => {
+                eprintln!("upd auto: не удалось сохранить updates.json: {e}");
+                1
+            }
+        };
     }
-    let changed = handle_network(b, c, &stdlog, false);
+    let mut mirror_error = None;
+    let changed = match handle_network(b, c, &stdlog, false) {
+        Ok(changed) => changed,
+        Err(e) => {
+            stdlog(&format!("зеркала не применены: {e}"));
+            mirror_error = Some(e);
+            true
+        }
+    };
     let ms = load_mirror_state();
     if !changed && b.mirrors_managed() && now() - ms.checked > c.mirror_max_age_h * 3600 {
-        check_mirrors(b, c, &stdlog, None, None);
+        if let Err(e) = check_mirrors(b, c, &stdlog, None, None) {
+            stdlog(&format!("зеркала не применены: {e}"));
+            mirror_error = Some(e);
+        }
     }
     vpn::maintain(c, &stdlog);
-    let mut st = gather(b, c, &stdlog, true);
+    let mut st = gather(b, c, &stdlog, true, None);
     match (&block, c.prefetch && st.error.is_empty()) {
         (Some(why), true) => {
             println!("{why}");
             st.skipped = why.clone();
             let _ = save_json("updates.json", &st);
         }
-        (None, true) => download(b, c, &mut st, &stdlog, true),
+        (None, true) => download(b, c, &mut st, &stdlog, true, false),
         _ => {}
+    }
+    if c.prefetch && st.error.starts_with("мало места") && st.skipped.is_empty() {
+        st.skipped = st.error.clone();
+    }
+    if let Err(e) = save_json("updates.json", &st) {
+        eprintln!("upd auto: не удалось сохранить updates.json: {e}");
+        return 1;
+    }
+    if let Some(error) = auto_state_failure(&st) {
+        eprintln!("upd auto: проверка или предзагрузка завершилась с ошибкой: {error}");
+        return 1;
+    }
+    if let Some(error) = mirror_error {
+        eprintln!("upd auto: зеркала не применены: {error}");
+        return 1;
     }
     0
 }
@@ -240,12 +307,25 @@ fn cmd_update(b: &dyn Backend, c: &Config) -> i32 {
 
         step(1, "Зеркала");
         if b.mirrors_managed() {
-            if !handle_network(b, c, &stdlog, false) {
+            let handled = match handle_network(b, c, &stdlog, false) {
+                Ok(handled) => handled,
+                Err(e) => {
+                    println!("\x1b[31mНе удалось применить зеркала: {e}\x1b[0m");
+                    return 1;
+                }
+            };
+            if !handled {
                 let st = load_mirror_state();
                 if now() - st.checked > c.mirror_max_age_h * 3600 {
-                    check_mirrors(b, c, &stdlog, None, None);
+                    if let Err(e) = check_mirrors(b, c, &stdlog, None, None) {
+                        println!("\x1b[31mНе удалось применить зеркала: {e}\x1b[0m");
+                        return 1;
+                    }
                 } else {
-                    apply_mirrors(b, c, &st, None, &stdlog);
+                    if let Err(e) = apply_mirrors(b, c, &st, None, &stdlog) {
+                        println!("\x1b[31mНе удалось применить зеркала: {e}\x1b[0m");
+                        return 1;
+                    }
                     println!("последний замер: {}", fmt_ago(st.checked));
                 }
             }
@@ -254,21 +334,49 @@ fn cmd_update(b: &dyn Backend, c: &Config) -> i32 {
         }
 
         step(2, "Проверка");
-        let mut st = gather(b, c, &stdlog, false);
-        if st.error == "не удалось обновить базы пакетов" {
-            println!("\x1b[31mБазы пакетов не обновились — проверь сеть и попробуй ещё раз.\x1b[0m");
-            return 1;
+        let mut st = gather(b, c, &stdlog, false, user.as_deref());
+        match st.package_check_failure {
+            Some(PackageCheckFailure::Refresh) => {
+                println!("\x1b[31mБазы пакетов не обновились — проверь сеть и попробуй ещё раз.\x1b[0m");
+                return 1;
+            }
+            Some(PackageCheckFailure::UpdateList) => {
+                println!("\x1b[31mНе удалось проверить системные пакеты: {}\x1b[0m", st.error);
+                return 1;
+            }
+            None => {}
         }
-        let aur = match (&user, c.aur) {
-            (Some(u), true) => extras::aur_updates(u),
+        if !st.flatpak_error.is_empty() {
+            println!("\x1b[33mFlatpak: не удалось проверить обновления: {}\x1b[0m", st.flatpak_error);
+        }
+        if !st.firmware_error.is_empty() {
+            println!("\x1b[33mПрошивки: не удалось проверить обновления: {}\x1b[0m", st.firmware_error);
+        }
+        let aur_enabled = c.aur && extras::aur_helper().is_some();
+        let aur = match (user.as_deref(), aur_enabled) {
+            (Some(u), true) => match extras::aur_updates(u) {
+                Ok(updates) => updates,
+                Err(e) => {
+                    println!("\x1b[31mAUR: не удалось проверить обновления: {e}\x1b[0m");
+                    return 1;
+                }
+            },
+            (None, true) => {
+                println!("\x1b[31mAUR: для проверки нужен обычный пользователь; запусти upd через sudo или doas\x1b[0m");
+                return 1;
+            }
             _ => vec![],
         };
         if !aur.is_empty() {
             println!("AUR: {} обновлений", aur.len());
         }
         if st.list.is_empty() && st.flatpak.is_empty() && aur.is_empty() && st.firmware.is_empty() {
-            println!("\x1b[32mСистема уже обновлена.\x1b[0m");
-            return 0;
+            if st.flatpak_error.is_empty() && st.firmware_error.is_empty() {
+                println!("\x1b[32mСистема уже обновлена.\x1b[0m");
+            } else {
+                println!("Системные пакеты обновлены; состояние дополнительных источников проверить не удалось.");
+            }
+            return state_check_failure(&st).is_some() as i32;
         }
         if !st.news.is_empty() {
             println!("\n\x1b[1;33mНовости Arch с прошлого обновления — прочитай, там бывают ручные шаги:\x1b[0m");
@@ -279,12 +387,25 @@ fn cmd_update(b: &dyn Backend, c: &Config) -> i32 {
                 return 1;
             }
         }
-        if st.error.starts_with("мало места") && !confirm("Мало места на диске. Всё равно продолжить?", false) {
-            return 1;
+        let size_unknown = !st.list.is_empty() && st.download_size.is_none();
+        let low_space = st.error.starts_with("мало места");
+        let warning = if low_space && size_unknown {
+            Some("Мало места даже для заданного резерва, полный объём загрузки неизвестен. Всё равно продолжить?")
+        } else if low_space {
+            Some("Мало места на диске. Всё равно продолжить?")
+        } else if size_unknown {
+            Some("Полный объём загрузки неизвестен; свободного места может не хватить. Всё равно продолжить?")
+        } else {
+            None
+        };
+        if let Some(warning) = warning {
+            if !confirm(warning, false) {
+                return 1;
+            }
         }
 
         step(3, "Загрузка");
-        download(b, c, &mut st, &stdlog, false);
+        download(b, c, &mut st, &stdlog, false, true);
         if !st.list.is_empty() && !st.downloaded && !confirm("Не всё скачалось. Всё равно запустить установку?", false) {
             return 1;
         }
@@ -313,27 +434,39 @@ fn cmd_update(b: &dyn Backend, c: &Config) -> i32 {
         step(5, "Установка");
         let aur_by_installer = c.aur && b.upgrade_handles_aur();
         let mut result = if st.list.is_empty() && !aur_by_installer { Ok(()) } else { b.upgrade(aur_by_installer) };
+        let packages_installed = result.is_ok();
         if result.is_ok() && !aur.is_empty() && !aur_by_installer {
             if let Some(u) = &user {
                 println!("\n→ AUR");
                 result = extras::aur_upgrade(u);
             }
         }
+        if packages_installed {
+            st.list.clear();
+            st.downloaded = false;
+            st.download_size = None;
+            st.package_check_failure = None;
+            if st.space_check_error.is_some() || st.error.starts_with("мало места") || st.error == "не удалось скачать обновления" {
+                st.error.clear();
+            }
+            st.space_check_error = None;
+        }
         if !st.flatpak.is_empty() {
             println!("\n→ Flatpak");
-            if let Err(e) = extras::flatpak_upgrade() {
-                println!("Flatpak: {e}");
+            match extras::flatpak_upgrade(user.as_deref(), &st.flatpak) {
+                Ok(()) => {
+                    st.flatpak.clear();
+                    st.flatpak_error.clear();
+                }
+                Err(e) => {
+                    println!("Flatpak: {e}");
+                    st.flatpak_error = e.clone();
+                    record_upgrade_error(&mut result, e);
+                }
             }
         }
         if let Some(p) = &pre {
             extras::snap_post(p);
-        }
-        match &result {
-            Ok(()) => {
-                let _ = save_json("updates.json", &UpdState { checked: now(), ..Default::default() });
-                println!("\n\x1b[32m✓ Обновление завершено\x1b[0m");
-            }
-            Err(e) => println!("\n\x1b[31m✗ Обновление завершилось с ошибкой: {e}\x1b[0m"),
         }
 
         step(6, "После обновления");
@@ -343,8 +476,35 @@ fn cmd_update(b: &dyn Backend, c: &Config) -> i32 {
                 println!("  {f}");
             }
             if confirm("Установить прошивки? (может понадобиться перезагрузка)", false) {
-                let _ = extras::firmware_upgrade();
+                match extras::firmware_upgrade() {
+                    Ok(()) => {
+                        st.firmware.clear();
+                        st.firmware_error.clear();
+                    }
+                    Err(e) => {
+                        println!("Прошивки: {e}");
+                        st.firmware_error = e.clone();
+                        record_upgrade_error(&mut result, e);
+                    }
+                }
+            } else {
+                println!("Прошивки оставлены в списке.");
             }
+        }
+        if let Err(e) = save_json("updates.json", &st) {
+            println!("не удалось сохранить состояние обновлений: {e}");
+            if result.is_ok() {
+                result = Err(e.to_string());
+            }
+        }
+        if result.is_ok() {
+            if let Some(error) = state_check_failure(&st) {
+                result = Err(error.to_string());
+            }
+        }
+        match &result {
+            Ok(()) => println!("\n\x1b[32m✓ Обновление завершено\x1b[0m"),
+            Err(e) => println!("\n\x1b[31m✗ Обновление завершилось с ошибкой: {e}\x1b[0m"),
         }
         let r = needs_restart();
         extras::print_restart(&r);
@@ -370,6 +530,12 @@ fn cmd_list() -> i32 {
     println!("проверено: {}, пакетов: {}", fmt_time(st.checked), st.list.len());
     for l in &st.list {
         println!("  {l}");
+    }
+    if !st.flatpak_error.is_empty() {
+        println!("Flatpak: ошибка проверки: {}", st.flatpak_error);
+    }
+    if !st.firmware_error.is_empty() {
+        println!("Прошивки: ошибка проверки: {}", st.firmware_error);
     }
     for (title, list) in [("Flatpak", &st.flatpak), ("Прошивки", &st.firmware)] {
         if !list.is_empty() {
@@ -397,7 +563,7 @@ fn cmd_reconcile(b: &dyn Backend) -> i32 {
         println!("upd: доступных обновлений было {}, стало {}", st.list.len(), list.len());
         if list.is_empty() {
             st.downloaded = false;
-            st.download_size = 0;
+            st.download_size = None;
         }
         st.list = list;
         st.news.clear(); // новости отбираются по дате последнего обновления — после него они прочитаны
@@ -421,6 +587,9 @@ fn cmd_mirrors(b: &dyn Backend, c: &Config, pos: &[String]) -> i32 {
         "status" => {
             let st = load_mirror_state();
             println!("сеть: {}\nпоследний замер: {}", fingerprint().label, fmt_time(st.checked));
+            if st.pending_apply {
+                println!("⚠ зеркала ожидают применения: {}", if st.apply_error.is_empty() { "будет повторено при следующей проверке сети" } else { st.apply_error.as_str() });
+            }
             if !b.mirrors_managed() {
                 println!("{}", b.mirror_note());
                 return 0;
@@ -438,17 +607,23 @@ fn cmd_mirrors(b: &dyn Backend, c: &Config, pos: &[String]) -> i32 {
             0
         }
         "check" => with_lock(true, || {
-            check_mirrors(b, c, &stdlog, None, None);
-            0
+            match check_mirrors(b, c, &stdlog, None, None) {
+                Ok(_) => 0,
+                Err(e) => err_code(Err(e)),
+            }
         }),
         "rescan" => with_lock(true, || {
-            rescan(b, c, &stdlog);
-            0
+            match rescan(b, c, &stdlog) {
+                Ok(_) => 0,
+                Err(e) => err_code(Err(e)),
+            }
         }),
         // вызывается слежением за файлом: без сети и без блокировки, мгновенно
         "apply" => {
-            apply_mirrors(b, c, &load_mirror_state(), None, &stdlog);
-            0
+            match apply_mirrors(b, c, &load_mirror_state(), None, &stdlog) {
+                Ok(_) => 0,
+                Err(e) => err_code(Err(e)),
+            }
         }
         "add" | "del" => {
             let Some(u) = pos.get(1) else {
@@ -541,7 +716,10 @@ fn cmd_vpn(c: &Config, pos: &[String]) -> i32 {
             }
         }
         "subs" | "list" => {
-            let s = vpn::load_subs();
+            let s = match vpn::load_subs() {
+                Ok(s) => s,
+                Err(e) => return err_code(Err(e)),
+            };
             if s.list.is_empty() {
                 println!("подписок нет — upd vpn add");
             }
@@ -562,8 +740,41 @@ fn cmd_vpn(c: &Config, pos: &[String]) -> i32 {
             match r {
                 Ok(name) => {
                     println!("{}: «{name}»", if sub == "use" { "активна" } else { "удалена" });
-                    if vpn::service_active() && !vpn::load_subs().list.is_empty() {
-                        return apply(&c);
+                    if sub == "del" {
+                        match vpn::load_subs() {
+                            Ok(subs) if subs.list.is_empty() => {
+                                let mut errors = Vec::new();
+                                if vpn::service_active() {
+                                    if let Err(e) = vpn::stop() {
+                                        errors.push(format!("VPN не удалось остановить: {e}"));
+                                    }
+                                }
+                                vpn::sysproxy(&c);
+                                if c.vpn_autostart {
+                                    if let Err(e) = vpn::autostart(false) {
+                                        errors.push(format!("автозапуск VPN не удалось выключить: {e}"));
+                                    }
+                                }
+                                if !errors.is_empty() {
+                                    eprintln!("подписка уже удалена; {}", errors.join("; "));
+                                    return 1;
+                                }
+                                println!("последняя подписка удалена: VPN остановлен, автозапуск выключен до добавления подписки");
+                                return 0;
+                            }
+                            Ok(_) => {}
+                            Err(e) => {
+                                eprintln!("подписка уже удалена, но список не удалось прочитать: {e}");
+                                return 1;
+                            }
+                        }
+                    }
+                    if vpn::service_active() {
+                        match vpn::load_subs() {
+                            Ok(subs) if !subs.list.is_empty() => return apply(&c),
+                            Ok(_) => {}
+                            Err(e) => return err_code(Err(e)),
+                        }
                     }
                     0
                 }
@@ -571,8 +782,10 @@ fn cmd_vpn(c: &Config, pos: &[String]) -> i32 {
             }
         }
         "update" => {
-            vpn::update_subs(&c, &stdlog, true);
-            apply(&c)
+            match vpn::update_subs(&c, &stdlog, true) {
+                Ok(_) => apply(&c),
+                Err(e) => err_code(Err(e)),
+            }
         }
         "start" => {
             // ядро, геофайлы и проверка конфига — здесь, с выводом на экран; иначе это молча
@@ -638,11 +851,13 @@ fn cmd_vpn(c: &Config, pos: &[String]) -> i32 {
         }
         "core" => match arg.unwrap_or("check") {
             a @ ("update" | "reinstall") => {
-                let r = vpn::core_install(&c, &stdlog, a == "reinstall");
-                if matches!(r, Ok(true)) && vpn::service_active() {
-                    let _ = vpn::restart();
-                }
-                err_code(r.map(|_| ()))
+                let r = vpn::core_install(&c, &stdlog, a == "reinstall").and_then(|changed| {
+                    if changed && vpn::service_active() {
+                        vpn::restart().map_err(|e| format!("ядро обновлено на диске, но VPN не перезапустился: {e}"))?;
+                    }
+                    Ok(())
+                });
+                err_code(r)
             }
             _ => err_code(vpn::core_check(&c, &stdlog).map(|_| ())),
         },
@@ -695,7 +910,7 @@ pub struct Status {
     pub restart: Restart,
     pub battery: bool,
     pub metered: bool,
-    pub free: u64,
+    pub free: Option<u64>,
     pub snapshots: String,
     pub vpn: String,
 }
@@ -722,7 +937,7 @@ pub fn gather_status(b: &dyn Backend) -> Status {
         restart: needs_restart(),
         battery: on_battery(),
         metered: metered(&net.dev),
-        free: free_space(cache_dirs.first().copied().unwrap_or("/")),
+        free: free_space(cache_dirs.first().copied().unwrap_or("/")).ok(),
         snapshots: match (b.auto_snapshots(), extras::snap_tool()) {
             (true, _) => "snap-pac (автоматически)".into(),
             (_, extras::SnapTool::Snapper) => "snapper (делает upd)".into(),
@@ -740,8 +955,20 @@ fn print_status(b: &dyn Backend) {
     if u.downloaded && !u.list.is_empty() {
         upd += " (скачаны)";
     }
+    if !u.list.is_empty() {
+        upd += &match u.download_size {
+            Some(bytes) => format!(" ({})", fmt_bytes(bytes)),
+            None => " (размер неизвестен)".into(),
+        };
+    }
     if !u.flatpak.is_empty() {
         upd += &format!(", Flatpak {}", u.flatpak.len());
+    }
+    if !u.flatpak_error.is_empty() {
+        upd += &format!(", ошибка проверки Flatpak: {}", u.flatpak_error);
+    }
+    if !u.firmware_error.is_empty() {
+        upd += &format!(", ошибка проверки прошивок: {}", u.firmware_error);
     }
     if !u.firmware.is_empty() {
         upd += &format!(", прошивок {}", u.firmware.len());
@@ -760,8 +987,8 @@ fn print_status(b: &dyn Backend) {
     println!("Последнее:    {}", fmt_time(s.last_tx));
     println!("Перезагрузка: {}", if s.reboot { "НУЖНА" } else { "не нужна" });
     let rs = &s.restart;
-    if !rs.services.is_empty() || !rs.critical.is_empty() {
-        println!("Перезапуск:   служб {} (upd restart), требуют перезагрузки {}", rs.services.len(), rs.critical.len());
+    if !rs.services.is_empty() || !rs.critical.is_empty() || !rs.unknown.is_empty() {
+        println!("Перезапуск:   служб {} (upd restart), требуют перезагрузки {}, cgroup не распознан для {} процессов", rs.services.len(), rs.critical.len(), rs.unknown.len());
     }
     println!("Сеть:         {}{}{}", s.net_label, if s.metered { " · лимитная" } else { "" }, if s.battery { " · от батареи" } else { "" });
     if s.managed {
@@ -780,7 +1007,7 @@ fn print_status(b: &dyn Backend) {
         s.pending.len(),
         s.orphans,
         fmt_bytes(s.cache),
-        fmt_bytes(s.free),
+        s.free.map(fmt_bytes).unwrap_or_else(|| "неизвестно".into()),
         s.failed
     );
     println!("Автоматика:   обновления {}, слежение за сетью {}", or_dash(&s.auto_timer), or_dash(&s.net_timer));
@@ -871,6 +1098,13 @@ const PKG_BIN: &str = "/usr/bin/upd";
 const CRON_PATH: &str = "/etc/cron.d/upd";
 const GARUDA_CONF: &str = "/etc/garuda/garuda-update/config";
 const GARUDA_MARK: &str = "# upd: зеркалами управляет upd — garuda-update их не перезаписывает";
+const PACKAGE_SCRIPT_ENV: &str = "UPD_PACKAGE_SCRIPT";
+
+/// Пакетный layout разрешён только для вызова канонического /usr/bin/upd из наших хуков.
+fn package_script_context(exe: &Path) -> bool {
+    std::env::var(PACKAGE_SCRIPT_ENV).map(|v| v == "1").unwrap_or(false)
+        && fs::canonicalize(PKG_BIN).map(|path| path.as_path() == exe).unwrap_or(false)
+}
 
 /// Куда кладутся системные файлы: ручная установка (upd install) — в /etc; пакет — в /usr/lib и /usr/share.
 struct Layout {
@@ -991,11 +1225,11 @@ fn write_system_files(root: &str, l: &Layout, target: &str, b: &dyn Backend) -> 
     };
     let mut done = vec![];
     for (n, body) in system_units(l.bin, watch.as_deref()) {
-        write_file(&format!("{root}{}/{n}", l.units), &body, 0o644)?;
+        write_file(&format!("{root}{}/{n}", l.units), &format!("# Managed by upd\n{body}"), 0o644)?;
         done.push(n.to_string());
     }
     for (n, body) in user_units(l.bin) {
-        write_file(&format!("{root}{}/{n}", l.user_units), &body, 0o644)?;
+        write_file(&format!("{root}{}/{n}", l.user_units), &format!("# Managed by upd\n{body}"), 0o644)?;
     }
     let pacman = target == "arch" || (target == "host" && have("pacman"));
     let apt = target == "deb" || (target == "host" && !pacman && Path::new("/etc/apt/apt.conf.d").is_dir());
@@ -1023,29 +1257,65 @@ fn cmd_gen_files(b: &dyn Backend, pos: &[String]) -> i32 {
     }
 }
 
-/// Следы ручной установки мешают пакетной: юниты в /etc перекрывают /usr/lib, /usr/local/bin — раньше в PATH.
-fn remove_manual_files() {
-    let _ = fs::remove_file(LOCAL_BIN);
-    for dir in [MANUAL.units, MANUAL.user_units] {
-        let Ok(rd) = fs::read_dir(dir) else { continue };
-        let files: Vec<(String, std::path::PathBuf)> = rd
-            .flatten()
-            .map(|e| (e.file_name().to_string_lossy().into_owned(), e.path()))
-            .filter(|(n, _)| n.starts_with("upd-") && (n.ends_with(".service") || n.ends_with(".timer") || n.ends_with(".path")))
-            .collect();
-        if files.is_empty() {
-            continue;
+fn owned_unit_files(dir: &str, names: &[&str]) -> Result<Vec<(String, std::path::PathBuf)>, String> {
+    let mut files = vec![];
+    for name in names {
+        let path = Path::new(dir).join(name);
+        let metadata = match fs::symlink_metadata(&path) {
+            Ok(metadata) => metadata,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => continue,
+            Err(e) => return Err(format!("{}: {e}", path.display())),
+        };
+        if !metadata.file_type().is_file() {
+            return Err(format!("{}: не обычный unit-файл, миграция остановлена", path.display()));
         }
-        // сначала disable: иначе в *.wants останутся ссылки на удалённые файлы
-        let mut args: Vec<&str> = if dir == MANUAL.user_units { vec!["--global", "disable"] } else { vec!["disable"] };
-        args.extend(files.iter().map(|(n, _)| n.as_str()));
-        let _ = run(true, &[], "systemctl", &args);
-        for (_, p) in &files {
-            let _ = fs::remove_file(p);
+        let body = fs::read_to_string(&path).map_err(|e| format!("{}: {e}", path.display()))?;
+        let owned = body.lines().any(|line| line.trim() == "# Managed by upd")
+            || body.lines().any(|line| line.trim_start().starts_with("Description=upd:"));
+        if !owned {
+            return Err(format!("{}: нет маркера upd, файл оставлен и миграция остановлена", path.display()));
+        }
+        files.push(((*name).to_string(), path));
+    }
+    Ok(files)
+}
+
+fn disable_and_remove_units(dir: &str, files: &[(String, std::path::PathBuf)], global: bool) -> Result<(), String> {
+    if files.is_empty() {
+        return Ok(());
+    }
+    let enabled_names: Vec<&str> = files
+        .iter()
+        .filter_map(|(name, _)| (name.ends_with(".timer") || name.ends_with(".path") || name.as_str() == vpn::SERVICE).then_some(name.as_str()))
+        .collect();
+    if systemd() {
+        if !enabled_names.is_empty() {
+            let mut args = if global { vec!["--global", "disable"] } else { vec!["disable"] };
+            args.extend(enabled_names);
+            run(true, &[], "systemctl", &args).map_err(|e| format!("{dir}: не удалось отключить unit-файлы upd: {e}"))?;
         }
     }
+    for (name, path) in files {
+        fs::remove_file(path).map_err(|e| format!("{}: не удалось удалить {name}: {e}", path.display()))?;
+    }
+    Ok(())
+}
+
+fn remove_manual_files() -> Result<(), String> {
+    // Имена берутся из генераторов, а не из префикса: сторонние upd-* units не трогаем.
+    let system_names: Vec<&str> = system_units(MANUAL.bin, Some("")).into_iter().map(|(name, _)| name).collect();
+    let user_names: Vec<&str> = user_units(MANUAL.bin).into_iter().map(|(name, _)| name).collect();
+    let system_files = owned_unit_files(MANUAL.units, &system_names)?;
+    let user_files = owned_unit_files(MANUAL.user_units, &user_names)?;
+
+    // Сначала disable: иначе в *.wants останутся ссылки на удалённые файлы.
+    disable_and_remove_units(MANUAL.units, &system_files, false)?;
+    disable_and_remove_units(MANUAL.user_units, &user_files, true)?;
+    fs::remove_file(LOCAL_BIN).or_else(|e| if e.kind() == std::io::ErrorKind::NotFound { Ok(()) } else { Err(e) })
+        .map_err(|e| format!("{LOCAL_BIN}: {e}"))?;
     let _ = fs::remove_file(MANUAL.pacman_hook);
     let _ = fs::remove_file(MANUAL.nm);
+    Ok(())
 }
 
 fn enable_units(b: &dyn Backend, c: &Config, ok: &dyn Fn(String)) -> Result<(), String> {
@@ -1060,11 +1330,13 @@ fn enable_units(b: &dyn Backend, c: &Config, ok: &dyn Fn(String)) -> Result<(), 
     let _ = run(true, &[], "systemctl", &["--global", "enable", "upd-notify.timer"]);
     ok(format!("службы: {}", enable.join(", ")));
     ok("уведомления: upd-notify.timer (для всех пользователей, после входа)".into());
-    if !vpn::load_subs().list.is_empty() && c.vpn_autostart {
-        let _ = vpn::autostart(true);
-        ok("VPN: автозапуск включён".into());
-    } else {
-        ok("VPN: добавь подписку — upd → VPN (или upd vpn add), дальше он будет стартовать сам".into());
+    match vpn::load_subs() {
+        Ok(subs) if !subs.list.is_empty() && c.vpn_autostart => {
+            let _ = vpn::autostart(true);
+            ok("VPN: автозапуск включён".into());
+        }
+        Ok(_) => ok("VPN: добавь подписку — upd → VPN (или upd vpn add), дальше он будет стартовать сам".into()),
+        Err(e) => println!("⚠ VPN: не удалось прочитать подписки: {e}"),
     }
     Ok(())
 }
@@ -1073,12 +1345,18 @@ fn cmd_install(b: &dyn Backend, c: &Config, pkg: bool) -> i32 {
     let ok = |s: String| println!("\x1b[32m✓\x1b[0m {s}");
     let exe = std::env::current_exe().and_then(fs::canonicalize).unwrap_or_default();
     let l = if pkg { &PACKAGE } else { &MANUAL };
-    if !pkg && Path::new(PKG_BIN).exists() && exe != Path::new(PKG_BIN) {
+    if pkg && !package_script_context(&exe) {
+        eprintln!("upd install --package доступен только из установочного сценария пакета.");
+        return 1;
+    }
+    if !pkg && fs::symlink_metadata(PKG_BIN).is_ok() {
         eprintln!("upd уже установлен пакетом ({PKG_BIN}) — обновляй его через пакетный менеджер.");
         return 1;
     }
     if pkg {
-        remove_manual_files();
+        if let Err(e) = remove_manual_files() {
+            return err_code(Err(e));
+        }
     } else if exe != Path::new(LOCAL_BIN) {
         let _ = fs::create_dir_all("/usr/local/bin");
         let tmp = format!("{LOCAL_BIN}.new");
@@ -1119,8 +1397,7 @@ fn cmd_install(b: &dyn Backend, c: &Config, pkg: bool) -> i32 {
     if b.mirrors_managed() && !pkg {
         println!("\nПервый подбор зеркал для текущей сети:");
         with_lock(true, || {
-            handle_network(b, c, &stdlog, true);
-            0
+            err_code(handle_network(b, c, &stdlog, true).map(|_| ()))
         });
     }
     if systemd() {
@@ -1142,6 +1419,20 @@ fn cmd_install(b: &dyn Backend, c: &Config, pkg: bool) -> i32 {
 }
 
 fn cmd_uninstall(b: &dyn Backend, pkg: bool) -> i32 {
+    if pkg {
+        let exe = std::env::current_exe().and_then(fs::canonicalize).unwrap_or_default();
+        if !package_script_context(&exe) {
+            eprintln!("upd uninstall --package доступен только из сценария пакетного менеджера.");
+            return 1;
+        }
+    }
+    let c = match Config::load(b.default_mirrors()) {
+        Ok(c) => c,
+        Err(e) => return err_code(Err(e)),
+    };
+    if let Err(e) = b.remove_mirrors() {
+        return err_code(Err(format!("не удалось вернуть зеркала: {e}")));
+    }
     if systemd() {
         let mut names: Vec<&str> = system_units(PKG_BIN, Some("-")).iter().map(|x| x.0).collect();
         names.retain(|n| !n.ends_with(".service") || *n == vpn::SERVICE);
@@ -1150,18 +1441,16 @@ fn cmd_uninstall(b: &dyn Backend, pkg: bool) -> i32 {
         args.extend(names.iter().copied());
         let _ = run(true, &[], "systemctl", &args);
         if !pkg {
-            remove_manual_files();
+            if let Err(e) = remove_manual_files() {
+                return err_code(Err(e));
+            }
             let _ = fs::remove_file(MANUAL.apt_hook);
         }
         let _ = run(true, &[], "systemctl", &["daemon-reload"]);
     }
-    let c = Config::load(b.default_mirrors());
     vpn::sysproxy(&c);
     let _ = fs::remove_file(CRON_PATH);
     garuda_skip_mirrors(false);
-    if let Err(e) = b.remove_mirrors() {
-        println!("не удалось вернуть зеркала: {e}");
-    }
     println!(
         "upd удалён. Оставлены настройки и данные: {}, {} (подписки VPN), {} — удали вручную, если не нужны.",
         conf_path(),
@@ -1169,4 +1458,97 @@ fn cmd_uninstall(b: &dyn Backend, pkg: bool) -> i32 {
         state_dir()
     );
     0
+}
+
+#[cfg(test)]
+mod contract_tests {
+    use super::*;
+    use std::path::Path;
+
+    // --- INSTALL-01 ---
+    #[test]
+    fn install01_package_install_requires_package_script_env() {
+        let _isolation = crate::common::contract_fixtures::isolation_lock();
+        let exe = Path::new(PKG_BIN);
+        let previous = std::env::var_os(PACKAGE_SCRIPT_ENV);
+        unsafe { std::env::remove_var(PACKAGE_SCRIPT_ENV); }
+        assert!(!package_script_context(exe));
+        unsafe {
+            std::env::set_var(PACKAGE_SCRIPT_ENV, "1");
+        }
+        let allowed = package_script_context(exe);
+        match previous {
+            Some(value) => unsafe { std::env::set_var(PACKAGE_SCRIPT_ENV, value); },
+            None => unsafe { std::env::remove_var(PACKAGE_SCRIPT_ENV); },
+        }
+        assert_eq!(allowed, fs::canonicalize(PKG_BIN).map(|p| p.as_path() == exe).unwrap_or(false));
+    }
+
+    #[test]
+    fn install01_manual_layout_uses_local_bin() {
+        assert_eq!(MANUAL.bin, LOCAL_BIN);
+        assert_eq!(PACKAGE.bin, PKG_BIN);
+        assert_ne!(MANUAL.bin, PACKAGE.bin);
+    }
+
+    // --- INSTALL-02 ---
+    #[test]
+    fn install02_rejects_foreign_unit_file() {
+        let dir = std::env::temp_dir().join(format!("upd-units-{}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        let unit = dir.join("upd-auto.timer");
+        fs::write(&unit, "[Timer]\nOnBootSec=1min\n").unwrap();
+        let err = owned_unit_files(dir.to_str().unwrap(), &["upd-auto.timer"]).unwrap_err();
+        assert!(err.contains("маркера upd"), "{err}");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    // --- UPD-03 ---
+    #[test]
+    fn upd03_auto_failure_exit_code() {
+        let st = UpdState {
+            error: "не удалось обновить базы пакетов".into(),
+            package_check_failure: Some(PackageCheckFailure::Refresh),
+            ..Default::default()
+        };
+        assert_eq!(auto_state_failure(&st), Some("не удалось обновить базы пакетов"));
+    }
+
+    // --- UPD-02A ---
+    #[test]
+    fn upd04a_flatpak_check_failure_affects_exit() {
+        let st = UpdState { flatpak_error: "flatpak: код 9".into(), ..Default::default() };
+        assert_eq!(state_check_failure(&st), Some("flatpak: код 9"));
+        assert_eq!(auto_state_failure(&st), Some("flatpak: код 9"));
+    }
+
+    #[test]
+    fn upd02a_flatpak_upgrade_error_is_recorded() {
+        let mut result = Ok(());
+        record_upgrade_error(&mut result, "flatpak: код 9".into());
+        assert_eq!(result.unwrap_err(), "flatpak: код 9");
+    }
+
+    // --- UPD-02B ---
+    #[test]
+    fn upd04b_firmware_check_failure_affects_exit() {
+        let st = UpdState { firmware_error: "fwupd: код 7".into(), ..Default::default() };
+        assert_eq!(state_check_failure(&st), Some("fwupd: код 7"));
+        assert_eq!(auto_state_failure(&st), Some("fwupd: код 7"));
+    }
+
+    #[test]
+    fn upd02b_firmware_upgrade_error_preserves_first_failure() {
+        let mut result = Err("системный пакет".into());
+        record_upgrade_error(&mut result, "fwupd: код 7".into());
+        assert_eq!(result.unwrap_err(), "системный пакет");
+    }
+
+    // --- VPN-03 ---
+    #[test]
+    fn vpn03_core_update_restart_failure_message() {
+        let message = vpn::core_restart_failure("код 1");
+        assert!(message.contains("обновлено на диске"));
+        assert!(message.contains("код 1"));
+    }
 }
