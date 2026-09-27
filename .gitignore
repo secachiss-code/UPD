@@ -31,3 +31,9 @@ subs.json
 .vscode/
 *.code-workspace
 .DS_Store
+
+# Агенты
+.codex/
+.claude/
+.grok/
+.cursor/
