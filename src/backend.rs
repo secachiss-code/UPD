@@ -369,10 +369,8 @@ impl Backend for Pacman {
         if !Path::new(&format!("{}/sync", Self::sync_db())).is_dir() {
             return Err(t!("временная база ещё не скачана").into());
         }
-        let output = Command::new("pacman")
-            .args(["-Qu", "--dbpath", &Self::sync_db()])
-            .env("LC_ALL", "C")
-            .output()
+        // обрезанный stdout — ошибка, а не неполный список обновлений
+        let output = capture(Command::new("pacman").args(["-Qu", "--dbpath", &Self::sync_db()]).env("LC_ALL", "C"), Some(OUT_MAX))
             .map_err(|e| t!("pacman -Qu: не удалось запустить: {0}", e))?;
         let stdout = String::from_utf8_lossy(&output.stdout);
         let stderr = String::from_utf8_lossy(&output.stderr);
@@ -509,7 +507,7 @@ fn arch_status_mirrors() -> Result<Vec<String>, String> {
         .get("https://archlinux.org/mirrors/status/json/")
         .call()
         .map_err(|e| e.to_string())?;
-    let v: serde_json::Value = serde_json::from_str(&resp.into_string().map_err(|e| e.to_string())?).map_err(|e| e.to_string())?;
+    let v: serde_json::Value = serde_json::from_str(&read_text(resp, 16 << 20)?).map_err(|e| e.to_string())?;
     let mut list: Vec<(f64, String)> = v["urls"]
         .as_array()
         .map(|a| {
@@ -1118,14 +1116,13 @@ impl Backend for Apt {
             return Err(t!("для Debian автопоиска нет, используется CDN deb.debian.org").into());
         }
         log(t!("  mirrors.ubuntu.com: зеркала твоей страны..."));
-        let body = ureq::AgentBuilder::new()
+        let resp = ureq::AgentBuilder::new()
             .timeout(std::time::Duration::from_secs(15))
             .build()
             .get("http://mirrors.ubuntu.com/mirrors.txt")
             .call()
-            .map_err(|e| e.to_string())?
-            .into_string()
             .map_err(|e| e.to_string())?;
+        let body = read_text(resp, 1 << 20)?;
         Ok((body.lines().map(str::trim).filter(|l| l.starts_with("http")).take(n).map(String::from).collect(), None))
     }
 
@@ -1273,7 +1270,7 @@ impl Backend for Apt {
         run(quiet, &[], "apt-get", &["update", "-q"])
     }
     fn updates(&self) -> Result<Vec<String>, String> {
-        let (s, code) = out("apt-get", &["-s", "-q", "full-upgrade"]);
+        let (s, code) = out_limited("apt-get", &["-s", "-q", "full-upgrade"], OUT_MAX)?;
         if code != 0 {
             return Err(t!("apt-get -s: код {0}", code));
         }
@@ -1416,7 +1413,7 @@ impl Backend for Rpm {
             if self.tumbleweed {
                 args.push("--all");
             }
-            let (s, code) = out("zypper", &args);
+            let (s, code) = out_limited("zypper", &args, OUT_MAX)?;
             if code != 0 {
                 return Err(t!("zypper list-updates: код {0}", code));
             }
@@ -1428,7 +1425,7 @@ impl Backend for Rpm {
                 })
                 .collect());
         }
-        let (s, code) = out(self.bin, &["-q", "check-update"]);
+        let (s, code) = out_limited(self.bin, &["-q", "check-update"], OUT_MAX)?;
         if code != 0 && code != 100 {
             return Err(t!("{} check-update: код {1}", self.bin, code));
         }

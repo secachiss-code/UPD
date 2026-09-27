@@ -279,7 +279,7 @@ fn cmd_auto(b: &dyn Backend, c: &Config) -> i32 {
         }
     };
     let ms = load_mirror_state();
-    if !changed && b.mirrors_managed() && now() - ms.checked > c.mirror_max_age_h * 3600 {
+    if !changed && b.mirrors_managed() && elapsed_at_least(ms.checked, hours_secs(c.mirror_max_age_h)) {
         if let Err(e) = check_mirrors(b, c, &stdlog, None, None) {
             stdlog(&t!("зеркала не применены: {0}", e));
             mirror_error = Some(e);
@@ -364,7 +364,7 @@ fn cmd_update(b: &dyn Backend, c: &Config) -> i32 {
             };
             if !handled {
                 let st = load_mirror_state();
-                if now() - st.checked > c.mirror_max_age_h * 3600 {
+                if elapsed_at_least(st.checked, hours_secs(c.mirror_max_age_h)) {
                     if let Err(e) = check_mirrors(b, c, &stdlog, None, None) {
                         println!("{}", t!("\x1b[31mНе удалось применить зеркала: {0}\x1b[0m", e));
                         return 1;
@@ -716,7 +716,7 @@ const VPN_USAGE: &str = "upd vpn — VPN на ядре mihomo (как в FlClash
   upd vpn                 состояние
   upd vpn add [URL]       добавить подписку (без URL — спросит; так адрес не попадёт в историю шелла)
   upd vpn subs            подписки
-  upd vpn use N | del N   сделать активной / удалить подписку номер N
+  upd vpn use N | del N   сделать активной / удалить подписку номер N (или id:ИД)
   upd vpn update          обновить подписки сейчас
   upd vpn start | stop | restart
   upd vpn tun | proxy     режим: вся система (TUN) / только прокси на vpn_port
@@ -764,7 +764,7 @@ fn cmd_vpn(c: &Config, pos: &[String]) -> i32 {
                 println!("{}", t!("цепочка: {}", s.chain().iter().map(|n| vpn::label(n)).collect::<Vec<_>>().join(" → ")));
                 println!("{}", t!("трафик: ↓ {} ↑ {} · соединений {}", fmt_bytes(s.down), fmt_bytes(s.up), s.conns));
             }
-            if let Some(w) = vpn::flclash_running() {
+            if let Some(w) = vpn::conflict(&c) {
                 println!("⚠ {w}");
             }
             0
@@ -809,11 +809,11 @@ fn cmd_vpn(c: &Config, pos: &[String]) -> i32 {
             0
         }
         "use" | "del" => {
-            let Some(n) = arg.and_then(|a| a.parse::<usize>().ok()).filter(|n| *n > 0) else {
+            let Some(target) = arg.and_then(vpn::SubRef::parse) else {
                 println!("{}", t!("укажи номер подписки (upd vpn subs)"));
                 return 2;
             };
-            let r = if sub == "use" { vpn::use_sub(n - 1) } else { vpn::delete_sub(n - 1) };
+            let r = if sub == "use" { vpn::use_sub(&target) } else { vpn::delete_sub(&target) };
             match r {
                 Ok(name) => {
                     println!("{}: «{name}»", if sub == "use" { t!("активна") } else { t!("удалена") });
@@ -871,8 +871,8 @@ fn cmd_vpn(c: &Config, pos: &[String]) -> i32 {
             if let Err(e) = vpn::fetch_missing(&c, &stdlog) {
                 return err_code(Err(e));
             }
-            while let Some(w) = vpn::flclash_running() {
-                print!("{}", t!("⚠ {0}.\nЗакрой FlClash и нажми Enter (Ctrl+C — отмена) ", w));
+            while let Some(w) = vpn::conflict(&c) {
+                print!("{}", t!("⚠ {0}.\nУстрани конфликт и нажми Enter (Ctrl+C — отмена) ", w));
                 let _ = std::io::Write::flush(&mut std::io::stdout());
                 let mut s = String::new();
                 if std::io::stdin().read_line(&mut s).unwrap_or(0) == 0 {
@@ -896,7 +896,7 @@ fn cmd_vpn(c: &Config, pos: &[String]) -> i32 {
             vpn::sysproxy(&c);
             err_code(r)
         }
-        "restart" => err_code(vpn::restart()),
+        "restart" => err_code(vpn::restart(&c)),
         "tun" | "proxy" => {
             c.vpn_tun = sub == "tun";
             if let Err(e) = c.save() {
@@ -936,7 +936,7 @@ fn cmd_vpn(c: &Config, pos: &[String]) -> i32 {
             a @ ("update" | "reinstall") => {
                 let r = vpn::core_install(&c, &stdlog, a == "reinstall").and_then(|changed| {
                     let active = vpn::service_active();
-                    let restart = if changed && active { vpn::restart() } else { Ok(()) };
+                    let restart = if changed && active { vpn::restart(&c) } else { Ok(()) };
                     core_update_exit(changed, active, restart)
                 });
                 err_code(r)
@@ -962,7 +962,7 @@ fn cmd_vpn(c: &Config, pos: &[String]) -> i32 {
 pub fn sub_info(i: &vpn::SubInfo) -> String {
     let mut s = String::new();
     if i.total > 0 {
-        s += &t!(" · трафик {} из {}", fmt_bytes(i.upload + i.download), fmt_bytes(i.total));
+        s += &t!(" · трафик {} из {}", vpn::fmt_bytes_wide(i.used()), fmt_bytes(i.total));
     }
     if i.expire > 0 {
         s += &t!(" · до {}", fmt_time(i.expire).split(' ').next().unwrap_or(""));
@@ -1150,11 +1150,11 @@ fn cmd_notify() {
     }
     for sp in v.subs.iter().filter(|s| s.active) {
         if let Some(i) = &sp.info {
-            if i.expire > 0 && i.expire - now() < 3 * 86400 {
+            if i.expire > 0 && i.expire.saturating_sub(now()) < 3 * 86400 {
                 send("vpn-expire", i.expire.to_string(), t!("Подписка VPN скоро закончится"), &t!("«{}» — до {}", sp.name, fmt_time(i.expire)));
             }
-            if i.total > 0 && (i.upload + i.download) * 10 >= i.total * 9 {
-                send("vpn-traffic", i.total.to_string(), t!("Трафик VPN почти исчерпан"), &t!("«{}»: {} из {}", sp.name, fmt_bytes(i.upload + i.download), fmt_bytes(i.total)));
+            if i.nearly_exhausted() {
+                send("vpn-traffic", i.total.to_string(), t!("Трафик VPN почти исчерпан"), &t!("«{}»: {} из {}", sp.name, vpn::fmt_bytes_wide(i.used()), fmt_bytes(i.total)));
             }
         }
     }
@@ -1235,7 +1235,12 @@ fn system_units(bin: &str, watch: Option<&str>) -> Vec<(&'static str, String)> {
                 "[Unit]\nDescription=upd: VPN (mihomo core)\nWants=network-online.target\nAfter=network-online.target\n\
                  StartLimitIntervalSec=10min\nStartLimitBurst=5\n\n[Service]\nType=simple\n\
                  ExecStartPre={bin} vpn prepare\nExecStart=/var/lib/upd/vpn/bin/mihomo -d /var/lib/upd/vpn -f /var/lib/upd/vpn/config.yaml\n\
-                 Restart=on-failure\nRestartSec=5\nTimeoutStartSec=5min\nLimitNOFILE=1048576\n\n[Install]\nWantedBy=multi-user.target\n"
+                 Restart=on-failure\nRestartSec=5\nTimeoutStartSec=5min\nLimitNOFILE=1048576\n\
+                 UMask=0077\nNoNewPrivileges=yes\n\
+                 CapabilityBoundingSet=CAP_NET_ADMIN CAP_NET_RAW CAP_NET_BIND_SERVICE\n\
+                 AmbientCapabilities=CAP_NET_ADMIN CAP_NET_RAW CAP_NET_BIND_SERVICE\n\
+                 ProtectSystem=strict\nReadWritePaths=-/var/lib/upd/vpn\nProtectHome=yes\nPrivateTmp=yes\n\
+                 ProtectKernelModules=yes\nProtectControlGroups=yes\n\n[Install]\nWantedBy=multi-user.target\n"
             ),
         ),
     ];
@@ -1530,6 +1535,10 @@ fn enable_units(b: &dyn Backend, c: &Config, ok: &dyn Fn(String)) -> Result<(), 
         let _ = run(true, &[], "systemctl", &["--user", "-M", &m, "start", "upd-notify.timer"]);
     }
     ok(t!("службы: {}", enable.join(", ")));
+    // работающий VPN после обновления upd подхватывает новый unit и конфиг (API через сокет); неработающий не трогаем
+    if vpn::service_active() && run(true, &[], "systemctl", &["try-restart", "--no-block", vpn::SERVICE]).is_ok() {
+        ok(t!("VPN: служба перезапускается с новыми настройками").into());
+    }
     ok(t!("уведомления: upd-notify.timer (для всех пользователей, после входа)").into());
     match vpn::load_subs() {
         Ok(subs) if !subs.list.is_empty() && c.vpn_autostart => {

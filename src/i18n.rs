@@ -395,11 +395,13 @@ mod tests {
             include_str!("main.rs"),
             include_str!("mirrors.rs"),
             include_str!("tui.rs"),
+            include_str!("tui/process.rs"),
             include_str!("vpn.rs"),
         ];
         let mut keys = vec![];
         for src in files {
-            let code = src.split("#[cfg(test)]").next().unwrap_or(src);
+            // тестовые модули не переводятся; отдельные #[cfg(test)]-функции посреди файла не обрывают просмотр
+            let code = src.split("#[cfg(test)]\nmod ").next().unwrap_or(src);
             let mut rest = code;
             while let Some(i) = rest.find("t!(\"") {
                 // format!( и подобные тоже кончаются на t!(

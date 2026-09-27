@@ -68,7 +68,7 @@ fn invoking_user_command(user: &str, args: &[&str]) -> Result<(String, Vec<Strin
 
 fn out_as_user(user: &str, args: &[&str]) -> Result<(String, i32), String> {
     let (runner, command_args) = invoking_user_command(user, args)?;
-    let output = Command::new(&runner).args(&command_args).output().map_err(|e| format!("{runner}: {e}"))?;
+    let output = capture(Command::new(&runner).args(&command_args), Some(OUT_MAX))?;
     Ok((String::from_utf8_lossy(&output.stdout).into_owned(), output.status.code().unwrap_or(-1)))
 }
 
@@ -77,8 +77,8 @@ fn run_as_user(quiet: bool, user: &str, args: &[&str]) -> Result<(), String> {
     let mut command = Command::new(&runner);
     command.args(&command_args);
     if quiet {
-        command.stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::piped());
-        let output = command.output().map_err(|e| format!("{runner}: {e}"))?;
+        command.stdin(Stdio::null());
+        let output = capture(&mut command, None)?;
         if output.status.success() {
             return Ok(());
         }
@@ -205,7 +205,8 @@ pub fn aur_updates(user: &str) -> Result<Vec<String>, String> {
     let Some(h) = aur_helper() else { return Ok(vec![]) };
     let (cmd, args) = as_user(user, h, &["-Qua"]);
     let a: Vec<&str> = args.iter().map(String::as_str).collect();
-    let o = Command::new(&cmd).args(&a).env("LC_ALL", "C").stdin(Stdio::null()).output().map_err(|e| format!("{cmd}: {e}"))?;
+    // обрезанный список обновлений не выдаётся за полный: превышение предела — ошибка
+    let o = capture(Command::new(&cmd).args(&a).env("LC_ALL", "C").stdin(Stdio::null()), Some(OUT_MAX))?;
     let output = String::from_utf8_lossy(&o.stdout);
     let code = o.status.code().unwrap_or(-1);
     // как и pacman -Qu, paru/yay -Qua выходят с кодом 1 без вывода, когда обновлений нет
@@ -263,7 +264,7 @@ pub fn aur_search(q: &str) -> Result<Vec<AurPkg>, String> {
         return Err(t!("для поиска нужно хотя бы 2 символа").into());
     }
     let url = format!("https://aur.archlinux.org/rpc/v5/search/{}?by=name-desc", crate::vpn::pct_encode(q));
-    let body = crate::mirrors::agent(20).get(&url).call().map_err(|e| t!("AUR недоступен: {0}", e))?.into_string().map_err(|e| e.to_string())?;
+    let body = read_text(crate::mirrors::agent(20).get(&url).call().map_err(|e| t!("AUR недоступен: {0}", e))?, 8 << 20)?;
     let mut r = parse_aur_search(&body)?;
     let names: Vec<&str> = r.iter().map(|p| p.name.as_str()).collect();
     let installed = installed_versions(&names);
@@ -364,7 +365,7 @@ pub fn has_fwupd() -> bool {
 }
 
 pub fn firmware_refresh() -> Result<(), String> {
-    let o = Command::new("fwupdmgr").args(["refresh", "--assume-yes"]).stdin(Stdio::null()).output().map_err(|e| format!("fwupdmgr: {e}"))?;
+    let o = capture(Command::new("fwupdmgr").args(["refresh", "--assume-yes"]).stdin(Stdio::null()), Some(OUT_MAX))?;
     // код 2 — «нечего делать»: метаданные и так свежие
     match o.status.code() {
         Some(0 | 2) => Ok(()),
@@ -428,12 +429,7 @@ fn tag<'a>(item: &'a str, name: &str) -> Option<&'a str> {
 
 /// Новости с archlinux.org, вышедшие после последнего полного обновления.
 pub fn arch_news(since: i64) -> Result<Vec<News>, String> {
-    let body = crate::mirrors::agent(15)
-        .get("https://archlinux.org/feeds/news/")
-        .call()
-        .map_err(|e| e.to_string())?
-        .into_string()
-        .map_err(|e| e.to_string())?;
+    let body = read_text(crate::mirrors::agent(15).get("https://archlinux.org/feeds/news/").call().map_err(|e| e.to_string())?, 4 << 20)?;
     let mut r = vec![];
     for item in body.split("<item>").skip(1) {
         let date = tag(item, "pubDate").and_then(parse_rfc2822).unwrap_or(0);

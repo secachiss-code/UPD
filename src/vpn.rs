@@ -31,7 +31,8 @@ pub fn label(name: &str) -> String {
 fn is_auto_group(s: &str) -> bool {
     s == AUTO_GROUP || s == AUTO_GROUP_OLD || crate::i18n::ALL.iter().any(|l| s == crate::i18n::tr_to(*l, "⚡ Авто"))
 }
-const CONTROLLER: &str = "127.0.0.1:9097";
+/// Порт своего DNS mihomo (listen 127.0.0.1:1053).
+pub const DNS_PORT: u16 = 1053;
 const TUN_DEV: &str = "upd-vpn";
 pub const TEST_URL: &str = "https://www.gstatic.com/generate_204";
 /// Панели подписок (Marzban, Remnawave, 3x-ui…) по User-Agent отдают конфиг для mihomo/FlClash
@@ -53,6 +54,10 @@ pub fn core_bin() -> String {
 fn config_path() -> String {
     format!("{}/config.yaml", home())
 }
+/// API mihomo: только Unix-сокет в каталоге службы (0700); TCP-контроллер не включается.
+fn api_socket() -> PathBuf {
+    Path::new(&home()).join("mihomo.sock")
+}
 
 fn private_dir(p: &str) -> Result<(), String> {
     fs::create_dir_all(p).map_err(|e| format!("{p}: {e}"))?;
@@ -71,6 +76,22 @@ pub struct SubInfo {
     pub download: u64,
     pub total: u64,
     pub expire: i64,
+}
+
+impl SubInfo {
+    /// Израсходовано: сумма в u128, без переполнения при любых u64.
+    pub fn used(&self) -> u128 {
+        u128::from(self.upload) + u128::from(self.download)
+    }
+    /// Израсходовано не меньше 90% лимита.
+    pub fn nearly_exhausted(&self) -> bool {
+        self.total > 0 && self.used() * 10 >= u128::from(self.total) * 9
+    }
+}
+
+/// Объём больше u64 (сумма счётчиков) показывается как предел u64.
+pub fn fmt_bytes_wide(n: u128) -> String {
+    fmt_bytes(u64::try_from(n).unwrap_or(u64::MAX))
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]
@@ -365,11 +386,37 @@ fn flclash_listen_ports(tcp: &str, tcp6: &str, inodes: &std::collections::HashSe
     ports
 }
 
+/// Реальный uid процесса из /proc/PID/status.
+fn proc_uid(pid_dir: &Path) -> Option<u32> {
+    fs::read_to_string(pid_dir.join("status")).ok()?.lines().find_map(|l| l.strip_prefix("Uid:")?.split_whitespace().next()?.parse().ok())
+}
+
+/// Чьим прокси можно доверить адрес подписки: root и пользователь, запустивший upd.
+fn trusted_uids() -> Vec<u32> {
+    let mut uids = vec![0, unsafe { libc::getuid() }];
+    for k in ["SUDO_UID", "PKEXEC_UID"] {
+        if let Some(uid) = std::env::var(k).ok().and_then(|v| v.parse().ok()) {
+            uids.push(uid);
+        }
+    }
+    if let Some(user) = invoking_user() {
+        if let Ok(uid) = out("id", &["-u", &user]).0.trim().parse() {
+            uids.push(uid);
+        }
+    }
+    uids
+}
+
 /// Локальные mixed-порты FlClashCore; bool указывает, что listener доступен по IPv6.
+/// Имя процесса задаёт он сам, поэтому слушатель принимается только от процесса root или пользователя upd.
 fn flclash_ports() -> Vec<(u16, bool)> {
     let mut inodes = std::collections::HashSet::new();
+    let trusted = trusted_uids();
     for e in fs::read_dir("/proc").into_iter().flatten().flatten() {
         if fs::read_to_string(e.path().join("comm")).unwrap_or_default().trim() != "FlClashCore" {
+            continue;
+        }
+        if !proc_uid(&e.path()).map(|uid| trusted.contains(&uid)).unwrap_or(false) {
             continue;
         }
         for fd in fs::read_dir(e.path().join("fd")).into_iter().flatten().flatten() {
@@ -387,31 +434,21 @@ fn flclash_ports() -> Vec<(u16, bool)> {
     flclash_listen_ports(&tcp, &tcp6, &inodes)
 }
 
-fn read_limited(r: ureq::Response, max: u64) -> Result<Vec<u8>, String> {
-    let expected = r.header("content-length").and_then(|v| v.parse::<u64>().ok());
-    if expected.map(|size| size > max).unwrap_or(false) {
-        return Err(t!("ответ превышает лимит {}", fmt_bytes(max)));
-    }
-    let mut b = vec![];
-    r.into_reader().take(max.saturating_add(1)).read_to_end(&mut b).map_err(|e| e.to_string())?;
-    if b.len() as u64 > max {
-        return Err(t!("ответ превышает лимит {}", fmt_bytes(max)));
-    }
-    if expected.map(|size| size != b.len() as u64).unwrap_or(false) {
-        return Err(t!("ответ обрезан относительно Content-Length").into());
-    }
-    Ok(b)
-}
-
 /// Как read_limited, но пишет в лог прогресс каждые 10% (для больших файлов).
 fn read_progress(r: ureq::Response, max: u64, log: Log) -> Result<Vec<u8>, String> {
     let total: u64 = r.header("content-length").and_then(|v| v.parse().ok()).unwrap_or(0);
-    let mut rd = r.into_reader().take(max);
+    if total > max {
+        return Err(t!("ответ превышает лимит {}", fmt_bytes(max)));
+    }
+    let mut rd = r.into_reader().take(max.saturating_add(1));
     let (mut b, mut buf, mut step) = (vec![], [0u8; 64 << 10], 1u64);
     loop {
         let n = rd.read(&mut buf).map_err(|e| t!("загрузка прервалась на {}: {1}", fmt_bytes(b.len() as u64), e))?;
         if n == 0 {
             return Ok(b);
+        }
+        if (b.len() + n) as u64 > max {
+            return Err(t!("ответ превышает лимит {}", fmt_bytes(max)));
         }
         b.extend_from_slice(&buf[..n]);
         if total > 0 && b.len() as u64 * 10 >= total * step {
@@ -421,16 +458,27 @@ fn read_progress(r: ureq::Response, max: u64, log: Log) -> Result<Vec<u8>, Strin
     }
 }
 
+/// Счётчик из заголовка: десятичное целое. Целое в записи с плавающей точкой принимается, пока оно точное (< 2^53);
+/// отрицательное, дробное и слишком большое значение — «неизвестно» (0), а не насыщение до u64::MAX.
+fn userinfo_num(v: &str) -> Option<u64> {
+    let v = v.trim();
+    if let Ok(n) = v.parse::<u64>() {
+        return Some(n);
+    }
+    let f: f64 = v.parse().ok()?;
+    (f.is_finite() && f >= 0.0 && f.fract() == 0.0 && f < 9_007_199_254_740_992.0).then_some(f as u64)
+}
+
 fn parse_userinfo(h: &str) -> SubInfo {
     let mut i = SubInfo::default();
     for part in h.split(';') {
         let Some((k, v)) = part.trim().split_once('=') else { continue };
-        let n: f64 = v.trim().parse().unwrap_or(0.0);
+        let n = userinfo_num(v).unwrap_or(0);
         match k.trim() {
-            "upload" => i.upload = n as u64,
-            "download" => i.download = n as u64,
-            "total" => i.total = n as u64,
-            "expire" => i.expire = n as i64,
+            "upload" => i.upload = n,
+            "download" => i.download = n,
+            "total" => i.total = n,
+            "expire" => i.expire = i64::try_from(n).unwrap_or(0),
             _ => {}
         }
     }
@@ -445,7 +493,7 @@ fn fetch_sub(sub: &mut Sub, c: &Config) -> Result<ProfileChange, String> {
         sub.info = Some(parse_userinfo(h));
     }
     if let Some(h) = r.header("profile-update-interval").and_then(|v| v.trim().parse::<i64>().ok()) {
-        sub.interval_h = h.max(1);
+        sub.interval_h = h.clamp(1, MAX_HOURS);
     }
     sub.name = sanitize_profile_name(&sub.name);
     if sub.name.is_empty() {
@@ -615,7 +663,7 @@ fn finish_profile_change(change: ProfileChange, log: Log) {
 }
 
 fn classify_sub(body: &str) -> Result<(String, usize), String> {
-    if let Ok(Value::Mapping(m)) = serde_yaml::from_str::<Value>(body) {
+    if let Ok(Value::Mapping(m)) = parse_profile(body) {
         let proxies = m.get("proxies").and_then(Value::as_sequence).map(|s| s.len()).unwrap_or(0);
         if proxies > 0 || m.contains_key("proxy-providers") {
             return Ok(("clash".into(), proxies));
@@ -661,12 +709,37 @@ pub fn add_sub(url: &str, name: &str, c: &Config, log: Log) -> Result<(), String
     Ok(())
 }
 
-pub fn delete_sub(idx: usize) -> Result<String, String> {
+/// Какая подписка: номер из `upd vpn subs` (для разовой команды) или неизменный id (из TUI).
+/// Номер и id разрешаются в запись только под блокировкой подписок.
+#[derive(Clone, Debug, PartialEq)]
+pub enum SubRef {
+    Index(usize),
+    Id(String),
+}
+
+impl SubRef {
+    /// «3» — третья по списку; «id:…» — запись с этим id.
+    pub fn parse(s: &str) -> Option<SubRef> {
+        match s.strip_prefix("id:") {
+            Some(id) if !id.is_empty() => Some(SubRef::Id(id.to_string())),
+            Some(_) => None,
+            None => s.parse::<usize>().ok().filter(|n| *n > 0).map(|n| SubRef::Index(n - 1)),
+        }
+    }
+
+    fn resolve(&self, subs: &Subs) -> Result<usize, String> {
+        match self {
+            SubRef::Index(i) if *i < subs.list.len() => Ok(*i),
+            SubRef::Id(id) => subs.list.iter().position(|s| &s.id == id).ok_or_else(|| t!("подписки уже нет — список изменился").into()),
+            _ => Err(t!("нет такой подписки").into()),
+        }
+    }
+}
+
+pub fn delete_sub(r: &SubRef) -> Result<String, String> {
     let _lock = subscriptions_lock(true)?;
     let mut subs = load_subs()?;
-    if idx >= subs.list.len() {
-        return Err(t!("нет такой подписки").into());
-    }
+    let idx = r.resolve(&subs)?;
     let s = subs.list.remove(idx);
     if subs.active == s.id {
         subs.active = subs.list.first().map(|x| x.id.clone()).unwrap_or_default();
@@ -678,10 +751,10 @@ pub fn delete_sub(idx: usize) -> Result<String, String> {
     Ok(s.name)
 }
 
-pub fn use_sub(idx: usize) -> Result<String, String> {
+pub fn use_sub(r: &SubRef) -> Result<String, String> {
     let _lock = subscriptions_lock(true)?;
     let mut subs = load_subs()?;
-    let s = subs.list.get(idx).ok_or(t!("нет такой подписки"))?.clone();
+    let s = subs.list[r.resolve(&subs)?].clone();
     subs.active = s.id;
     save_subs(&subs)?;
     Ok(s.name)
@@ -699,7 +772,7 @@ fn update_subs_locked(c: &Config, log: Log, force: bool) -> Result<bool, String>
     let mut profile_changes = Vec::new();
     for s in subs.list.iter_mut() {
         let interval = if s.interval_h > 0 { s.interval_h } else { c.vpn_sub_update_h };
-        if !force && now() - s.updated < interval * 3600 {
+        if !force && !elapsed_at_least(s.updated, hours_secs(interval)) {
             continue;
         }
         let previous = s.clone();
@@ -738,6 +811,9 @@ fn update_subs_locked(c: &Config, log: Log, force: bool) -> Result<bool, String>
 
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]
 pub struct SubPub {
+    /// неизменный id записи: подтверждение в TUI адресует его, а не номер строки
+    #[serde(default)]
+    pub id: String,
     pub name: String,
     pub host: String,
     pub updated: i64,
@@ -795,6 +871,7 @@ fn publish_state(s: &Subs) {
             let mut error = x.error.clone();
             scrub_stored_error(&mut error);
             SubPub {
+                id: x.id.clone(),
                 name: sanitize_profile_name(&x.name),
                 host: host_of(&mask_url(&x.url)).to_string(),
                 updated: x.updated,
@@ -809,30 +886,6 @@ fn publish_state(s: &Subs) {
 }
 
 // ======================= конфиг mihomo =======================
-
-pub fn secret() -> Result<String, String> {
-    let p = format!("{}/secret", etc());
-    match fs::read_to_string(&p) {
-        Ok(s) => {
-            let s = s.trim();
-            if s.len() < 32 || !s.bytes().all(|b| b.is_ascii_hexdigit()) {
-                return Err(t!("{0}: некорректный формат секрета", p));
-            }
-            Ok(s.to_string())
-        }
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-            let mut b = [0u8; 16];
-            fs::File::open("/dev/urandom")
-                .and_then(|mut f| f.read_exact(&mut b))
-                .map_err(|e| format!("/dev/urandom: {e}"))?;
-            let s: String = b.iter().map(|x| format!("{x:02x}")).collect();
-            private_dir(&etc())?;
-            write_private(&p, s.as_bytes())?;
-            Ok(s)
-        }
-        Err(e) => Err(format!("{p}: {e}")),
-    }
-}
 
 fn rules_path() -> String {
     format!("{}/rules.txt", etc())
@@ -858,15 +911,15 @@ const RULES_TEMPLATE_OLD: &str = "# upd VPN: свои правила — иду�
 # GEOSITE,youtube,⚡ Авто\n\
 # IP-CIDR,10.8.0.0/16,DIRECT,no-resolve\n";
 
+/// Свои правила. Файла нет — правил нет: сборка конфига (в том числе в ExecStartPre, где /etc только для чтения)
+/// ничего не пишет; шаблон создаёт редактор правил.
 pub fn user_rules() -> Result<Vec<String>, String> {
     let p = rules_path();
-    // нет файла или в нём нетронутый шаблон прежней версии — пишем шаблон на текущем языке
-    let untouched = fs::read_to_string(&p).map(|t| t == RULES_TEMPLATE_OLD).unwrap_or(false);
-    if !Path::new(&p).exists() || untouched {
-        private_dir(&etc())?;
-        atomic_write(Path::new(&p), rules_template().as_bytes(), 0o600).map_err(|e| format!("{p}: {e}"))?;
-    }
-    let text = fs::read_to_string(&p).map_err(|e| format!("{p}: {e}"))?;
+    let text = match fs::read_to_string(&p) {
+        Ok(text) => text,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(vec![]),
+        Err(e) => return Err(format!("{p}: {e}")),
+    };
     // группу автовыбора в правилах можно назвать на любом языке интерфейса (и прежним «⚡ Авто»):
     // в конфиг mihomo идёт её постоянное имя, иначе mihomo отверг бы правило
     Ok(text
@@ -878,6 +931,13 @@ pub fn user_rules() -> Result<Vec<String>, String> {
 }
 
 pub fn edit_rules() -> Result<(), String> {
+    let p = rules_path();
+    // нет файла или в нём нетронутый шаблон прежней версии — пишем шаблон на текущем языке
+    let untouched = fs::read_to_string(&p).map(|t| t == RULES_TEMPLATE_OLD).unwrap_or(false);
+    if !Path::new(&p).exists() || untouched {
+        private_dir(&etc())?;
+        atomic_write(Path::new(&p), rules_template().as_bytes(), 0o600).map_err(|e| format!("{p}: {e}"))?;
+    }
     user_rules()?;
     let editor = std::env::var("EDITOR").ok().filter(|e| !e.is_empty()).unwrap_or_else(|| ["nano", "micro", "vim", "vi"].into_iter().find(|e| have(e)).unwrap_or("vi").to_string());
     run(false, &[], &editor, &[&rules_path()])
@@ -909,16 +969,240 @@ fn main_group(groups: &[Value], rules: &[Value]) -> Option<String> {
     groups.iter().find(|g| g.get("type").and_then(Value::as_str) == Some("select")).and_then(|g| g.get("name")?.as_str().map(String::from))
 }
 
+// ======================= разбор профиля с бюджетом =======================
+
+/// Пределы разбора профиля. Сырое тело уже ограничено 32 МБ, но алиасы YAML разворачиваются при разборе:
+/// узлы и байты строк считаются вместе с развёрнутыми алиасами, до построения дерева сверх бюджета.
+const YAML_MAX_NODES: usize = 1_000_000;
+const YAML_MAX_BYTES: usize = 64 << 20;
+const YAML_MAX_DEPTH: usize = 64;
+const YAML_MAX_ALIASES: usize = 10_000;
+
+struct YamlBudget {
+    nodes: std::cell::Cell<usize>,
+    bytes: std::cell::Cell<usize>,
+}
+
+impl YamlBudget {
+    fn take<E: serde::de::Error>(&self, bytes: usize) -> Result<(), E> {
+        let nodes = self.nodes.get() + 1;
+        let total = self.bytes.get().saturating_add(bytes);
+        if nodes > YAML_MAX_NODES || total > YAML_MAX_BYTES {
+            return Err(E::custom(t!("профиль больше допустимого после развёртывания алиасов YAML")));
+        }
+        self.nodes.set(nodes);
+        self.bytes.set(total);
+        Ok(())
+    }
+}
+
+#[derive(Clone, Copy)]
+struct Budgeted<'a> {
+    budget: &'a YamlBudget,
+    depth: usize,
+}
+
+impl<'a> Budgeted<'a> {
+    fn child<E: serde::de::Error>(self) -> Result<Self, E> {
+        if self.depth >= YAML_MAX_DEPTH {
+            return Err(E::custom(t!("профиль YAML слишком глубокий")));
+        }
+        Ok(Budgeted { budget: self.budget, depth: self.depth + 1 })
+    }
+}
+
+impl<'de> serde::de::DeserializeSeed<'de> for Budgeted<'_> {
+    type Value = Value;
+    fn deserialize<D: serde::Deserializer<'de>>(self, d: D) -> Result<Value, D::Error> {
+        d.deserialize_any(self)
+    }
+}
+
+impl<'de> serde::de::Visitor<'de> for Budgeted<'_> {
+    type Value = Value;
+    fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        f.write_str("YAML value")
+    }
+    fn visit_bool<E: serde::de::Error>(self, v: bool) -> Result<Value, E> {
+        self.budget.take(0)?;
+        Ok(Value::Bool(v))
+    }
+    fn visit_i64<E: serde::de::Error>(self, v: i64) -> Result<Value, E> {
+        self.budget.take(0)?;
+        Ok(Value::Number(v.into()))
+    }
+    fn visit_u64<E: serde::de::Error>(self, v: u64) -> Result<Value, E> {
+        self.budget.take(0)?;
+        Ok(Value::Number(v.into()))
+    }
+    fn visit_f64<E: serde::de::Error>(self, v: f64) -> Result<Value, E> {
+        self.budget.take(0)?;
+        Ok(Value::Number(v.into()))
+    }
+    fn visit_str<E: serde::de::Error>(self, v: &str) -> Result<Value, E> {
+        self.budget.take(v.len())?;
+        Ok(Value::String(v.to_string()))
+    }
+    fn visit_string<E: serde::de::Error>(self, v: String) -> Result<Value, E> {
+        self.budget.take(v.len())?;
+        Ok(Value::String(v))
+    }
+    fn visit_unit<E: serde::de::Error>(self) -> Result<Value, E> {
+        self.budget.take(0)?;
+        Ok(Value::Null)
+    }
+    fn visit_none<E: serde::de::Error>(self) -> Result<Value, E> {
+        self.visit_unit()
+    }
+    fn visit_some<D: serde::Deserializer<'de>>(self, d: D) -> Result<Value, D::Error> {
+        d.deserialize_any(self)
+    }
+    fn visit_seq<A: serde::de::SeqAccess<'de>>(self, mut seq: A) -> Result<Value, A::Error> {
+        self.budget.take(0)?;
+        let child = self.child()?;
+        let mut out = vec![];
+        while let Some(v) = seq.next_element_seed(child)? {
+            out.push(v);
+        }
+        Ok(Value::Sequence(out))
+    }
+    fn visit_map<A: serde::de::MapAccess<'de>>(self, mut map: A) -> Result<Value, A::Error> {
+        self.budget.take(0)?;
+        let child = self.child()?;
+        let mut out = Mapping::new();
+        while let Some(key) = map.next_key_seed(child)? {
+            let value = map.next_value_seed(child)?;
+            out.insert(key, value);
+        }
+        Ok(Value::Mapping(out))
+    }
+    fn visit_enum<A: serde::de::EnumAccess<'de>>(self, data: A) -> Result<Value, A::Error> {
+        use serde::de::VariantAccess;
+        self.budget.take(0)?;
+        let (tag, variant): (String, _) = data.variant()?;
+        let value = variant.newtype_variant_seed(self.child()?)?;
+        Ok(Value::Tagged(Box::new(serde_yaml::value::TaggedValue { tag: serde_yaml::value::Tag::new(tag), value })))
+    }
+}
+
+/// Сколько алиасов `*имя` в тексте YAML (оценка сверху: считает и похожие места внутри строк в одинарных кавычках).
+fn yaml_alias_count(body: &str) -> usize {
+    let mut n = 0;
+    for line in body.lines() {
+        let b = line.as_bytes();
+        let mut quote = 0u8;
+        for i in 0..b.len() {
+            let c = b[i];
+            if quote != 0 {
+                if c == quote {
+                    quote = 0;
+                }
+                continue;
+            }
+            match c {
+                b'"' => quote = b'"',
+                b'#' if i == 0 || b[i - 1] == b' ' => break,
+                b'*' if (i == 0 || matches!(b[i - 1], b' ' | b'\t' | b'[' | b'{' | b',' | b':' | b'-'))
+                    && b.get(i + 1).map(|x| x.is_ascii_alphanumeric() || *x == b'_').unwrap_or(false) =>
+                {
+                    n += 1
+                }
+                _ => {}
+            }
+        }
+    }
+    n
+}
+
+/// Разбор профиля подписки с пределами узлов, байт, глубины и числа алиасов; ключи слияния `<<` раскрываются.
+fn parse_profile(body: &str) -> Result<Value, String> {
+    if yaml_alias_count(body) > YAML_MAX_ALIASES {
+        return Err(t!("в профиле слишком много алиасов YAML").into());
+    }
+    let budget = YamlBudget { nodes: std::cell::Cell::new(0), bytes: std::cell::Cell::new(0) };
+    let seed = Budgeted { budget: &budget, depth: 0 };
+    let mut v = serde::de::DeserializeSeed::deserialize(seed, serde_yaml::Deserializer::from_str(body)).map_err(|e| e.to_string())?;
+    v.apply_merge().map_err(|e| e.to_string())?;
+    Ok(v)
+}
+
+/// Что берётся из профиля подписки: узлы, группы, правила и сетевые provider-ы. Остальное (listeners, dns, hosts,
+/// sniffer, authentication, skip-auth-prefixes, external-controller-*, iptables, ebpf…) задаёт upd или не задаёт никто.
+const PROFILE_KEYS: [&str; 6] = ["proxies", "proxy-groups", "rules", "sub-rules", "proxy-providers", "rule-providers"];
+/// Подкаталоги каталога VPN, куда provider-у можно писать кэш или откуда читать файл.
+const PROVIDER_DIRS: [&str; 5] = ["profiles", "providers", "proxies", "rules", "ruleset"];
+
+/// Путь provider-а: относительный, без «..», внутри одного из PROVIDER_DIRS.
+fn provider_path_ok(p: &str) -> bool {
+    use std::path::Component;
+    let path = Path::new(p);
+    let mut parts = path.components().filter(|c| !matches!(c, Component::CurDir));
+    let Some(Component::Normal(first)) = parts.next() else { return false };
+    !path.is_absolute()
+        && PROVIDER_DIRS.iter().any(|d| first == std::ffi::OsStr::new(d))
+        && parts.clone().count() > 0
+        && parts.all(|c| matches!(c, Component::Normal(_)))
+}
+
+fn check_providers(m: &Mapping, key: &str) -> Result<(), String> {
+    let Some(list) = m.get(key) else { return Ok(()) };
+    let list = list.as_mapping().ok_or_else(|| t!("{0} в профиле — не список", key))?;
+    for (name, p) in list {
+        let name = name.as_str().unwrap_or("?");
+        let kind = p.get("type").and_then(Value::as_str).unwrap_or("");
+        if !matches!(kind, "http" | "file" | "inline") {
+            return Err(t!("provider «{0}»: тип «{1}» не поддерживается", name, kind));
+        }
+        match p.get("path") {
+            Some(path) => {
+                let path = path.as_str().unwrap_or("");
+                if !provider_path_ok(path) {
+                    return Err(t!("provider «{0}»: путь «{1}» вне каталога профиля", name, path));
+                }
+            }
+            None if kind == "file" => return Err(t!("provider «{0}»: у файлового provider нет пути", name)),
+            None => {}
+        }
+    }
+    Ok(())
+}
+
+/// Разрешённая часть профиля подписки.
+fn profile_part(src: &Mapping) -> Result<Mapping, String> {
+    let mut m = Mapping::new();
+    for key in PROFILE_KEYS {
+        if let Some(v) = src.get(key) {
+            m.insert(k(key), v.clone());
+        }
+    }
+    check_providers(&m, "proxy-providers")?;
+    check_providers(&m, "rule-providers")?;
+    Ok(m)
+}
+
+/// Порт прокси годится для VPN: диапазон как в TUI и не порт своего DNS.
+pub fn check_port(c: &Config) -> Result<(), String> {
+    if !(1024..=65535).contains(&c.vpn_port) {
+        return Err(t!("порт прокси {0} вне диапазона 1024–65535 (vpn_port в {1})", c.vpn_port, conf_path()));
+    }
+    if c.vpn_dns && c.vpn_port == DNS_PORT {
+        return Err(t!("порт прокси {0} занят своим DNS VPN — выбери другой vpn_port", c.vpn_port));
+    }
+    Ok(())
+}
+
 /// Собирает итоговый конфиг: профиль подписки + настройки upd (порты, TUN, DNS, геофайлы, правила, авто-выбор).
 pub fn build_config(c: &Config) -> Result<String, String> {
+    check_port(c)?;
     let subs = load_subs()?;
     let sub = subs.list.iter().find(|s| s.id == subs.active).ok_or(t!("нет подписки: добавь её (upd → VPN → Подписки → n)"))?;
     let body = fs::read_to_string(profile_path(sub, &sub.kind)).map_err(|_| t!("профиль подписки не скачан — обнови подписку").to_string())?;
 
     let mut m: Mapping = if sub.kind == "clash" {
-        match serde_yaml::from_str::<Value>(&body) {
-            Ok(Value::Mapping(m)) => m,
-            _ => return Err(t!("профиль подписки повреждён — обнови подписку").into()),
+        match parse_profile(&body) {
+            Ok(Value::Mapping(m)) => profile_part(&m)?,
+            Ok(_) => return Err(t!("профиль подписки повреждён — обнови подписку").into()),
+            Err(e) => return Err(t!("профиль подписки не принят: {0}", e)),
         }
     } else {
         let mut m = Mapping::new();
@@ -939,14 +1223,11 @@ pub fn build_config(c: &Config) -> Result<String, String> {
     };
 
     // --- то, что задаёт upd поверх подписки ---
-    for key in ["port", "socks-port", "redir-port", "tproxy-port", "external-ui", "external-ui-url", "external-controller-tls", "external-controller-unix", "external-controller-pipe", "interface-name", "routing-mark"] {
-        m.remove(key);
-    }
     m.insert(k("mixed-port"), Value::from(c.vpn_port));
     m.insert(k("allow-lan"), Value::Bool(c.vpn_allow_lan));
-    m.insert(k("bind-address"), k("*"));
-    m.insert(k("external-controller"), k(CONTROLLER));
-    m.insert(k("secret"), k(&secret()?));
+    m.insert(k("bind-address"), k(if c.vpn_allow_lan { "*" } else { "127.0.0.1" }));
+    // API — только Unix-сокет в каталоге 0700 (UMask службы 0077); TCP-контроллера нет
+    m.insert(k("external-controller-unix"), k(&api_socket().to_string_lossy()));
     m.insert(k("mode"), k(c.vpn_mode_name()));
     m.insert(k("log-level"), k("warning"));
     m.insert(k("ipv6"), Value::Bool(c.vpn_ipv6));
@@ -956,8 +1237,8 @@ pub fn build_config(c: &Config) -> Result<String, String> {
     m.insert(k("profile"), yaml_map(vec![("store-selected", Value::Bool(true)), ("store-fake-ip", Value::Bool(true))]));
     // геофайлы — тот же источник, что у FlClash
     m.insert(k("geodata-mode"), Value::Bool(false));
-    m.insert(k("geo-auto-update"), Value::Bool(true));
-    m.insert(k("geo-update-interval"), Value::from(24));
+    // геофайлы обновляет только upd (geo_update с проверкой формата), не само ядро
+    m.insert(k("geo-auto-update"), Value::Bool(false));
     m.insert(
         k("geox-url"),
         yaml_map(vec![
@@ -1083,29 +1364,116 @@ pub fn write_config(c: &Config) -> Result<bool, String> {
 
 // ======================= API mihomo =======================
 
-pub fn api(method: &str, path: &str, body: Option<serde_json::Value>) -> Result<serde_json::Value, String> {
-    let a = ureq::AgentBuilder::new().timeout(Duration::from_secs(12)).build(); // без прокси из окружения
-    let secret = secret()?;
-    let req = a.request(method, &format!("http://{CONTROLLER}{path}")).set("Authorization", &format!("Bearer {secret}"));
-    let res = match body {
-        Some(b) => req.set("Content-Type", "application/json").send_string(&b.to_string()),
-        None => req.call(),
-    };
-    match res {
-        Ok(r) if r.status() == 204 => Ok(serde_json::Value::Null),
-        Ok(r) => {
-            let s = r.into_string().map_err(|e| e.to_string())?;
-            if s.trim().is_empty() {
-                Ok(serde_json::Value::Null)
-            } else {
-                serde_json::from_str(&s).map_err(|e| e.to_string())
-            }
+/// Владелец сокета и процесса mihomo: служба работает от root; в тестах — текущий пользователь.
+fn service_uid() -> u32 {
+    if test_mode() { unsafe { libc::geteuid() } } else { 0 }
+}
+
+/// Сокет API — наш: сокет и его каталог принадлежат службе, каталог закрыт для группы и остальных.
+/// Права самого сокета mihomo ставит 0666, поэтому доступ ограничивает каталог: без права поиска
+/// в нём к сокету не подключиться, и подменить сокет может только владелец каталога.
+fn check_api_socket(path: &Path) -> Result<(), String> {
+    use std::os::unix::fs::{FileTypeExt, MetadataExt};
+    let bad = || t!("{0}: сокет API mihomo чужой или доступен не только службе", path.display());
+    let md = fs::symlink_metadata(path).map_err(|e| format!("{}: {e}", path.display()))?;
+    let dir = path.parent().map(fs::symlink_metadata).ok_or_else(bad)?.map_err(|e| format!("{}: {e}", path.display()))?;
+    let uid = service_uid();
+    if !md.file_type().is_socket() || md.uid() != uid || !dir.is_dir() || dir.uid() != uid || dir.mode() & 0o077 != 0 {
+        return Err(bad());
+    }
+    Ok(())
+}
+
+/// uid процесса на другом конце Unix-сокета (SO_PEERCRED).
+fn peer_uid(s: &std::os::unix::net::UnixStream) -> Option<u32> {
+    use std::os::fd::AsRawFd;
+    let mut cred = libc::ucred { pid: 0, uid: 0, gid: 0 };
+    let mut len = std::mem::size_of::<libc::ucred>() as libc::socklen_t;
+    let r = unsafe { libc::getsockopt(s.as_raw_fd(), libc::SOL_SOCKET, libc::SO_PEERCRED, &mut cred as *mut _ as *mut libc::c_void, &mut len) };
+    (r == 0).then_some(cred.uid)
+}
+
+/// Предел ответа API: списки прокси и соединений бывают большими, остальное — короткий JSON.
+fn api_limit(path: &str) -> u64 {
+    if path.starts_with("/proxies") || path.starts_with("/connections") || path.starts_with("/group") { 16 << 20 } else { 1 << 20 }
+}
+
+/// Ответ HTTP/1.1: код и тело (Content-Length, chunked или до закрытия соединения).
+fn parse_http_response(raw: &[u8]) -> Result<(u16, Vec<u8>), String> {
+    let bad = || t!("неверный HTTP ответ").to_string();
+    let head_end = raw.windows(4).position(|w| w == b"\r\n\r\n").ok_or_else(bad)?;
+    let head = std::str::from_utf8(&raw[..head_end]).map_err(|_| bad())?;
+    let mut lines = head.split("\r\n");
+    let status: u16 = lines.next().and_then(|l| l.split_whitespace().nth(1)).and_then(|c| c.parse().ok()).ok_or_else(bad)?;
+    let (mut length, mut chunked) = (None, false);
+    for l in lines {
+        let Some((k, v)) = l.split_once(':') else { continue };
+        match k.trim().to_ascii_lowercase().as_str() {
+            "content-length" => length = Some(v.trim().parse::<usize>().map_err(|_| bad())?),
+            "transfer-encoding" => chunked = v.to_ascii_lowercase().contains("chunked"),
+            _ => {}
         }
-        Err(ureq::Error::Status(code, r)) => {
-            let msg = r.into_string().ok().and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok()).and_then(|v| v["message"].as_str().map(String::from));
+    }
+    let body = &raw[head_end + 4..];
+    if chunked {
+        let mut out = vec![];
+        let mut pos = 0;
+        loop {
+            let line_end = body[pos..].windows(2).position(|w| w == b"\r\n").ok_or_else(bad)? + pos;
+            let size_str = std::str::from_utf8(&body[pos..line_end]).map_err(|_| bad())?;
+            let size = usize::from_str_radix(size_str.split(';').next().unwrap_or("").trim(), 16).map_err(|_| bad())?;
+            pos = line_end + 2;
+            if size == 0 {
+                return Ok((status, out));
+            }
+            let end = pos.checked_add(size).filter(|e| *e <= body.len()).ok_or_else(bad)?;
+            out.extend_from_slice(&body[pos..end]);
+            pos = end + 2;
+        }
+    }
+    match length {
+        Some(n) if n <= body.len() => Ok((status, body[..n].to_vec())),
+        Some(_) => Err(t!("ответ обрезан относительно Content-Length").into()),
+        None => Ok((status, body.to_vec())),
+    }
+}
+
+/// Запрос к API mihomo через Unix-сокет. Сокет и процесс на нём проверяются до отправки запроса.
+pub fn api(method: &str, path: &str, body: Option<serde_json::Value>) -> Result<serde_json::Value, String> {
+    use std::io::Write;
+    let sock = api_socket();
+    check_api_socket(&sock)?;
+    let mut s = std::os::unix::net::UnixStream::connect(&sock).map_err(|e| format!("{}: {e}", sock.display()))?;
+    if peer_uid(&s) != Some(service_uid()) {
+        return Err(t!("{0}: на сокете API не процесс службы", sock.display()));
+    }
+    let timeout = Some(Duration::from_secs(12));
+    let _ = s.set_read_timeout(timeout);
+    let _ = s.set_write_timeout(timeout);
+    let body = body.map(|b| b.to_string()).unwrap_or_default();
+    let mut req = format!("{method} {path} HTTP/1.1\r\nHost: mihomo\r\nConnection: close\r\nContent-Length: {}\r\n", body.len());
+    if !body.is_empty() {
+        req += "Content-Type: application/json\r\n";
+    }
+    req += "\r\n";
+    req += &body;
+    s.write_all(req.as_bytes()).map_err(|e| e.to_string())?;
+    let max = api_limit(path);
+    let mut raw = vec![];
+    (&mut s).take(max.saturating_add(1)).read_to_end(&mut raw).map_err(|e| e.to_string())?;
+    if raw.len() as u64 > max {
+        return Err(t!("ответ превышает лимит {}", fmt_bytes(max)));
+    }
+    let (status, body) = parse_http_response(&raw)?;
+    let text = String::from_utf8_lossy(&body);
+    match status {
+        204 => Ok(serde_json::Value::Null),
+        200..=299 if text.trim().is_empty() => Ok(serde_json::Value::Null),
+        200..=299 => serde_json::from_str(&text).map_err(|e| e.to_string()),
+        code => {
+            let msg = serde_json::from_str::<serde_json::Value>(&text).ok().and_then(|v| v["message"].as_str().map(String::from));
             Err(msg.unwrap_or_else(|| format!("HTTP {code}")))
         }
-        Err(e) => Err(e.to_string()),
     }
 }
 
@@ -1153,6 +1521,8 @@ pub struct Snapshot {
     pub down: u64,
     pub up: u64,
     pub conns: usize,
+    /// почему ядро не ответило (пусто — ответило или сокета API нет)
+    pub error: String,
 }
 
 impl Snapshot {
@@ -1173,7 +1543,15 @@ impl Snapshot {
 
 pub fn snapshot() -> Snapshot {
     let mut s = Snapshot::default();
-    let Ok(v) = api("GET", "/version", None) else { return s };
+    let v = match api("GET", "/version", None) {
+        Ok(v) => v,
+        Err(e) => {
+            if api_socket().exists() {
+                s.error = e;
+            }
+            return s;
+        }
+    };
     s.running = true;
     s.version = v["version"].as_str().unwrap_or("").to_string();
     if let Ok(cfg) = api("GET", "/configs", None) {
@@ -1223,7 +1601,7 @@ fn reset_failed() {
 }
 
 pub fn start(c: &Config) -> Result<(), String> {
-    if let Some(w) = flclash_running() {
+    if let Some(w) = conflict(c) {
         return Err(w);
     }
     reset_failed();
@@ -1236,8 +1614,8 @@ pub fn stop() -> Result<(), String> {
     run(true, &[], "systemctl", &["stop", SERVICE])
 }
 
-pub fn restart() -> Result<(), String> {
-    if let Some(w) = flclash_running() {
+pub fn restart(c: &Config) -> Result<(), String> {
+    if let Some(w) = conflict(c) {
         return Err(w);
     }
     reset_failed();
@@ -1280,16 +1658,105 @@ pub fn autostart(on: bool) -> Result<(), String> {
     run(true, &[], "systemctl", &[if on { "enable" } else { "disable" }, SERVICE])
 }
 
-/// Два TUN одновременно не уживутся, порты тоже могут пересечься — FlClash должен быть выключен.
-pub fn flclash_running() -> Option<String> {
-    let rd = fs::read_dir("/proc").ok()?;
-    for e in rd.flatten() {
-        let comm = fs::read_to_string(e.path().join("comm")).unwrap_or_default();
-        if comm.trim() == "FlClashCore" {
-            return Some(t!("запущен FlClash — закрой его (и выключи его автозапуск), иначе два VPN помешают друг другу").into());
+/// Ядра VPN, чей TUN мешает нашему (два авто-маршрута не уживутся). Имя здесь не даёт обойти проверку:
+/// создать TUN может только привилегированный процесс; mesh-сети вроде tailscale ядрами VPN не считаются.
+const VPN_CORES: [&str; 7] = ["FlClashCore", "mihomo", "clash", "clash-meta", "verge-mihomo", "sing-box", "xray"];
+
+struct ProcInfo {
+    pid: String,
+    comm: String,
+    ours: bool,
+    sockets: Vec<String>,
+    tuns: Vec<String>,
+}
+
+/// Процессы с их сокетами и TUN-интерфейсами (/proc/PID/fd и fdinfo); ours — наше ядро mihomo.
+fn processes() -> Vec<ProcInfo> {
+    let core = fs::canonicalize(core_bin()).ok();
+    let mut list = vec![];
+    for e in fs::read_dir("/proc").into_iter().flatten().flatten() {
+        let name = e.file_name();
+        let Some(pid) = name.to_str().filter(|p| p.bytes().all(|b| b.is_ascii_digit())) else { continue };
+        let dir = e.path();
+        let ours = core.is_some() && fs::read_link(dir.join("exe")).ok() == core;
+        let (mut sockets, mut tuns) = (vec![], vec![]);
+        for fd in fs::read_dir(dir.join("fd")).into_iter().flatten().flatten() {
+            let Ok(target) = fs::read_link(fd.path()) else { continue };
+            let target = target.to_string_lossy();
+            if let Some(i) = target.strip_prefix("socket:[").and_then(|x| x.strip_suffix(']')) {
+                sockets.push(i.to_string());
+            } else if target == "/dev/net/tun" {
+                let info = fs::read_to_string(dir.join("fdinfo").join(fd.file_name())).unwrap_or_default();
+                if let Some(iff) = info.lines().find_map(|l| l.strip_prefix("iff:")) {
+                    tuns.push(iff.trim().to_string());
+                }
+            }
+        }
+        if sockets.is_empty() && tuns.is_empty() {
+            continue;
+        }
+        let comm = fs::read_to_string(dir.join("comm")).unwrap_or_default().trim().to_string();
+        list.push(ProcInfo { pid: pid.to_string(), comm, ours, sockets, tuns });
+    }
+    list
+}
+
+/// inode сокетов, слушающих порт: TCP в состоянии LISTEN, UDP без соединения; любой адрес.
+fn listening_inodes(table: &str, port: u16, udp: bool) -> Vec<String> {
+    let want = if udp { "07" } else { "0A" };
+    table
+        .lines()
+        .skip(1)
+        .filter_map(|line| {
+            let f: Vec<&str> = line.split_whitespace().collect();
+            let p = f.get(1)?.rsplit_once(':')?.1;
+            (u16::from_str_radix(p, 16).ok()? == port && f.get(3) == Some(&want)).then(|| f.get(9).map(|s| s.to_string()))?
+        })
+        .collect()
+}
+
+/// Конфликт из снимка /proc: чужой слушатель на порту прокси/DNS или TUN другого ядра VPN.
+fn find_conflict(c: &Config, procs: &[ProcInfo], tables: &[(&str, bool)]) -> Option<String> {
+    let mut ports = vec![c.vpn_port];
+    if c.vpn_dns {
+        ports.push(DNS_PORT);
+    }
+    for port in ports {
+        for (table, udp) in tables {
+            for inode in listening_inodes(table, port, *udp) {
+                match procs.iter().find(|p| p.sockets.contains(&inode)) {
+                    Some(p) if p.ours => {}
+                    Some(p) if p.comm == "FlClashCore" => return Some(flclash_message()),
+                    Some(p) => return Some(t!("порт {0} занят: {1} (PID {2}) — освободи его или смени vpn_port", port, p.comm, p.pid)),
+                    None => return Some(t!("порт {0} занят другим процессом — освободи его или смени vpn_port", port)),
+                }
+            }
+        }
+    }
+    if c.vpn_tun {
+        for p in procs.iter().filter(|p| !p.ours && VPN_CORES.contains(&p.comm.as_str())) {
+            if let Some(dev) = p.tuns.iter().find(|d| d.as_str() != TUN_DEV) {
+                if p.comm == "FlClashCore" {
+                    return Some(flclash_message());
+                }
+                return Some(t!("работает другой VPN с TUN {0}: {1} (PID {2}) — выключи его, иначе два VPN помешают друг другу", dev, p.comm, p.pid));
+            }
         }
     }
     None
+}
+
+fn flclash_message() -> String {
+    t!("запущен FlClash — закрой его (и выключи его автозапуск), иначе два VPN помешают друг другу").into()
+}
+
+/// Реальный конфликт перед запуском: чужой TUN другого ядра VPN или занятый порт прокси либо DNS.
+/// Процесс без TUN и без такого порта запуску не мешает, как бы он ни назывался.
+pub fn conflict(c: &Config) -> Option<String> {
+    let procs = processes();
+    let read = |p: &str| fs::read_to_string(p).unwrap_or_default();
+    let (tcp, tcp6, udp, udp6) = (read("/proc/net/tcp"), read("/proc/net/tcp6"), read("/proc/net/udp"), read("/proc/net/udp6"));
+    find_conflict(c, &procs, &[(&tcp, false), (&tcp6, false), (&udp, true), (&udp6, true)])
 }
 
 /// Применить изменения настроек: пересобрать конфиг и перезагрузить работающее ядро.
@@ -1303,7 +1770,7 @@ pub fn apply(c: &Config, log: Log) -> Result<(), String> {
         // TUN включается/выключается надёжнее перезапуском, остальное — горячей перезагрузкой
         let tun_now = snapshot().tun;
         if tun_now != c.vpn_tun {
-            restart()?;
+            restart(c)?;
             log(t!("VPN перезапущен"));
         } else {
             reload()?;
@@ -1369,7 +1836,21 @@ pub fn core_version() -> Option<String> {
 
 fn gh_latest(repo: &str, port: u16) -> Result<serde_json::Value, String> {
     let r = get(&format!("https://api.github.com/repos/{repo}/releases/latest"), 20, port)?;
-    serde_json::from_str(&r.into_string().map_err(|e| e.to_string())?).map_err(|e| e.to_string())
+    serde_json::from_str(&read_text(r, 4 << 20)?).map_err(|e| e.to_string())
+}
+
+/// Предел скачанного архива ядра и отдельно — распакованного бинарника (mihomo — десятки мегабайт).
+const CORE_GZ_MAX: u64 = 64 << 20;
+const CORE_BIN_MAX: u64 = 128 << 20;
+
+/// Распаковка gzip не больше `max` байт: лишний байт сверх предела — ошибка до записи на диск.
+fn gunzip_limited(gz: &[u8], max: u64) -> Result<Vec<u8>, String> {
+    let mut bin = vec![];
+    flate2::read::GzDecoder::new(gz).take(max.saturating_add(1)).read_to_end(&mut bin).map_err(|e| t!("распаковка: {0}", e))?;
+    if bin.len() as u64 > max {
+        return Err(t!("распакованное ядро больше {0} — установка отменена, прежнее ядро оставлено", fmt_bytes(max)));
+    }
+    Ok(bin)
 }
 
 /// Сигнал от FlClash: номер его последнего релиза; и актуальный релиз mihomo.
@@ -1415,11 +1896,10 @@ pub fn core_install(c: &Config, log: Log, force: bool) -> Result<bool, String> {
     let raw_digest = asset["digest"].as_str().ok_or(t!("в релизе нет SHA-256 digest; установка отменена"))?;
     let url = asset["browser_download_url"].as_str().ok_or(t!("нет ссылки на файл"))?;
     log(&t!("скачиваю {0}...", name));
-    let gz = read_progress(get(url, 600, c.vpn_port)?, 200 << 20, log)?;
+    let gz = read_progress(get(url, 600, c.vpn_port)?, CORE_GZ_MAX, log)?;
     verify_core_gz_digest(raw_digest, &gz)?;
     log(t!("контрольная сумма SHA-256 совпала"));
-    let mut bin = vec![];
-    flate2::read::GzDecoder::new(&gz[..]).read_to_end(&mut bin).map_err(|e| t!("распаковка: {0}", e))?;
+    let bin = gunzip_limited(&gz, CORE_BIN_MAX)?;
     private_dir(&format!("{}/bin", home()))?;
     let tmp = format!("{}.new", core_bin());
     atomic_write(Path::new(&tmp), &bin, 0o755).map_err(|e| e.to_string())?;
@@ -1775,12 +2255,16 @@ pub fn fetch_missing(c: &Config, log: Log) -> Result<(), String> {
     Ok(())
 }
 
-/// Вызывается службой перед стартом ядра (ExecStartPre).
+/// Вызывается службой перед стартом ядра (ExecStartPre): только проверка конфликта, сборка конфига и `mihomo -t`.
+/// Загрузки здесь нет — медленная сеть не должна упираться в TimeoutStartSec; недостающее качает `upd vpn start`.
 pub fn prepare(c: &Config, log: Log) -> Result<(), String> {
-    if let Some(w) = flclash_running() {
+    check_port(c)?;
+    if let Some(w) = conflict(c) {
         return Err(w);
     }
-    fetch_missing(c, log)?;
+    if core_version().is_none() {
+        return Err(t!("ядра mihomo нет — выполни: sudo upd vpn core update").into());
+    }
     write_config(c)?;
     let (msg, code) = out(&core_bin(), &["-t", "-d", &home(), "-f", &config_path()]);
     if code != 0 {
@@ -1820,7 +2304,7 @@ pub fn maintain(c: &Config, log: Log) {
         }
     }
     let st = load_state();
-    if now() - st.checked < c.vpn_core_check_h * 3600 && core_version().is_some() {
+    if !elapsed_at_least(st.checked, hours_secs(c.vpn_core_check_h)) && core_version().is_some() {
         return;
     }
     let Ok(st) = core_check(c, log) else { return };
@@ -1830,7 +2314,7 @@ pub fn maintain(c: &Config, log: Log) {
         match core_install(c, log, false) {
             Ok(changed) => {
                 let active = service_active();
-                let restart_result = if changed && active { restart() } else { Ok(()) };
+                let restart_result = if changed && active { restart(c) } else { Ok(()) };
                 let mut s2 = load_state();
                 if let Some(event) = note_core_update(&mut s2, changed, active, restart_result, &st.flclash_tag) {
                     log(&event);
@@ -2059,45 +2543,6 @@ mod contract_tests {
     }
 
     #[test]
-    fn sec06_rejects_short_existing_secret() {
-        let _g = EnvGuard::vpn_dirs();
-        let secret_path = format!("{}/secret", etc());
-        write_private(&secret_path, b"short").unwrap();
-        assert!(secret().is_err());
-    }
-
-    #[test]
-    fn sec06_generates_secret_and_rereads_it() {
-        let _g = EnvGuard::vpn_dirs();
-        let first = secret().unwrap();
-        assert_eq!(first.len(), 32);
-        assert!(first.bytes().all(|b| b.is_ascii_hexdigit()));
-        assert_ne!(first, "0".repeat(32));
-        assert_eq!(secret().unwrap(), first);
-    }
-
-    #[test]
-    fn sec06_write_failure_does_not_create_secret() {
-        let _iso = crate::common::contract_fixtures::isolation_lock();
-        let base = std::env::temp_dir().join(format!("upd-secret-block-{}", std::process::id()));
-        fs::create_dir_all(&base).unwrap();
-        let blocker = base.join("blocker");
-        fs::write(&blocker, b"x").unwrap();
-        let etc_path = blocker.join("vpn");
-        unsafe {
-            std::env::set_var("UPD_VPN_ETC", etc_path.to_str().unwrap());
-        }
-        let err = secret().unwrap_err();
-        assert!(err.contains("blocker") || err.contains("vpn"), "{err}");
-        assert!(!etc_path.join("secret").exists());
-        unsafe {
-            std::env::remove_var("UPD_VPN_ETC");
-        }
-        let _ = fs::remove_dir_all(&base);
-    }
-
-    // --- DATA-02 ---
-    #[test]
     fn data02_missing_subs_is_ok_corrupt_is_error() {
         let _g = EnvGuard::vpn_dirs();
         assert!(load_subs().unwrap().list.is_empty());
@@ -2226,7 +2671,7 @@ mod contract_tests {
         write_private(&subs_path, raw.to_string().as_bytes()).unwrap();
         fs::create_dir_all(format!("{}/profiles", home())).unwrap();
         fs::write(format!("{}/profiles/a1.yaml", home()), "proxies: []\n").unwrap();
-        let name = delete_sub(0).unwrap();
+        let name = delete_sub(&SubRef::Index(0)).unwrap();
         assert_eq!(name, "one");
         assert!(load_subs().unwrap().list.is_empty());
     }
@@ -2241,8 +2686,272 @@ mod contract_tests {
             br#"{"active":"x","list":[{"id":"x","name":"n","url":"https://example.com/s","interval_h":1,"updated":0,"nodes":0,"kind":"yaml"}]}"#,
         )
         .unwrap();
-        delete_sub(0).unwrap();
+        delete_sub(&SubRef::Index(0)).unwrap();
         let on_disk = fs::read_to_string(&subs_path).unwrap();
         assert!(on_disk.contains("\"list\":[]") || on_disk.contains("\"list\": []"));
+    }
+
+    // ---------- 0.2.7 ----------
+
+    fn write_subs(json: serde_json::Value) {
+        write_private(&format!("{}/subs.json", etc()), json.to_string().as_bytes()).unwrap();
+    }
+
+    fn two_subs() {
+        write_subs(serde_json::json!({
+            "active": "a1",
+            "list": [
+                {"id":"a1","name":"one","url":"https://example.com/1","kind":"clash"},
+                {"id":"b2","name":"two","url":"https://example.com/2","kind":"clash"},
+                {"id":"c3","name":"three","url":"https://example.com/3","kind":"clash"}
+            ]
+        }));
+    }
+
+    /// B22: подтверждение адресует id; изменение списка между подтверждением и удалением не задевает другую запись.
+    #[test]
+    fn b22_delete_and_use_by_id_survive_list_change() {
+        let _g = EnvGuard::vpn_dirs();
+        two_subs();
+        // пользователь подтвердил «three» (строка 3); другой процесс удалил «one»
+        delete_sub(&SubRef::Id("a1".into())).unwrap();
+        assert_eq!(delete_sub(&SubRef::Id("c3".into())).unwrap(), "three");
+        let left = load_subs().unwrap();
+        assert_eq!(left.list.iter().map(|s| s.id.as_str()).collect::<Vec<_>>(), vec!["b2"]);
+        // записи уже нет — ничего не удаляется и не активируется
+        assert!(delete_sub(&SubRef::Id("c3".into())).is_err());
+        assert!(use_sub(&SubRef::Id("a1".into())).is_err());
+        assert_eq!(load_subs().unwrap().list.len(), 1);
+        assert_eq!(use_sub(&SubRef::Id("b2".into())).unwrap(), "two");
+        assert_eq!(load_state().subs[0].id, "b2", "id публикуется для TUI");
+        assert_eq!(SubRef::parse("id:b2"), Some(SubRef::Id("b2".into())));
+        assert_eq!(SubRef::parse("2"), Some(SubRef::Index(1)));
+        assert_eq!(SubRef::parse("0"), None);
+        assert_eq!(SubRef::parse("id:"), None);
+    }
+
+    fn clash_profile(extra: &str) -> String {
+        format!("proxies:\n  - {{name: n1, type: ss, server: 1.2.3.4, port: 443, cipher: aes-128-gcm, password: x}}\nproxy-groups:\n  - {{name: Proxy, type: select, proxies: [n1]}}\nrules:\n  - MATCH,Proxy\n{extra}")
+    }
+
+    fn build_with(profile: &str, c: &Config) -> Result<Mapping, String> {
+        write_subs(serde_json::json!({"active":"p1","list":[{"id":"p1","name":"p","url":"https://example.com/p","kind":"clash"}]}));
+        fs::create_dir_all(format!("{}/profiles", home())).unwrap();
+        fs::write(format!("{}/profiles/p1.yaml", home()), profile).unwrap();
+        let y = build_config(c)?;
+        match serde_yaml::from_str::<Value>(&y).unwrap() {
+            Value::Mapping(m) => Ok(m),
+            _ => panic!("не mapping"),
+        }
+    }
+
+    /// B01: listeners, свой DNS, skip-auth-prefixes и прочие ключи подписки не попадают в конфиг.
+    #[test]
+    fn b01_hostile_profile_keys_are_dropped() {
+        let _g = EnvGuard::vpn_dirs();
+        let hostile = "listeners:\n  - {name: open, type: mixed, port: 7777, listen: 0.0.0.0}\ndns: {enable: true, listen: 0.0.0.0:53}\nskip-auth-prefixes: [0.0.0.0/0]\nexternal-controller: 0.0.0.0:9090\nexternal-controller-cors: {allow-origins: ['*']}\nhosts: {a: 1.1.1.1}\nsniffer: {enable: true}\niptables: {enable: true}\nebpf: {redirect-to-tun: [eth0]}\nauthentication: ['u:p']\nexternal-ui: /etc\n";
+        let mut c = Config::defaults(vec![]);
+        c.vpn_dns = false;
+        let m = build_with(&clash_profile(hostile), &c).unwrap();
+        for key in ["listeners", "dns", "skip-auth-prefixes", "external-controller", "external-controller-cors", "hosts", "sniffer", "iptables", "ebpf", "authentication", "external-ui"] {
+            assert!(!m.contains_key(key), "{key} остался");
+        }
+        assert_eq!(m.get("bind-address").and_then(Value::as_str), Some("127.0.0.1"));
+        assert_eq!(m.get("geo-auto-update").and_then(Value::as_bool), Some(false));
+        assert!(m.get("proxies").and_then(Value::as_sequence).map(|s| s.len() == 1).unwrap_or(false));
+        // B02: только Unix-сокет в каталоге службы
+        assert!(m.get("external-controller-unix").and_then(Value::as_str).unwrap().starts_with(&home()));
+        assert!(!m.contains_key("secret"), "секрет не нужен: API только через сокет в закрытом каталоге");
+        assert!(!Path::new(&format!("{}/secret", etc())).exists(), "сборка конфига ничего не пишет в /etc");
+        c.vpn_dns = true;
+        c.vpn_allow_lan = true;
+        let m = build_with(&clash_profile(hostile), &c).unwrap();
+        assert_eq!(m.get("dns").and_then(|d| d.get("listen")).and_then(Value::as_str), Some("127.0.0.1:1053"), "DNS — свой, не из подписки");
+        assert_eq!(m.get("bind-address").and_then(Value::as_str), Some("*"));
+    }
+
+    /// B01: provider с путём вне каталога профиля или файловый без пути отвергается.
+    #[test]
+    fn b01_provider_paths_are_confined() {
+        let _g = EnvGuard::vpn_dirs();
+        let c = Config::defaults(vec![]);
+        for bad in ["/etc/shadow", "../secret", "bin/mihomo", "config.yaml", "providers/../../etc/x", "profiles"] {
+            let p = format!("proxy-providers:\n  x: {{type: file, path: '{bad}'}}\n");
+            assert!(build_with(&clash_profile(&p), &c).is_err(), "{bad}");
+        }
+        assert!(build_with(&clash_profile("rule-providers:\n  r: {type: file}\n"), &c).is_err());
+        assert!(build_with(&clash_profile("rule-providers:\n  r: {type: exec, path: ./rules/a}\n"), &c).is_err());
+        let ok = "proxy-providers:\n  x: {type: http, url: 'https://e.com/p', path: ./providers/x.yaml}\nrule-providers:\n  r: {type: http, url: 'https://e.com/r', behavior: domain}\n";
+        let m = build_with(&clash_profile(ok), &c).unwrap();
+        assert!(m.contains_key("proxy-providers") && m.contains_key("rule-providers"));
+    }
+
+    /// B23: «миллиард смешков» укладывается в лимит тела, но отвергается бюджетом до сборки конфига.
+    #[test]
+    fn b23_alias_bomb_is_rejected_by_budget() {
+        let mut bomb = String::from("a: &a [x, x, x, x, x, x, x, x, x, x]\n");
+        for i in 1..9 {
+            let prev = (b'a' + i - 1) as char;
+            let cur = (b'a' + i) as char;
+            bomb += &format!("{cur}: &{cur} [*{prev}, *{prev}, *{prev}, *{prev}, *{prev}, *{prev}, *{prev}, *{prev}, *{prev}, *{prev}]\n");
+        }
+        assert!(bomb.len() < 4096);
+        let t0 = std::time::Instant::now();
+        assert!(parse_profile(&bomb).is_err());
+        assert!(t0.elapsed() < std::time::Duration::from_secs(5));
+        // размножение, которое проходит предел повторов serde_yaml, останавливает наш бюджет узлов
+        let base = "base: &b [".to_string() + &vec!["1"; 20_000].join(",") + "]\nx: [" + &vec!["*b"; 60].join(",") + "]\n";
+        assert!(parse_profile(&base).unwrap_err().contains("больше"), "узлы");
+        let big = "s: &s '".to_string() + &"x".repeat(1 << 20) + "'\nx: [" + &vec!["*s"; 70].join(",") + "]\n";
+        assert!(parse_profile(&big).unwrap_err().contains("больше"), "байты");
+        assert!(classify_sub(&format!("proxies: [1]\n{bomb}")).map(|(k, _)| k != "clash").unwrap_or(true));
+        let deep = "a: ".to_string() + &"[".repeat(200) + &"]".repeat(200);
+        assert!(parse_profile(&deep).is_err());
+        let many_aliases = "a: &a 1\nb: [".to_string() + &vec!["*a"; YAML_MAX_ALIASES + 1].join(", ") + "]\n";
+        assert!(parse_profile(&many_aliases).unwrap_err().contains("алиасов"));
+        // обычные якоря и слияние << работают
+        let v = parse_profile("base: &b {type: select}\ng: {<<: *b, name: G}\n").unwrap();
+        assert_eq!(v["g"]["type"].as_str(), Some("select"));
+    }
+
+    /// B13: порт прокси, совпадающий с DNS, не попадает в YAML; конфиг upd при этом читается.
+    #[test]
+    fn b13_port_conflict_is_reported_by_vpn_build() {
+        let _g = EnvGuard::vpn_dirs();
+        let mut c = Config::defaults(vec![]);
+        c.vpn_port = DNS_PORT;
+        assert!(build_with(&clash_profile(""), &c).unwrap_err().contains("DNS"));
+        c.vpn_dns = false;
+        assert!(build_with(&clash_profile(""), &c).is_ok());
+        c.vpn_port = 80;
+        assert!(check_port(&c).is_err());
+        c.vpn_port = 9097;
+        assert!(check_port(&c).is_ok(), "9097 больше не занят контроллером");
+    }
+
+    /// B15: счётчики — целые без потери точности и без переполнения.
+    #[test]
+    fn b15_userinfo_counters_are_exact_and_safe() {
+        let i = parse_userinfo("upload=9007199254740993; download=1; total=18446744073709551615; expire=1700000000");
+        assert_eq!(i.upload, 9_007_199_254_740_993, "2^53+1 не округляется");
+        assert_eq!(i.total, u64::MAX);
+        let i = parse_userinfo("upload=18446744073709551615; download=18446744073709551615; total=18446744073709551615");
+        assert!(i.nearly_exhausted());
+        assert_eq!(fmt_bytes_wide(i.used()), fmt_bytes(u64::MAX));
+        let i = parse_userinfo("upload=-5; download=1.5; total=1e400; expire=-1");
+        assert_eq!((i.upload, i.download, i.total, i.expire), (0, 0, 0, 0));
+        assert_eq!(parse_userinfo("upload=1.0e3").upload, 1000);
+        let small = SubInfo { upload: 50, download: 39, total: 100, expire: 0 };
+        assert!(!small.nearly_exhausted());
+        assert!(SubInfo { download: 40, ..small }.nearly_exhausted());
+    }
+
+    /// B03: распаковка останавливается на пределе, до записи бинарника.
+    #[test]
+    fn b03_gunzip_is_limited() {
+        use std::io::Write;
+        let mut enc = flate2::write::GzEncoder::new(vec![], flate2::Compression::best());
+        enc.write_all(&vec![0u8; 4 << 20]).unwrap();
+        let gz = enc.finish().unwrap();
+        assert!(gz.len() < 64 << 10);
+        assert!(gunzip_limited(&gz, 1 << 20).unwrap_err().contains("больше"));
+        assert_eq!(gunzip_limited(&gz, 4 << 20).unwrap().len(), 4 << 20);
+    }
+
+    /// B25: огромный интервал из заголовка не переполняет срок проверки.
+    #[test]
+    fn b25_huge_interval_does_not_overflow() {
+        assert_eq!(hours_secs(i64::MAX), MAX_HOURS * 3600);
+        assert_eq!(hours_secs(-5), 3600);
+        assert!(!elapsed_at_least(now(), hours_secs(i64::MAX)));
+        assert!(elapsed_at_least(i64::MIN, 1), "без переполнения на вычитании");
+        let _g = EnvGuard::vpn_dirs();
+        write_subs(serde_json::json!({"active":"a","list":[{"id":"a","name":"n","url":"https://example.invalid/s","updated": now(),"interval_h": i64::MAX}]}));
+        assert!(!update_subs(&Config::defaults(vec![]), &|_| {}, false).unwrap(), "срок не подошёл, запросов нет");
+    }
+
+    fn proc_fixture(pid: &str, comm: &str, ours: bool, sockets: &[&str], tuns: &[&str]) -> ProcInfo {
+        ProcInfo { pid: pid.into(), comm: comm.into(), ours, sockets: sockets.iter().map(|s| s.to_string()).collect(), tuns: tuns.iter().map(|s| s.to_string()).collect() }
+    }
+
+    /// B24: имя процесса без TUN и порта не мешает; настоящий занятый порт или чужой TUN — мешает.
+    #[test]
+    fn b24_conflict_needs_real_port_or_tun() {
+        let c = Config::defaults(vec![]);
+        let header = "sl local rem st tx rx tr retr uid timeout inode\n";
+        // 0x1ED9 = 7897 (vpn_port по умолчанию), 0x041D = 1053
+        let tcp = format!("{header} 0: 0100007F:1ED9 00000000:0000 0A 0:0 0:0 0 0 0 555 1\n");
+        let udp = format!("{header} 0: 0100007F:041D 00000000:0000 07 0:0 0:0 0 0 0 777 1\n");
+        let fake = [proc_fixture("10", "FlClashCore", false, &["1"], &[])];
+        assert!(find_conflict(&c, &fake, &[(header, false), (header, true)]).is_none(), "подменённое имя без порта и TUN");
+        let busy = [proc_fixture("11", "nc", false, &["555"], &[])];
+        let msg = find_conflict(&c, &busy, &[(&tcp, false)]).unwrap();
+        assert!(msg.contains("7897") && msg.contains("nc"), "{msg}");
+        let ours = [proc_fixture("12", "mihomo", true, &["555", "777"], &["upd-vpn"])];
+        assert!(find_conflict(&c, &ours, &[(&tcp, false), (&udp, true)]).is_none(), "свой mihomo — не конфликт");
+        let dns = [proc_fixture("13", "dnsmasq", false, &["777"], &[])];
+        assert!(find_conflict(&c, &dns, &[(&udp, true)]).unwrap().contains("1053"));
+        let flclash = [proc_fixture("14", "FlClashCore", false, &[], &["FlClash"])];
+        assert!(find_conflict(&c, &flclash, &[]).unwrap().contains("FlClash"));
+        let mesh = [proc_fixture("15", "tailscaled", false, &[], &["tailscale0"])];
+        assert!(find_conflict(&c, &mesh, &[]).is_none());
+        let mut proxy = c.clone();
+        proxy.vpn_tun = false;
+        assert!(find_conflict(&proxy, &flclash, &[]).is_none(), "в режиме прокси TUN не мешает");
+    }
+
+    /// B02: клиент API ходит только в свой Unix-сокет, проверяет права и разбирает ответ; TCP не используется.
+    #[test]
+    fn b02_api_over_unix_socket() {
+        use std::io::Write;
+        use std::os::unix::net::UnixListener;
+        let _g = EnvGuard::vpn_dirs();
+        fs::set_permissions(home(), fs::Permissions::from_mode(0o700)).unwrap();
+        let listener = UnixListener::bind(api_socket()).unwrap();
+        // как у mihomo: сам сокет открыт всем, защищает каталог
+        fs::set_permissions(api_socket(), fs::Permissions::from_mode(0o666)).unwrap();
+        let server = std::thread::spawn(move || {
+            let mut seen = vec![];
+            for body in ["{\"version\":\"v1.19.0\"}", "chunked"] {
+                let (mut s, _) = listener.accept().unwrap();
+                let mut req = vec![0u8; 4096];
+                let n = s.read(&mut req).unwrap();
+                seen.push(String::from_utf8_lossy(&req[..n]).into_owned());
+                if body == "chunked" {
+                    s.write_all(b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n5\r\n{\"a\":\r\n2\r\n1}\r\n0\r\n\r\n").unwrap();
+                } else {
+                    s.write_all(format!("HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n{body}", body.len()).as_bytes()).unwrap();
+                }
+            }
+            seen
+        });
+        assert_eq!(api("GET", "/version", None).unwrap()["version"], "v1.19.0");
+        assert_eq!(api("PUT", "/configs?force=true", Some(serde_json::json!({"path":"x"}))).unwrap()["a"], 1);
+        let seen = server.join().unwrap();
+        assert!(seen[0].starts_with("GET /version HTTP/1.1\r\n"));
+        assert!(!seen.iter().any(|r| r.contains("Authorization")), "секрет не отправляется");
+        assert!(seen[1].ends_with("{\"path\":\"x\"}"));
+        // каталог сокета доступен группе — запрос не отправляется
+        fs::set_permissions(home(), fs::Permissions::from_mode(0o750)).unwrap();
+        assert!(api("GET", "/version", None).unwrap_err().contains("чужой"));
+        fs::set_permissions(home(), fs::Permissions::from_mode(0o700)).unwrap();
+        fs::remove_file(api_socket()).unwrap();
+        fs::write(api_socket(), b"").unwrap();
+        assert!(api("GET", "/version", None).is_err(), "обычный файл вместо сокета");
+        assert!(parse_http_response(b"HTTP/1.1 200 OK\r\nContent-Length: 10\r\n\r\nabc").is_err());
+    }
+
+    /// B14: prepare не качает ядро, а коротко отказывает, когда его нет.
+    #[test]
+    fn b14_prepare_without_core_fails_fast() {
+        let _g = EnvGuard::vpn_dirs();
+        let mut c = Config::defaults(vec![]);
+        c.vpn_port = 47_123;
+        c.vpn_dns = false;
+        c.vpn_tun = false;
+        let t0 = std::time::Instant::now();
+        let err = prepare(&c, &|_| {}).unwrap_err();
+        assert!(err.contains("core update"), "{err}");
+        assert!(t0.elapsed() < std::time::Duration::from_secs(2));
     }
 }

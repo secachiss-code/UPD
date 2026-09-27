@@ -199,19 +199,42 @@ struct Done {
     fresh_body: Option<String>,
 }
 
+fn run_job(j: &Job, timeout: u64) -> Done {
+    let (ok, speed, err) = probe_speed(&j.probe, timeout, j.kind);
+    let fresh_body = if ok { j.fresh.as_deref().and_then(fetch_head) } else { None };
+    Done { idx: j.idx, ok, speed, err, fresh_body }
+}
+
 /// Параллельный замер: скорость + (для рабочих) дата синхронизации.
-fn measure(jobs: Vec<Job>, parallel: usize, timeout: u64, on_done: &mut dyn FnMut(&Done)) -> Vec<Done> {
+/// Потоков не больше MAX_PARALLEL; после `deadline` новые замеры не начинаются.
+fn measure(jobs: Vec<Job>, parallel: usize, timeout: u64, deadline: Option<Instant>, on_done: &mut dyn FnMut(&Done)) -> Vec<Done> {
     let n = jobs.len();
     let queue = Arc::new(Mutex::new(jobs));
     let (tx, rx) = mpsc::channel();
-    for _ in 0..parallel.max(1).min(n.max(1)) {
+    let mut workers = 0;
+    for _ in 0..parallel.clamp(1, MAX_PARALLEL).min(n.max(1)) {
         let (q, tx) = (queue.clone(), tx.clone());
-        std::thread::spawn(move || loop {
-            let Some(j) = q.lock().unwrap().pop() else { break };
-            let (ok, speed, err) = probe_speed(&j.probe, timeout, j.kind);
-            let fresh_body = if ok { j.fresh.as_deref().and_then(fetch_head) } else { None };
-            let _ = tx.send(Done { idx: j.idx, ok, speed, err, fresh_body });
+        let spawned = spawn_thread("upd-mirror", move || loop {
+            if deadline.map(|d| Instant::now() >= d).unwrap_or(false) {
+                break;
+            }
+            let Some(j) = q.lock().unwrap_or_else(|e| e.into_inner()).pop() else { break };
+            let _ = tx.send(run_job(&j, timeout));
         });
+        // ОС не дала поток — замеряем оставшимися; ни одного — в этом потоке
+        if spawned.is_err() {
+            break;
+        }
+        workers += 1;
+    }
+    if workers == 0 {
+        loop {
+            if deadline.map(|d| Instant::now() >= d).unwrap_or(false) {
+                break;
+            }
+            let Some(j) = queue.lock().unwrap_or_else(|e| e.into_inner()).pop() else { break };
+            let _ = tx.send(run_job(&j, timeout));
+        }
     }
     drop(tx);
     let mut res = vec![];
@@ -228,11 +251,14 @@ pub struct Cand {
     pub src: &'static str,
 }
 
+/// Кандидаты без повторов: множество адресов с сохранением порядка (O(1) на проверку),
+/// каждый источник ограничен MAX_MIRRORS адресов до дедупликации.
 pub fn candidates(b: &dyn Backend, c: &Config, extra: Option<&[String]>) -> Vec<Cand> {
     let mut r: Vec<Cand> = vec![];
+    let mut seen = std::collections::HashSet::new();
     let mut add = |list: &[String], src: &'static str| {
-        for u in list {
-            if !r.iter().any(|x| x.url.trim_end_matches('/') == u.trim_end_matches('/')) {
+        for u in list.iter().take(MAX_MIRRORS) {
+            if seen.insert(u.trim_end_matches('/').to_string()) {
                 r.push(Cand { url: u.clone(), src });
             }
         }
@@ -249,9 +275,25 @@ pub fn candidates(b: &dyn Backend, c: &Config, extra: Option<&[String]>) -> Vec<
     r
 }
 
-fn mirror_needs_retry(src: &str, ok: bool, err: &str, had_prior_ok: bool) -> bool {
-    !ok && (err == "dropped" || (src != "search" && src != "list") || had_prior_ok)
+/// Временный сбой: повтор может помочь. 404, ошибка формата, DNS и TLS повтором не лечатся.
+fn transient_error(err: &str) -> bool {
+    match err {
+        "timeout" | "dropped" | "no connection" => true,
+        _ => err
+            .strip_prefix("HTTP ")
+            .and_then(|c| c.parse::<u16>().ok())
+            .map(|c| c == 429 || (500..600).contains(&c))
+            .unwrap_or(false),
+    }
 }
+
+fn mirror_needs_retry(src: &str, ok: bool, err: &str, had_prior_ok: bool) -> bool {
+    !ok && transient_error(err) && (err == "dropped" || (src != "search" && src != "list") || had_prior_ok)
+}
+
+/// Повторный проход: не больше стольких адресов и потоков, и общий бюджет времени.
+const RETRY_MAX: usize = 16;
+const RETRY_POOL: usize = 4;
 
 /// Второй проход запускается по списку повторов, в том числе когда первый проход не дал ни одного ответа.
 fn schedule_mirror_retry(any_ok: bool, retry_count: usize) -> bool {
@@ -276,7 +318,7 @@ pub fn check_mirrors(b: &dyn Backend, c: &Config, log: Log, extra: Option<&[Stri
         fresh[d.idx] = d.fresh_body.as_deref().and_then(|s| b.parse_fresh(s));
     };
     let jobs: Vec<Job> = cands.iter().enumerate().map(|(i, cd)| mk(i, cd)).collect();
-    let done = measure(jobs, parallel, c.timeout, &mut |d| {
+    let done = measure(jobs, parallel, c.timeout, None, &mut |d| {
         let mark = if d.ok { "✓" } else { "✗" };
         let sp = Probe { ok: d.ok, speed: d.speed, err: d.err.clone(), ..Default::default() };
         log(&format!("  {mark} {:<11} {}", fmt_speed(&sp), cands[d.idx].url));
@@ -294,10 +336,13 @@ pub fn check_mirrors(b: &dyn Backend, c: &Config, log: Log, extra: Option<&[Stri
         .enumerate()
         .filter(|(_, p)| mirror_needs_retry(&p.src, p.ok, &p.err, mem0.stats.get(&p.url).map(|s| s.ok > 0).unwrap_or(false)))
         .map(|(i, _)| mk(i, &cands[i]))
+        .take(RETRY_MAX)
         .collect();
     if schedule_mirror_retry(res.iter().any(|p| p.ok), retry.len()) {
         log(&t!("  повторный замер упавших: {}", retry.len()));
-        for d in measure(retry, 1, c.timeout, &mut |d| {
+        // небольшой пул и общий бюджет: серия недоступных зеркал не складывается в сумму таймаутов
+        let budget = Instant::now() + Duration::from_secs(c.timeout.saturating_mul(3).max(10));
+        for d in measure(retry, parallel.min(RETRY_POOL), c.timeout, Some(budget), &mut |d| {
             if d.ok {
                 log(&t!("  ✓ со второй попытки: {}", cands[d.idx].url));
             }
@@ -495,7 +540,7 @@ pub fn handle_network(b: &dyn Backend, c: &Config, log: Log, force: bool) -> Res
     let fresh = st
         .networks
         .get(&net.id)
-        .filter(|m| !m.best.is_empty() && now() - m.checked < c.network_memory_days * 86400)
+        .filter(|m| !m.best.is_empty() && !elapsed_at_least(m.checked, c.network_memory_days.clamp(0, 365) * 86400))
         .cloned();
     match fresh {
         Some(m) if !force => {
@@ -734,6 +779,39 @@ pub fn download(b: &dyn Backend, c: &Config, st: &mut UpdState, log: Log, quiet:
 #[cfg(test)]
 mod contract_tests {
     use super::*;
+
+    /// B09: 20 000 различных адресов дедуплицируются быстро и с пределом на источник.
+    #[test]
+    fn b09_candidates_dedup_is_linear_and_bounded() {
+        let mut c = Config::defaults(vec![]);
+        c.mirrors = (0..20_000).map(|i| format!("https://m{i}.example/$repo/os/$arch")).collect();
+        c.mirrors.push("https://m1.example/$repo/os/$arch/".into());
+        let b = CacheDirsBackend { dirs: vec![] };
+        let t0 = Instant::now();
+        let r = candidates(&b, &c, Some(&c.mirrors.clone()));
+        assert!(t0.elapsed() < Duration::from_secs(1), "{:?}", t0.elapsed());
+        assert_eq!(r.len(), MAX_MIRRORS, "повтор из search не добавляется, у каждого источника предел");
+    }
+
+    /// B08: огромный parallel не создаёт больше MAX_PARALLEL потоков; бюджет останавливает очередь.
+    #[test]
+    fn b08_measure_caps_threads_and_honours_deadline() {
+        let jobs: Vec<Job> = (0..200).map(|i| Job { idx: i, probe: "http://127.0.0.1:9/x".into(), fresh: None, kind: ProbeKind::Generic }).collect();
+        let peak = std::sync::atomic::AtomicUsize::new(0);
+        let tasks = || std::fs::read_dir("/proc/self/task").map(|d| d.count()).unwrap_or(0);
+        let base = tasks();
+        let past = Some(Instant::now());
+        let done = measure(jobs, 10_000, 2, past, &mut |_| {
+            peak.fetch_max(tasks(), std::sync::atomic::Ordering::Relaxed);
+        });
+        assert!(done.is_empty(), "после бюджета замеры не начинаются");
+        let jobs: Vec<Job> = (0..40).map(|i| Job { idx: i, probe: "http://127.0.0.1:9/x".into(), fresh: None, kind: ProbeKind::Generic }).collect();
+        let done = measure(jobs, 10_000, 2, None, &mut |_| {
+            peak.fetch_max(tasks(), std::sync::atomic::Ordering::Relaxed);
+        });
+        assert_eq!(done.len(), 40);
+        assert!(peak.load(std::sync::atomic::Ordering::Relaxed) <= base + MAX_PARALLEL + 4, "потоков: {}", peak.load(std::sync::atomic::Ordering::Relaxed));
+    }
     use crate::backend::ProbeKind;
     use crate::common::{PackageCheckFailure, Probe};
     use std::fs;
@@ -769,6 +847,14 @@ mod contract_tests {
     fn net02_retries_pinned_after_all_fail() {
         let pinned = Probe { url: "https://mirror/pinned".into(), src: "pinned".into(), ok: false, err: "timeout".into(), ..Default::default() };
         assert!(mirror_needs_retry(&pinned.src, pinned.ok, &pinned.err, false));
+        // постоянная ошибка не повторяется даже у закреплённого и заданного вручную зеркала
+        for err in ["HTTP 404", "HTTP 403", "вместо файла получен HTML", "no DNS", "TLS error"] {
+            assert!(!mirror_needs_retry("pinned", false, err, true), "{err}");
+            assert!(!mirror_needs_retry("config", false, err, false), "{err}");
+        }
+        for err in ["HTTP 429", "HTTP 503", "dropped"] {
+            assert!(mirror_needs_retry("config", false, err, false), "{err}");
+        }
         let search = Probe { url: "https://mirror/new".into(), src: "search".into(), ok: false, err: "timeout".into(), ..Default::default() };
         assert!(!mirror_needs_retry(&search.src, search.ok, &search.err, false));
         let memory = Probe { url: "https://mirror/old".into(), src: "list".into(), ok: false, err: "timeout".into(), ..Default::default() };

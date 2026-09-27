@@ -3,7 +3,7 @@
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::fs;
-use std::io::{BufRead, Write};
+use std::io::{BufRead, Read, Write};
 use std::net::Ipv6Addr;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
@@ -29,6 +29,25 @@ pub fn test_mode() -> bool {
 pub fn now() -> i64 {
     SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs() as i64).unwrap_or(0)
 }
+
+/// Верхняя граница часовых интервалов (10 лет): `часы * 3600` при ней заведомо помещается в i64.
+pub const MAX_HOURS: i64 = 24 * 365 * 10;
+
+/// Интервал в часах → секунды без переполнения; значение сжимается в 1..=MAX_HOURS.
+pub fn hours_secs(h: i64) -> i64 {
+    h.clamp(1, MAX_HOURS).checked_mul(3600).unwrap_or(i64::MAX)
+}
+
+/// Прошло ли `secs` секунд с момента `since` (без переполнения при любых значениях).
+pub fn elapsed_at_least(since: i64, secs: i64) -> bool {
+    now().saturating_sub(since) >= secs
+}
+
+/// Верхние границы ресурсных настроек: число потоков, повторов и секунд.
+pub const MAX_PARALLEL: usize = 16;
+pub const MAX_RETRIES: u32 = 20;
+pub const MAX_TIMEOUT: u64 = 120;
+pub const MAX_MIRRORS: usize = 64;
 
 // ---------- конфиг ----------
 
@@ -96,7 +115,7 @@ const DOCS: &[(&str, &str)] = &[
     ("vpn_direct_ru", "VPN: российские сайты и IP — напрямую (по геофайлам)"),
     ("vpn_direct_lan", "VPN: локальная сеть — напрямую"),
     ("vpn_auto_select", "VPN: группа «⚡ Авто» — сама выбирает самый быстрый живой сервер"),
-    ("vpn_dns", "VPN: свой DNS (fake-ip, DoH через VPN); 0 — DNS из подписки"),
+    ("vpn_dns", "VPN: свой DNS (fake-ip, DoH через VPN); 0 — системный DNS"),
     ("vpn_ipv6", "VPN: IPv6"),
     ("vpn_allow_lan", "VPN: пускать другие устройства локальной сети через этот прокси"),
     ("vpn_port", "VPN: порт прокси (HTTP+SOCKS)"),
@@ -196,21 +215,22 @@ impl Config {
             }
             let Ok(n) = v.parse::<i64>() else { continue };
             let b = n != 0;
+            // ресурсные значения сжимаются в допустимый диапазон: отказ всего конфига остановил бы и обновление пакетов
             match k {
-                "keep" => c.keep = n.max(1) as usize,
-                "timeout" => c.timeout = n.max(2) as u64,
-                "extra_from_list" => c.extra_from_list = n.max(0) as usize,
-                "rescan_count" => c.rescan_count = n.max(3) as usize,
-                "retries" => c.retries = n.max(1) as u32,
-                "mirror_max_age_h" => c.mirror_max_age_h = n,
-                "network_memory_days" => c.network_memory_days = n,
-                "max_lag_h" => c.max_lag_h = n.max(1),
-                "parallel" => c.parallel = n.max(1) as usize,
-                "parallel_vpn" => c.parallel_vpn = n.max(1) as usize,
+                "keep" => c.keep = n.clamp(1, 10) as usize,
+                "timeout" => c.timeout = n.clamp(2, MAX_TIMEOUT as i64) as u64,
+                "extra_from_list" => c.extra_from_list = n.clamp(0, MAX_MIRRORS as i64) as usize,
+                "rescan_count" => c.rescan_count = n.clamp(3, MAX_MIRRORS as i64) as usize,
+                "retries" => c.retries = n.clamp(1, MAX_RETRIES as i64) as u32,
+                "mirror_max_age_h" => c.mirror_max_age_h = n.clamp(1, MAX_HOURS),
+                "network_memory_days" => c.network_memory_days = n.clamp(0, 365),
+                "max_lag_h" => c.max_lag_h = n.clamp(1, MAX_HOURS),
+                "parallel" => c.parallel = n.clamp(1, MAX_PARALLEL as i64) as usize,
+                "parallel_vpn" => c.parallel_vpn = n.clamp(1, MAX_PARALLEL as i64) as usize,
                 "prefetch" => c.prefetch = b,
                 "prefetch_on_battery" => c.prefetch_on_battery = b,
                 "prefetch_on_metered" => c.prefetch_on_metered = b,
-                "min_free_gb" => c.min_free_gb = n.max(0) as u64,
+                "min_free_gb" => c.min_free_gb = n.clamp(0, 1 << 20) as u64,
                 "flatpak" => c.flatpak = b,
                 "aur" => c.aur = b,
                 "firmware" => c.firmware = b,
@@ -224,13 +244,16 @@ impl Config {
                 "vpn_dns" => c.vpn_dns = b,
                 "vpn_ipv6" => c.vpn_ipv6 = b,
                 "vpn_allow_lan" => c.vpn_allow_lan = b,
+                // годность порта для VPN проверяет сборка конфига VPN, а не чтение всех настроек
                 "vpn_port" => c.vpn_port = n.clamp(1, 65535) as u16,
                 "vpn_mode" => c.vpn_mode = n.clamp(0, 2) as u8,
-                "vpn_sub_update_h" => c.vpn_sub_update_h = n.max(1),
-                "vpn_core_check_h" => c.vpn_core_check_h = n.max(1),
+                "vpn_sub_update_h" => c.vpn_sub_update_h = n.clamp(1, MAX_HOURS),
+                "vpn_core_check_h" => c.vpn_core_check_h = n.clamp(1, MAX_HOURS),
                 _ => {}
             }
         }
+        // mirror = … без предела превратил бы список кандидатов в сотни потоков и запросов
+        c.mirrors.truncate(MAX_MIRRORS);
         Ok(c)
     }
 
@@ -474,12 +497,70 @@ pub fn have(bin: &str) -> bool {
         .unwrap_or(false)
 }
 
-/// Запуск с захватом stdout; код выхода (-1, если не запустилось).
-pub fn out(cmd: &str, args: &[&str]) -> (String, i32) {
-    match Command::new(cmd).args(args).env("LC_ALL", "C").stderr(Stdio::null()).output() {
-        Ok(o) => (String::from_utf8_lossy(&o.stdout).into_owned(), o.status.code().unwrap_or(-1)),
-        Err(_) => (String::new(), -1),
+/// Предел stdout внешней команды по умолчанию.
+pub const OUT_MAX: u64 = 16 << 20;
+/// Сколько последних байт stderr хранится для сообщения об ошибке.
+const ERR_TAIL: usize = 64 << 10;
+
+/// Читает поток целиком, но хранит только последние `keep` байт.
+fn read_tail(mut r: impl Read, keep: usize) -> Vec<u8> {
+    let mut tail = std::collections::VecDeque::with_capacity(keep.min(8192));
+    let mut buf = [0u8; 8192];
+    loop {
+        match r.read(&mut buf) {
+            Ok(0) | Err(_) => break,
+            Ok(n) => {
+                tail.extend(&buf[..n]);
+                while tail.len() > keep {
+                    tail.pop_front();
+                }
+            }
+        }
     }
+    tail.into_iter().collect()
+}
+
+/// Запуск с ограничением памяти: stdout не больше `stdout_max` (None — stdout не нужен),
+/// от stderr хранится хвост. Превышение stdout — ошибка, процесс завершается: обрезанный вывод не разбирается как полный.
+pub fn capture(cmd: &mut Command, stdout_max: Option<u64>) -> Result<std::process::Output, String> {
+    let name = cmd.get_program().to_string_lossy().into_owned();
+    cmd.stdout(if stdout_max.is_some() { Stdio::piped() } else { Stdio::null() }).stderr(Stdio::piped());
+    let mut child = cmd.spawn().map_err(|e| format!("{name}: {e}"))?;
+    let err_pipe = child.stderr.take();
+    let err_reader = err_pipe.map(|e| std::thread::Builder::new().name("upd-stderr".into()).spawn(move || read_tail(e, ERR_TAIL)));
+    let mut stdout = vec![];
+    let mut overflow = false;
+    if let (Some(max), Some(pipe)) = (stdout_max, child.stdout.take()) {
+        if let Err(e) = pipe.take(max.saturating_add(1)).read_to_end(&mut stdout) {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err(format!("{name}: {e}"));
+        }
+        if stdout.len() as u64 > max {
+            overflow = true;
+            let _ = child.kill();
+        }
+    }
+    let status = child.wait().map_err(|e| format!("{name}: {e}"))?;
+    let stderr = match err_reader {
+        Some(Ok(h)) => h.join().unwrap_or_default(),
+        _ => vec![],
+    };
+    if overflow {
+        return Err(t!("{0}: вывод больше {1}, команда прервана", name, fmt_bytes(stdout_max.unwrap_or(0))));
+    }
+    Ok(std::process::Output { status, stdout, stderr })
+}
+
+/// Запуск с захватом stdout (не больше OUT_MAX); код выхода (-1, если не запустилось или вывод превысил предел).
+pub fn out(cmd: &str, args: &[&str]) -> (String, i32) {
+    out_limited(cmd, args, OUT_MAX).unwrap_or_else(|_| (String::new(), -1))
+}
+
+/// Как out, но превышение предела и отказ запуска — ошибка с причиной.
+pub fn out_limited(cmd: &str, args: &[&str], max: u64) -> Result<(String, i32), String> {
+    let o = capture(Command::new(cmd).args(args).env("LC_ALL", "C"), Some(max))?;
+    Ok((String::from_utf8_lossy(&o.stdout).into_owned(), o.status.code().unwrap_or(-1)))
 }
 
 /// Запуск с выводом в терминал (или молча). Ok — если код 0.
@@ -490,8 +571,8 @@ pub fn run(quiet: bool, env: &[(&str, &str)], cmd: &str, args: &[&str]) -> Resul
         c.env(k, v);
     }
     if quiet {
-        c.stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::piped());
-        let o = c.output().map_err(|e| format!("{cmd}: {e}"))?;
+        c.stdin(Stdio::null());
+        let o = capture(&mut c, None)?;
         if o.status.success() {
             return Ok(());
         }
@@ -504,6 +585,33 @@ pub fn run(quiet: bool, env: &[(&str, &str)], cmd: &str, args: &[&str]) -> Resul
     } else {
         Err(t!("{1}: код {}", st.code().unwrap_or(-1), cmd))
     }
+}
+
+/// Тело HTTP-ответа не больше `max` байт: лишний байт сверх предела — ошибка, а не обрезанный ответ.
+pub fn read_limited(r: ureq::Response, max: u64) -> Result<Vec<u8>, String> {
+    let expected = r.header("content-length").and_then(|v| v.parse::<u64>().ok());
+    if expected.map(|size| size > max).unwrap_or(false) {
+        return Err(t!("ответ превышает лимит {}", fmt_bytes(max)));
+    }
+    let mut b = vec![];
+    r.into_reader().take(max.saturating_add(1)).read_to_end(&mut b).map_err(|e| e.to_string())?;
+    if b.len() as u64 > max {
+        return Err(t!("ответ превышает лимит {}", fmt_bytes(max)));
+    }
+    if expected.map(|size| size != b.len() as u64).unwrap_or(false) {
+        return Err(t!("ответ обрезан относительно Content-Length").into());
+    }
+    Ok(b)
+}
+
+/// Как read_limited, но текстом.
+pub fn read_text(r: ureq::Response, max: u64) -> Result<String, String> {
+    read_limited(r, max).map(|b| String::from_utf8_lossy(&b).into_owned())
+}
+
+/// Поток с именем; отказ ОС — ошибка, а не паника, как у thread::spawn.
+pub fn spawn_thread<T: Send + 'static>(name: &str, f: impl FnOnce() -> T + Send + 'static) -> Result<std::thread::JoinHandle<T>, String> {
+    std::thread::Builder::new().name(name.into()).spawn(f).map_err(|e| t!("не удалось запустить поток: {0}", e))
 }
 
 pub fn lines(s: &str) -> Vec<String> {
@@ -533,12 +641,19 @@ pub fn is_root() -> bool {
 }
 
 pub fn confirm(q: &str, default_yes: bool) -> bool {
+    confirm_from(&mut std::io::stdin().lock(), q, default_yes)
+}
+
+/// Вопрос да/нет. Пустой Enter — ответ по умолчанию; EOF и ошибка чтения — отказ при любом умолчании:
+/// закрытый stdin не должен соглашаться на установку, перезапуск служб или отказ от снапшота.
+pub fn confirm_from(input: &mut dyn BufRead, q: &str, default_yes: bool) -> bool {
     print!("{q} {} ", if default_yes { "[Y/n]" } else { "[y/N]" });
     loop {
         let _ = std::io::stdout().flush();
         let mut s = String::new();
-        if std::io::stdin().lock().read_line(&mut s).unwrap_or(0) == 0 {
-            return default_yes;
+        if input.read_line(&mut s).unwrap_or(0) == 0 {
+            println!();
+            return false;
         }
         match crate::i18n::yes_no(&s) {
             Some(a) => return a.unwrap_or(default_yes),
@@ -595,6 +710,17 @@ pub fn fmt_time(ts: i64) -> String {
     let mut tm: libc::tm = unsafe { std::mem::zeroed() };
     unsafe { libc::localtime_r(&t, &mut tm) };
     format!("{:04}-{:02}-{:02} {:02}:{:02}", tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday, tm.tm_hour, tm.tm_min)
+}
+
+/// Unix-время → «22:19:05» по местному времени: когда получен снимок данных.
+pub fn fmt_clock(ts: i64) -> String {
+    if ts == 0 {
+        return "—".into();
+    }
+    let t = ts as _;
+    let mut tm: libc::tm = unsafe { std::mem::zeroed() };
+    unsafe { libc::localtime_r(&t, &mut tm) };
+    format!("{:02}:{:02}:{:02}", tm.tm_hour, tm.tm_min, tm.tm_sec)
 }
 
 // ---------- даты ----------
@@ -1245,6 +1371,61 @@ mod contract_tests {
         unsafe {
             std::env::remove_var("UPD_CONF");
         }
+        let _ = fs::remove_dir_all(&base);
+    }
+
+    // --- B07 ---
+    #[test]
+    fn b07_eof_is_refusal_even_with_default_yes() {
+        let mut eof = std::io::Cursor::new(Vec::<u8>::new());
+        assert!(!confirm_from(&mut eof, "q", true));
+        assert!(!confirm_from(&mut std::io::Cursor::new(Vec::<u8>::new()), "q", false));
+        assert!(confirm_from(&mut std::io::Cursor::new(b"\n".to_vec()), "q", true), "пустой Enter — ответ по умолчанию");
+        assert!(!confirm_from(&mut std::io::Cursor::new(b"\n".to_vec()), "q", false));
+        assert!(!confirm_from(&mut std::io::Cursor::new(b"n\n".to_vec()), "q", true));
+        assert!(confirm_from(&mut std::io::Cursor::new(b"y\n".to_vec()), "q", false));
+        // непонятный ответ, затем EOF — отказ
+        assert!(!confirm_from(&mut std::io::Cursor::new(b"maybe\n".to_vec()), "q", true));
+    }
+
+    // --- B11 ---
+    #[test]
+    fn b11_command_output_is_limited() {
+        let t0 = std::time::Instant::now();
+        // бесконечный вывод: процесс останавливается на пределе, память не растёт
+        let err = out_limited("sh", &["-c", "yes"], 1 << 20).unwrap_err();
+        assert!(err.contains("sh"), "{err}");
+        assert!(t0.elapsed() < std::time::Duration::from_secs(10));
+        assert_eq!(out("sh", &["-c", "yes | head -c 100"]).0.len(), 100);
+        let (s, code) = out_limited("sh", &["-c", "printf abc; exit 3"], 3).unwrap();
+        assert_eq!((s.as_str(), code), ("abc", 3), "ровно предел — не ошибка");
+        // stderr хранится хвостом: большой поток ошибок не держится в памяти целиком и не блокирует процесс
+        let o = capture(Command::new("sh").args(["-c", "head -c 5000000 /dev/zero >&2; echo tail >&2; exit 1"]), None).unwrap();
+        assert!(o.stderr.len() <= 64 << 10 && String::from_utf8_lossy(&o.stderr).ends_with("tail\n"));
+        assert!(run(true, &[], "sh", &["-c", "echo boom >&2; exit 1"]).unwrap_err().contains("boom"));
+    }
+
+    // --- B08 / B25 ---
+    #[test]
+    fn b08_config_upper_bounds() {
+        let _iso = contract_fixtures::isolation_lock();
+        let base = std::env::temp_dir().join(format!("upd-conf-bounds-{}", std::process::id()));
+        fs::create_dir_all(&base).unwrap();
+        let conf = base.join("upd.conf");
+        let mut text = String::from("parallel = 100000\nparallel_vpn = 99999999\nretries = 1000000000\ntimeout = 999999\nkeep = 500\nrescan_count = 100000\nextra_from_list = 100000\nmirror_max_age_h = 9223372036854775807\nvpn_sub_update_h = 9223372036854775807\nvpn_core_check_h = -5\nnetwork_memory_days = -3\nvpn_port = 1053\n");
+        for i in 0..500 {
+            text += &format!("mirror = https://m{i}.example/\n");
+        }
+        fs::write(&conf, text).unwrap();
+        unsafe { std::env::set_var("UPD_CONF", conf.to_str().unwrap()) };
+        let c = Config::load(vec![]);
+        unsafe { std::env::remove_var("UPD_CONF") };
+        let c = c.expect("экстремальные значения не ломают загрузку конфига");
+        assert_eq!((c.parallel, c.parallel_vpn, c.retries, c.timeout, c.keep), (MAX_PARALLEL, MAX_PARALLEL, MAX_RETRIES, MAX_TIMEOUT, 10));
+        assert_eq!((c.rescan_count, c.extra_from_list, c.mirrors.len()), (MAX_MIRRORS, MAX_MIRRORS, MAX_MIRRORS));
+        assert_eq!((c.mirror_max_age_h, c.vpn_sub_update_h, c.vpn_core_check_h, c.network_memory_days), (MAX_HOURS, MAX_HOURS, 1, 0));
+        assert_eq!(c.vpn_port, 1053, "порт проверяет сборка VPN, не загрузка конфига");
+        assert!(hours_secs(c.mirror_max_age_h) > 0);
         let _ = fs::remove_dir_all(&base);
     }
 }
