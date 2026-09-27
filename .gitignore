@@ -33,7 +33,9 @@ subs.json
 .DS_Store
 
 # Агенты
+.agents/
 .codex/
 .claude/
 .grok/
 .cursor/
+AGENTS.md
