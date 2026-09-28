@@ -213,48 +213,89 @@ impl Config {
                 }
                 continue;
             }
-            let Ok(n) = v.parse::<i64>() else { continue };
-            let b = n != 0;
-            // ресурсные значения сжимаются в допустимый диапазон: отказ всего конфига остановил бы и обновление пакетов
-            match k {
-                "keep" => c.keep = n.clamp(1, 10) as usize,
-                "timeout" => c.timeout = n.clamp(2, MAX_TIMEOUT as i64) as u64,
-                "extra_from_list" => c.extra_from_list = n.clamp(0, MAX_MIRRORS as i64) as usize,
-                "rescan_count" => c.rescan_count = n.clamp(3, MAX_MIRRORS as i64) as usize,
-                "retries" => c.retries = n.clamp(1, MAX_RETRIES as i64) as u32,
-                "mirror_max_age_h" => c.mirror_max_age_h = n.clamp(1, MAX_HOURS),
-                "network_memory_days" => c.network_memory_days = n.clamp(0, 365),
-                "max_lag_h" => c.max_lag_h = n.clamp(1, MAX_HOURS),
-                "parallel" => c.parallel = n.clamp(1, MAX_PARALLEL as i64) as usize,
-                "parallel_vpn" => c.parallel_vpn = n.clamp(1, MAX_PARALLEL as i64) as usize,
-                "prefetch" => c.prefetch = b,
-                "prefetch_on_battery" => c.prefetch_on_battery = b,
-                "prefetch_on_metered" => c.prefetch_on_metered = b,
-                "min_free_gb" => c.min_free_gb = n.clamp(0, 1 << 20) as u64,
-                "flatpak" => c.flatpak = b,
-                "aur" => c.aur = b,
-                "firmware" => c.firmware = b,
-                "news" => c.news = b,
-                "snapshot" => c.snapshot = b,
-                "vpn_tun" => c.vpn_tun = b,
-                "vpn_autostart" => c.vpn_autostart = b,
-                "vpn_direct_ru" => c.vpn_direct_ru = b,
-                "vpn_direct_lan" => c.vpn_direct_lan = b,
-                "vpn_auto_select" => c.vpn_auto_select = b,
-                "vpn_dns" => c.vpn_dns = b,
-                "vpn_ipv6" => c.vpn_ipv6 = b,
-                "vpn_allow_lan" => c.vpn_allow_lan = b,
-                // годность порта для VPN проверяет сборка конфига VPN, а не чтение всех настроек
-                "vpn_port" => c.vpn_port = n.clamp(1, 65535) as u16,
-                "vpn_mode" => c.vpn_mode = n.clamp(0, 2) as u8,
-                "vpn_sub_update_h" => c.vpn_sub_update_h = n.clamp(1, MAX_HOURS),
-                "vpn_core_check_h" => c.vpn_core_check_h = n.clamp(1, MAX_HOURS),
-                _ => {}
-            }
+            c.set_number(k, v);
         }
         // mirror = … без предела превратил бы список кандидатов в сотни потоков и запросов
         c.mirrors.truncate(MAX_MIRRORS);
         Ok(c)
+    }
+
+    /// Числовая настройка по имени из файла; незнакомый ключ или не число — false.
+    fn set_number(&mut self, k: &str, v: &str) -> bool {
+        let c = self;
+        let Ok(n) = v.parse::<i64>() else { return false };
+        let b = n != 0;
+        // ресурсные значения сжимаются в допустимый диапазон: отказ всего конфига остановил бы и обновление пакетов
+        match k {
+            "keep" => c.keep = n.clamp(1, 10) as usize,
+            "timeout" => c.timeout = n.clamp(2, MAX_TIMEOUT as i64) as u64,
+            "extra_from_list" => c.extra_from_list = n.clamp(0, MAX_MIRRORS as i64) as usize,
+            "rescan_count" => c.rescan_count = n.clamp(3, MAX_MIRRORS as i64) as usize,
+            "retries" => c.retries = n.clamp(1, MAX_RETRIES as i64) as u32,
+            "mirror_max_age_h" => c.mirror_max_age_h = n.clamp(1, MAX_HOURS),
+            "network_memory_days" => c.network_memory_days = n.clamp(0, 365),
+            "max_lag_h" => c.max_lag_h = n.clamp(1, MAX_HOURS),
+            "parallel" => c.parallel = n.clamp(1, MAX_PARALLEL as i64) as usize,
+            "parallel_vpn" => c.parallel_vpn = n.clamp(1, MAX_PARALLEL as i64) as usize,
+            "prefetch" => c.prefetch = b,
+            "prefetch_on_battery" => c.prefetch_on_battery = b,
+            "prefetch_on_metered" => c.prefetch_on_metered = b,
+            "min_free_gb" => c.min_free_gb = n.clamp(0, 1 << 20) as u64,
+            "flatpak" => c.flatpak = b,
+            "aur" => c.aur = b,
+            "firmware" => c.firmware = b,
+            "news" => c.news = b,
+            "snapshot" => c.snapshot = b,
+            "vpn_tun" => c.vpn_tun = b,
+            "vpn_autostart" => c.vpn_autostart = b,
+            "vpn_direct_ru" => c.vpn_direct_ru = b,
+            "vpn_direct_lan" => c.vpn_direct_lan = b,
+            "vpn_auto_select" => c.vpn_auto_select = b,
+            "vpn_dns" => c.vpn_dns = b,
+            "vpn_ipv6" => c.vpn_ipv6 = b,
+            "vpn_allow_lan" => c.vpn_allow_lan = b,
+            // годность порта для VPN проверяет сборка конфига VPN, а не чтение всех настроек
+            "vpn_port" => c.vpn_port = n.clamp(1, 65535) as u16,
+            "vpn_mode" => c.vpn_mode = n.clamp(0, 2) as u8,
+            "vpn_sub_update_h" => c.vpn_sub_update_h = n.clamp(1, MAX_HOURS),
+            "vpn_core_check_h" => c.vpn_core_check_h = n.clamp(1, MAX_HOURS),
+            _ => return false,
+        }
+        true
+    }
+
+    /// Ключи настроек, которые можно менять по одному (интерфейс настроек).
+    pub fn keys() -> impl Iterator<Item = &'static str> {
+        DOCS.iter().map(|(k, _)| *k)
+    }
+
+    /// Описание настройки на языке интерфейса.
+    pub fn doc(k: &str) -> Option<&'static str> {
+        DOCS.iter().find(|(key, _)| *key == k).map(|(_, d)| t!(*d))
+    }
+
+    /// Текущее значение числовой настройки.
+    pub fn get(&self, k: &str) -> Option<i64> {
+        Config::keys().any(|x| x == k).then(|| self.value(k))
+    }
+
+    /// Изменить одну настройку: число (0/1 для флагов) или язык. Значение сжимается в допустимый диапазон, как при чтении файла.
+    pub fn set(&mut self, k: &str, v: &str) -> Result<(), String> {
+        let v = v.trim();
+        if k == "lang" {
+            if v != "auto" && crate::i18n::Lang::from_code(v).is_none() {
+                return Err(t!("неизвестный язык: {0}", v));
+            }
+            self.lang = v.to_ascii_lowercase();
+            return Ok(());
+        }
+        if !Config::keys().any(|x| x == k) {
+            return Err(t!("неизвестная настройка: {0}", k));
+        }
+        if !self.set_number(k, v) {
+            return Err(t!("{0}: нужно целое число", k));
+        }
+        Ok(())
     }
 
     fn value(&self, k: &str) -> i64 {
@@ -386,7 +427,7 @@ pub struct MirrorState {
     pub hints: Vec<String>,
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug, Default)]
+#[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq)]
 pub struct News {
     pub title: String,
     pub date: i64,
@@ -1203,12 +1244,13 @@ pub fn os_release() -> BTreeMap<String, String> {
     m
 }
 
-#[cfg(test)]
-pub(crate) mod contract_fixtures {
+/// Изоляция тестов, меняющих окружение процесса; нужна и тестам бинарника, поэтому не под cfg(test).
+#[doc(hidden)]
+pub mod contract_fixtures {
     use std::path::Path;
     use std::sync::{Mutex, OnceLock};
 
-    pub(crate) fn isolation_lock() -> std::sync::MutexGuard<'static, ()> {
+    pub fn isolation_lock() -> std::sync::MutexGuard<'static, ()> {
         static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
         LOCK.get_or_init(|| Mutex::new(()))
             .lock()

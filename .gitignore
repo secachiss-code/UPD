@@ -1,5 +1,6 @@
 # Сборка
 /target/
+/cosmic/target/
 /dist/
 *.pkg.tar.zst
 *.deb

@@ -144,10 +144,10 @@ fn hist_from(path: &str, n: usize, keep: impl Fn(&str) -> bool) -> Vec<String> {
 
 // ======================= pacman (Arch, Garuda, EndeavourOS, CachyOS…) =======================
 
-pub(crate) const PIN_BEGIN: &str = "## >>> upd: pinned mirrors (managed automatically, see upd) >>>";
+pub const PIN_BEGIN: &str = "## >>> upd: pinned mirrors (managed automatically, see upd) >>>";
 /// Начало блока до 0.2.5 — узнаём, при следующей записи блок получит новую метку
 const PIN_BEGIN_OLD: &str = "## >>> upd: закреплённые зеркала (управляется автоматически, см. upd) >>>";
-pub(crate) const PIN_END: &str = "## <<< upd <<<";
+pub const PIN_END: &str = "## <<< upd <<<";
 
 pub struct Pacman {
     mirrorlist: String,

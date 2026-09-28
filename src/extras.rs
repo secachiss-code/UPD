@@ -466,8 +466,8 @@ pub fn snap_tool() -> SnapTool {
 
 /// Описания снапшотов записываются по-английски: их показывают GRUB (grub-btrfs), snapper и btrfs-assistant,
 /// а шрифт GRUB может не иметь кириллицы, китайских и арабских букв. В списке upd они переводятся (snap_desc_label).
-pub(crate) const SNAP_PRE_DESC: &str = "upd: before update";
-pub(crate) const SNAP_POST_DESC: &str = "upd: after update";
+pub const SNAP_PRE_DESC: &str = "upd: before update";
+pub const SNAP_POST_DESC: &str = "upd: after update";
 
 /// Снапшот перед обновлением. Возвращает номер (для snapper — чтобы связать с «после»).
 pub fn snap_pre() -> Result<Option<String>, String> {

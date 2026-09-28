@@ -892,7 +892,7 @@ fn rules_path() -> String {
 }
 
 /// Шаблон rules.txt на языке интерфейса (комментарии и имя группы в примере); сами правила от языка не зависят.
-pub(crate) fn rules_template() -> String {
+pub fn rules_template() -> String {
     format!(
         "{}\n{}\n{}\n# DOMAIN-SUFFIX,mirror.yandex.ru,DIRECT\n# DOMAIN-KEYWORD,torrent,DIRECT\n# GEOSITE,youtube,{}\n# IP-CIDR,10.8.0.0/16,DIRECT,no-resolve\n",
         t!("# upd VPN: свои правила — идут первыми, раньше правил подписки."),
@@ -1501,7 +1501,7 @@ pub fn group_delay(group: &str) -> Result<std::collections::BTreeMap<String, u64
     Ok(v.as_object().map(|o| o.iter().filter_map(|(k, v)| Some((k.clone(), v.as_u64()?))).collect()).unwrap_or_default())
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq)]
 pub struct Group {
     pub name: String,
     pub kind: String,
@@ -1509,7 +1509,7 @@ pub struct Group {
     pub all: Vec<String>,
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq)]
 pub struct Snapshot {
     pub running: bool,
     pub mode: String,
@@ -1622,7 +1622,7 @@ pub fn restart(c: &Config) -> Result<(), String> {
     run(true, &[], "systemctl", &["restart", SERVICE]).map_err(|e| format!("{e}\n{}", journal_tail()))
 }
 
-pub(crate) fn core_restart_failure(error: &str) -> String {
+pub fn core_restart_failure(error: &str) -> String {
     t!("Ядро VPN обновлено на диске, но перезапуск не удался: {0}", error)
 }
 

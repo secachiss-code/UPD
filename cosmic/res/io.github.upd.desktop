@@ -1,0 +1,36 @@
+[Desktop Entry]
+Type=Application
+Name=upd
+Comment=System updates, mirrors and VPN
+Comment[ru]=Обновление системы, зеркала и VPN
+Comment[de]=Systemupdates, Spiegelserver und VPN
+Comment[it]=Aggiornamenti di sistema, mirror e VPN
+Comment[zh]=系统更新、镜像和 VPN
+Comment[ar]=تحديثات النظام والمرايا والشبكة الافتراضية
+GenericName=Updates
+GenericName[ru]=Обновления
+GenericName[de]=Aktualisierungen
+GenericName[it]=Aggiornamenti
+GenericName[zh]=更新
+GenericName[ar]=التحديثات
+Exec=upd-cosmic
+Terminal=false
+Icon=io.github.upd
+Categories=System;PackageManager;
+Keywords=update;upgrade;pacman;apt;dnf;flatpak;mirror;vpn;обновление;зеркала;
+StartupNotify=true
+StartupWMClass=io.github.upd
+Actions=check;vpn;
+
+[Desktop Action check]
+Name=Check for updates
+Name[ru]=Проверить обновления
+Name[de]=Nach Updates suchen
+Name[it]=Cerca aggiornamenti
+Name[zh]=检查更新
+Name[ar]=البحث عن تحديثات
+Exec=upd-cosmic --page updates --run check
+
+[Desktop Action vpn]
+Name=VPN
+Exec=upd-cosmic --page vpn

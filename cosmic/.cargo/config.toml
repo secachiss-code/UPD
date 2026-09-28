@@ -1,0 +1,3 @@
+# интерфейсу COSMIC нужны системные wayland/vulkan-библиотеки: собирается под glibc, а не musl
+[build]
+target = "x86_64-unknown-linux-gnu"

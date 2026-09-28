@@ -1,22 +1,17 @@
 #[macro_use]
-mod i18n;
-mod i18n_table;
-mod backend;
-mod common;
-mod extras;
-mod mirrors;
-mod tui;
-mod vpn;
+extern crate upd;
 
-use backend::Backend;
-use common::*;
-use mirrors::*;
+mod tui;
+
+use upd::backend::{self, Backend};
+use upd::common::*;
+use upd::mirrors::*;
+use upd::{extras, helper, i18n, vpn, VERSION};
+use upd::{gather_status, sub_info, vpn_line};
 use std::collections::BTreeMap;
 use std::fs;
 use std::os::unix::process::CommandExt;
 use std::path::Path;
-
-const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 const USAGE: &str = "upd — обновление Linux с автоподбором зеркал
 
@@ -158,6 +153,7 @@ fn main() {
             cmd_notify();
             0
         }
+        "helper" => helper::serve(),
         "install" => cmd_install(b, &c, pkg_mode),
         "gen-files" => cmd_gen_files(b, &pos),
         "uninstall" => cmd_uninstall(b, pkg_mode),
@@ -959,77 +955,6 @@ fn cmd_vpn(c: &Config, pos: &[String]) -> i32 {
     }
 }
 
-pub fn sub_info(i: &vpn::SubInfo) -> String {
-    let mut s = String::new();
-    if i.total > 0 {
-        s += &t!(" · трафик {} из {}", vpn::fmt_bytes_wide(i.used()), fmt_bytes(i.total));
-    }
-    if i.expire > 0 {
-        s += &t!(" · до {}", fmt_time(i.expire).split(' ').next().unwrap_or(""));
-    }
-    s
-}
-
-// ---------- статус ----------
-
-#[derive(Clone, Default)]
-pub struct Status {
-    pub name: String,
-    pub upd: UpdState,
-    pub mir: MirrorState,
-    pub net_label: String,
-    pub pinned: Vec<String>,
-    pub last_tx: i64,
-    pub reboot: bool,
-    pub pending: Vec<String>,
-    pub orphans: usize,
-    pub cache: u64,
-    pub failed: usize,
-    pub auto_timer: String,
-    pub net_timer: String,
-    pub managed: bool,
-    pub mirror_note: String,
-    pub restart: Restart,
-    pub battery: bool,
-    pub metered: bool,
-    pub free: Option<u64>,
-    pub snapshots: String,
-    pub vpn: String,
-}
-
-pub fn gather_status(b: &dyn Backend) -> Status {
-    let net = fingerprint();
-    let cache_dirs = b.cache_dirs();
-    Status {
-        name: b.name(),
-        upd: load_json("updates.json"),
-        mir: load_mirror_state(),
-        net_label: net.label.clone(),
-        pinned: b.pinned(),
-        last_tx: b.last_upgrade(),
-        reboot: reboot_needed(),
-        pending: b.pending_configs(),
-        orphans: b.orphans().len(),
-        cache: dir_size(&cache_dirs),
-        failed: failed_units(),
-        auto_timer: unit_state("upd-auto.timer"),
-        net_timer: unit_state("upd-net.timer"),
-        managed: b.mirrors_managed(),
-        mirror_note: b.mirror_note(),
-        restart: needs_restart(),
-        battery: on_battery(),
-        metered: metered(&net.dev),
-        free: free_space(cache_dirs.first().copied().unwrap_or("/")).ok(),
-        snapshots: match (b.auto_snapshots(), extras::snap_tool()) {
-            (true, _) => t!("snap-pac (автоматически)").into(),
-            (_, extras::SnapTool::Snapper) => t!("snapper (делает upd)").into(),
-            (_, extras::SnapTool::Timeshift) => t!("timeshift (делает upd)").into(),
-            _ => t!("нет").into(),
-        },
-        vpn: vpn_line(),
-    }
-}
-
 fn print_status(b: &dyn Backend) {
     let s = gather_status(b);
     let u = &s.upd;
@@ -1088,32 +1013,11 @@ fn print_status(b: &dyn Backend) {
     println!("{}", t!("Автоматика:   обновления {}, слежение за сетью {}", unit_label(&s.auto_timer), unit_label(&s.net_timer)));
 }
 
-/// Короткая строка о VPN без обращения к API (для статуса от имени пользователя).
-pub fn vpn_line() -> String {
-    let st = vpn::load_state();
-    let state = match unit_state(vpn::SERVICE).as_str() {
-        "active" => t!("работает"),
-        "failed" => t!("ОШИБКА (journalctl -u upd-vpn)"),
-        "" => t!("не установлен"),
-        _ => t!("выключен"),
-    };
-    let sub = st.subs.iter().find(|s| s.active).map(|s| format!(" · «{}»", s.name)).unwrap_or_else(|| t!(" · нет подписки").into());
-    let core = if st.core_version.is_empty() { String::new() } else { format!(" · mihomo {}", st.core_version) };
-    format!("{state}{sub}{core}")
-}
-
-pub fn or_dash(s: &str) -> &str {
-    if s.is_empty() {
-        "—"
-    } else {
-        s
-    }
-}
-
 // ---------- уведомления (от имени пользователя) ----------
 
 fn cmd_notify() {
-    if !have("notify-send") {
+    if !have("notify-send") || upd::summary::applet_running() {
+        // апплет COSMIC сам показывает уведомления, с кнопками действий
         return;
     }
     let home = std::env::var("HOME").unwrap_or_default();
@@ -1191,6 +1095,7 @@ struct Layout {
     pacman_hook: &'static str,
     apt_hook: &'static str,
     nm: &'static str,
+    polkit: &'static str,
 }
 
 const MANUAL: Layout = Layout {
@@ -1200,6 +1105,8 @@ const MANUAL: Layout = Layout {
     pacman_hook: "/etc/pacman.d/hooks/zz-upd.hook",
     apt_hook: "/etc/apt/apt.conf.d/99upd",
     nm: "/etc/NetworkManager/dispatcher.d/90-upd",
+    // действия polkit читаются только из /usr/share
+    polkit: POLKIT_POLICY,
 };
 
 const PACKAGE: Layout = Layout {
@@ -1209,7 +1116,44 @@ const PACKAGE: Layout = Layout {
     pacman_hook: "/usr/share/libalpm/hooks/zz-upd.hook",
     apt_hook: "/etc/apt/apt.conf.d/99upd",
     nm: "/usr/lib/NetworkManager/dispatcher.d/90-upd",
+    polkit: POLKIT_POLICY,
 };
+
+const POLKIT_POLICY: &str = "/usr/share/polkit-1/actions/io.github.upd.policy";
+
+/// Интерфейс COSMIC при ручной установке: ставится, если `upd-cosmic` лежит рядом с upd (dist/).
+const GUI_BIN: &str = "/usr/local/bin/upd-cosmic";
+const GUI_FILES: [(&str, &str); 4] = [
+    ("/usr/local/share/applications/io.github.upd.desktop", include_str!("../cosmic/res/io.github.upd.desktop")),
+    ("/usr/local/share/applications/io.github.upd.Applet.desktop", include_str!("../cosmic/res/io.github.upd.Applet.desktop")),
+    ("/usr/local/share/icons/hicolor/scalable/apps/io.github.upd.svg", include_str!("../cosmic/res/icons/io.github.upd.svg")),
+    ("/usr/local/share/icons/hicolor/symbolic/apps/io.github.upd-symbolic.svg", include_str!("../cosmic/res/icons/io.github.upd-symbolic.svg")),
+];
+
+/// Бинарник интерфейса рядом с устанавливаемым upd.
+fn gui_source(exe: &Path) -> Option<std::path::PathBuf> {
+    let dir = exe.parent()?;
+    ["upd-cosmic", "upd-cosmic-linux-amd64"].iter().map(|n| dir.join(n)).find(|p| p.is_file())
+}
+
+fn install_gui(src: &Path) -> Result<(), String> {
+    let tmp = format!("{GUI_BIN}.new");
+    fs::copy(src, &tmp)
+        .and_then(|_| fs::set_permissions(&tmp, std::os::unix::fs::PermissionsExt::from_mode(0o755)))
+        .and_then(|_| fs::rename(&tmp, GUI_BIN))
+        .map_err(|e| format!("{GUI_BIN}: {e}"))?;
+    for (path, body) in GUI_FILES {
+        write_file(path, body, 0o644)?;
+    }
+    Ok(())
+}
+
+fn remove_gui() {
+    let _ = fs::remove_file(GUI_BIN);
+    for (path, _) in GUI_FILES {
+        let _ = fs::remove_file(path);
+    }
+}
 
 fn system_units(bin: &str, watch: Option<&str>) -> Vec<(&'static str, String)> {
     let mut u = vec![
@@ -1244,6 +1188,15 @@ fn system_units(bin: &str, watch: Option<&str>) -> Vec<(&'static str, String)> {
             ),
         ),
     ];
+    // помощник графического интерфейса: запускается по обращению к сокету, права проверяет через polkit
+    u.push((
+        "upd-helper.socket",
+        "[Unit]\nDescription=upd: helper socket for the graphical interface\n\n[Socket]\nListenStream=/run/upd/helper.sock\nSocketMode=0666\nDirectoryMode=0755\nRemoveOnStop=yes\n\n[Install]\nWantedBy=sockets.target\n".to_string(),
+    ));
+    u.push((
+        "upd-helper.service",
+        format!("[Unit]\nDescription=upd: privileged helper for the graphical interface\nRequires=upd-helper.socket\nAfter=upd-helper.socket\n\n[Service]\nType=simple\nExecStart={bin} helper\nKillMode=process\n"),
+    ));
     if let Some(w) = watch {
         u.push((
             "upd-mirrors.path",
@@ -1262,6 +1215,46 @@ fn user_units(bin: &str) -> Vec<(&'static str, String)> {
         ("upd-notify.service", format!("[Unit]\nDescription=upd: notifications\n\n[Service]\nType=oneshot\nExecStart={bin} notify\n")),
         ("upd-notify.timer", "[Unit]\nDescription=upd: notifications\n\n[Timer]\nOnActiveSec=3min\nOnUnitActiveSec=30min\n\n[Install]\nWantedBy=timers.target\n".to_string()),
     ]
+}
+
+/// Действия polkit для помощника: чтение состояния без пароля в активном сеансе, изменения — с паролем администратора.
+fn polkit_policy() -> String {
+    let msg = |en: &str, tr: &[(&str, &str)]| {
+        let mut s = format!("    <message>{en}</message>\n");
+        for (l, m) in tr {
+            s += &format!("    <message xml:lang=\"{l}\">{m}</message>\n");
+        }
+        s
+    };
+    let actions = [
+        (
+            helper::ACTION_STATUS,
+            "yes",
+            msg("Read the update and VPN status", &[("ru", "Просмотр состояния обновлений и VPN"), ("de", "Status von Updates und VPN lesen"), ("it", "Leggere lo stato di aggiornamenti e VPN"), ("zh", "读取更新和 VPN 状态"), ("ar", "قراءة حالة التحديثات والشبكة الافتراضية")]),
+        ),
+        (
+            helper::ACTION_CHECK,
+            "yes",
+            msg("Check for updates", &[("ru", "Проверка обновлений"), ("de", "Nach Updates suchen"), ("it", "Cercare aggiornamenti"), ("zh", "检查更新"), ("ar", "البحث عن تحديثات")]),
+        ),
+        (
+            helper::ACTION_VPN,
+            "yes",
+            msg("Turn the VPN on or off and choose a server", &[("ru", "Включение и выключение VPN, выбор сервера"), ("de", "VPN ein- oder ausschalten und Server wählen"), ("it", "Attivare o disattivare la VPN e scegliere il server"), ("zh", "开关 VPN 并选择服务器"), ("ar", "تشغيل الشبكة الافتراضية أو إيقافها واختيار الخادم")]),
+        ),
+        (
+            helper::ACTION_MANAGE,
+            "auth_admin_keep",
+            msg("Install updates and manage mirrors and VPN", &[("ru", "Установка обновлений, управление зеркалами и VPN"), ("de", "Updates installieren sowie Spiegelserver und VPN verwalten"), ("it", "Installare aggiornamenti e gestire mirror e VPN"), ("zh", "安装更新并管理镜像和 VPN"), ("ar", "تثبيت التحديثات وإدارة المرايا والشبكة الافتراضية")]),
+        ),
+    ];
+    let mut s = String::from("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<!DOCTYPE policyconfig PUBLIC \"-//freedesktop//DTD PolicyKit Policy Configuration 1.0//EN\"\n \"http://www.freedesktop.org/standards/PolicyKit/1/policyconfig.dtd\">\n<!-- Managed by upd -->\n<policyconfig>\n  <vendor>upd</vendor>\n  <icon_name>system-software-update</icon_name>\n");
+    for (id, active, message) in actions {
+        // вне активного сеанса (ssh, другой пользователь за экраном) — только с паролем администратора
+        let other = if active == "yes" { "auth_admin" } else { active.trim_end_matches("_keep") };
+        s += &format!("  <action id=\"{id}\">\n{message}    <defaults>\n      <allow_any>{other}</allow_any>\n      <allow_inactive>{other}</allow_inactive>\n      <allow_active>{active}</allow_active>\n    </defaults>\n  </action>\n");
+    }
+    s + "</policyconfig>\n"
 }
 
 fn pacman_hook(bin: &str) -> String {
@@ -1431,6 +1424,9 @@ fn write_system_files(root: &str, l: &Layout, target: &str, b: &dyn Backend) -> 
     if target != "host" || Path::new("/etc/NetworkManager").is_dir() {
         write_file(&format!("{root}{}", l.nm), nm_dispatcher(), 0o755)?;
     }
+    if target != "host" || Path::new("/usr/share/polkit-1").is_dir() {
+        write_file(&format!("{root}{}", l.polkit), &polkit_policy(), 0o644)?;
+    }
     Ok(done)
 }
 
@@ -1504,6 +1500,10 @@ fn remove_manual_files() -> Result<(), String> {
         .map_err(|e| format!("{LOCAL_BIN}: {e}"))?;
     let _ = fs::remove_file(MANUAL.pacman_hook);
     let _ = fs::remove_file(MANUAL.nm);
+    // политику polkit удаляем, только если её записал upd (при пакетной установке она принадлежит пакету)
+    if fs::read_to_string(MANUAL.polkit).is_ok_and(|t| t.contains("<!-- Managed by upd -->")) && !Path::new(PKG_BIN).exists() {
+        let _ = fs::remove_file(MANUAL.polkit);
+    }
     Ok(())
 }
 
@@ -1520,7 +1520,7 @@ fn logged_in_users() -> Vec<String> {
 
 fn enable_units(b: &dyn Backend, c: &Config, ok: &dyn Fn(String)) -> Result<(), String> {
     let _ = run(true, &[], "systemctl", &["daemon-reload"]);
-    let mut enable = vec!["upd-auto.timer", "upd-net.timer"];
+    let mut enable = vec!["upd-auto.timer", "upd-net.timer", "upd-helper.socket"];
     if b.mirrors_managed() && b.watch_path().is_some() {
         enable.push("upd-mirrors.path");
     }
@@ -1628,6 +1628,14 @@ fn cmd_install(b: &dyn Backend, c: &Config, pkg: bool) -> i32 {
         }
     }
     ok(t!("бинарник: {}", l.bin));
+    if !pkg {
+        if let Some(src) = gui_source(&exe) {
+            match install_gui(&src) {
+                Ok(()) => ok(t!("интерфейс COSMIC: {0} — апплет добавляется в Настройках → Рабочий стол → Панель → Апплеты", GUI_BIN)),
+                Err(e) => println!("{}", t!("⚠ интерфейс COSMIC не установлен: {0}", e)),
+            }
+        }
+    }
     let mut c = c.clone();
     // язык спрашиваем один раз: пока он не выбран (auto), и только при ручной установке из терминала
     if !pkg && c.lang == "auto" && std::io::IsTerminal::is_terminal(&std::io::stdin()) {
@@ -1698,7 +1706,7 @@ fn cmd_uninstall(b: &dyn Backend, pkg: bool) -> i32 {
     }
     if systemd() {
         let mut names: Vec<&str> = system_units(PKG_BIN, Some("-")).iter().map(|x| x.0).collect();
-        names.retain(|n| !n.ends_with(".service") || *n == vpn::SERVICE);
+        names.retain(|n| !n.ends_with(".service") || *n == vpn::SERVICE || *n == "upd-helper.service");
         let _ = run(true, &[], "systemctl", &["--global", "disable", "upd-notify.timer"]);
         for user in logged_in_users() {
             let _ = run(true, &[], "systemctl", &["--user", "-M", &format!("{user}@"), "stop", "upd-notify.timer"]);
@@ -1713,6 +1721,9 @@ fn cmd_uninstall(b: &dyn Backend, pkg: bool) -> i32 {
             let _ = fs::remove_file(MANUAL.apt_hook);
         }
         let _ = run(true, &[], "systemctl", &["daemon-reload"]);
+    }
+    if !pkg {
+        remove_gui();
     }
     vpn::sysproxy(&c);
     let _ = fs::remove_file(CRON_PATH);
@@ -1732,7 +1743,7 @@ mod contract_tests {
     // --- INSTALL-01 ---
     #[test]
     fn install01_package_install_requires_package_script_env() {
-        let _isolation = crate::common::contract_fixtures::isolation_lock();
+        let _isolation = upd::common::contract_fixtures::isolation_lock();
         let exe = Path::new(PKG_BIN);
         let previous = std::env::var_os(PACKAGE_SCRIPT_ENV);
         unsafe { std::env::remove_var(PACKAGE_SCRIPT_ENV); }
@@ -1832,10 +1843,42 @@ mod contract_tests {
         let mut texts: Vec<String> = system_units("/usr/bin/upd", Some("/etc/pacman.d/mirrorlist")).into_iter().map(|u| u.1).collect();
         texts.extend(user_units("/usr/bin/upd").into_iter().map(|u| u.1));
         texts.extend([pacman_hook("/usr/bin/upd"), apt_hook("/usr/bin/upd"), nm_dispatcher().to_string()]);
-        texts.extend([GARUDA_MARK, UNALIAS_MARK, crate::backend::PIN_BEGIN, crate::backend::PIN_END, vpn::AUTO_GROUP, extras::SNAP_PRE_DESC, extras::SNAP_POST_DESC].map(String::from));
+        // в политике polkit русский есть только в переводах (xml:lang), основной текст — английский
+        texts.extend(polkit_policy().lines().filter(|l| !l.contains("xml:lang")).map(String::from));
+        texts.extend([GARUDA_MARK, UNALIAS_MARK, backend::PIN_BEGIN, backend::PIN_END, vpn::AUTO_GROUP, extras::SNAP_PRE_DESC, extras::SNAP_POST_DESC].map(String::from));
         for t in texts {
             assert!(t.is_ascii() || !t.chars().any(|c| ('\u{0400}'..='\u{04FF}').contains(&c)), "кириллица в системном тексте: {t}");
         }
+    }
+
+    #[test]
+    fn gui01_polkit_policy_limits_passwordless_actions() {
+        let p = polkit_policy();
+        assert!(!p.contains("exec.path"), "pkexec upd не должен работать без пароля");
+        let action = |id: &str| {
+            let start = p.find(&format!("<action id=\"{id}\">")).unwrap();
+            p[start..start + p[start..].find("</action>").unwrap()].to_string()
+        };
+        for id in [helper::ACTION_STATUS, helper::ACTION_CHECK, helper::ACTION_VPN] {
+            let a = action(id);
+            assert!(a.contains("<allow_active>yes</allow_active>") && a.contains("<allow_any>auth_admin</allow_any>"), "{a}");
+        }
+        let m = action(helper::ACTION_MANAGE);
+        assert!(m.contains("<allow_active>auth_admin_keep</allow_active>") && m.contains("<allow_inactive>auth_admin</allow_inactive>"), "{m}");
+        assert!(p.contains("xml:lang=\"ru\"") && p.contains("<!-- Managed by upd -->"));
+    }
+
+    #[test]
+    fn gui02_helper_socket_units_and_desktop_files() {
+        let units = system_units("/usr/bin/upd", None);
+        let socket = &units.iter().find(|u| u.0 == "upd-helper.socket").unwrap().1;
+        assert!(socket.contains("ListenStream=/run/upd/helper.sock") && socket.contains("SocketMode=0666"));
+        let service = &units.iter().find(|u| u.0 == "upd-helper.service").unwrap().1;
+        assert!(service.contains("ExecStart=/usr/bin/upd helper") && !service.contains("[Install]"), "запускается только по сокету");
+        let applet = GUI_FILES.iter().find(|f| f.0.ends_with("io.github.upd.Applet.desktop")).unwrap().1;
+        assert!(applet.contains("X-CosmicApplet=true") && applet.contains("Exec=upd-cosmic applet") && applet.contains("NoDisplay=true"));
+        let app = GUI_FILES.iter().find(|f| f.0.ends_with("io.github.upd.desktop")).unwrap().1;
+        assert!(app.contains("Exec=upd-cosmic\n") && app.contains("Icon=io.github.upd\n"));
     }
 
     #[test]
@@ -1871,7 +1914,7 @@ mod contract_tests {
         assert!(foreign.exists());
         write_stub(&bin, "systemctl", "#!/bin/sh\nexit 0\n");
         let owned = owned_unit_files(units.to_str().unwrap(), &["upd-auto.timer"]).unwrap();
-        crate::common::contract_fixtures::with_prepend_path(&bin, || disable_and_remove_units(units.to_str().unwrap(), &owned, false).unwrap());
+        upd::common::contract_fixtures::with_prepend_path(&bin, || disable_and_remove_units(units.to_str().unwrap(), &owned, false).unwrap());
         assert!(!timer.exists());
         assert!(foreign.exists());
         let _ = fs::remove_dir_all(&base);
@@ -1892,7 +1935,7 @@ mod contract_tests {
 
     #[test]
     fn vpn01_last_subscription_stops_service() {
-        let _iso = crate::common::contract_fixtures::isolation_lock();
+        let _iso = upd::common::contract_fixtures::isolation_lock();
         let (base, bin, etc, home, state) = vpn_fixture("vpn01-stop");
         let log = base.join("cmd.log");
         let log_s = log.to_str().unwrap().replace('\'', "");
@@ -1913,7 +1956,7 @@ mod contract_tests {
             std::env::set_var("SUDO_USER", "updtest");
         }
         let code = {
-            let _path = crate::common::contract_fixtures::prepend_path(&bin);
+            let _path = upd::common::contract_fixtures::prepend_path(&bin);
             cmd_vpn(&Config::defaults(vec![]), &["del".into(), "1".into()])
         };
         let recorded = fs::read_to_string(&log).unwrap_or_default();
@@ -1934,7 +1977,7 @@ mod contract_tests {
 
     #[test]
     fn vpn01_stop_failure_is_an_error_after_delete() {
-        let _iso = crate::common::contract_fixtures::isolation_lock();
+        let _iso = upd::common::contract_fixtures::isolation_lock();
         let (base, bin, etc, home, state) = vpn_fixture("vpn01-fail");
         write_stub(&bin, "systemctl", "#!/bin/sh\nif [ \"$1\" = is-active ]; then echo active; exit 0; fi\nif [ \"$1\" = stop ]; then echo fail 1>&2; exit 1; fi\nexit 0\n");
         write_stub(&bin, "id", "#!/bin/sh\nexit 0\n");
@@ -1948,7 +1991,7 @@ mod contract_tests {
             std::env::remove_var("SUDO_USER");
         }
         let code = {
-            let _path = crate::common::contract_fixtures::prepend_path(&bin);
+            let _path = upd::common::contract_fixtures::prepend_path(&bin);
             cmd_vpn(&Config::defaults(vec![]), &["del".into(), "1".into()])
         };
         unsafe {

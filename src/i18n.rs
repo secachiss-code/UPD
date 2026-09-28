@@ -3,7 +3,6 @@
 
 use std::collections::HashMap;
 use std::fmt::{Display, Write};
-#[cfg(not(test))]
 use std::sync::atomic::{AtomicU8, Ordering};
 use std::sync::OnceLock;
 
@@ -50,27 +49,31 @@ impl Lang {
     }
 }
 
-// Язык общий для всех потоков (фоновые потоки TUI пишут на выбранном языке);
-// в тестах — свой у каждого потока, иначе параллельные тесты мешали бы друг другу.
-#[cfg(not(test))]
+// Язык общий для всех потоков (фоновые потоки TUI и апплета пишут на выбранном языке).
+// Поток может задать свой язык (`set_thread`): так параллельные тесты, в том числе тесты
+// бинарника и апплета, не мешают друг другу; в тестах библиотеки `set` действует только на поток.
 static CUR: AtomicU8 = AtomicU8::new(0);
-#[cfg(test)]
 thread_local! {
-    static CUR: std::cell::Cell<u8> = const { std::cell::Cell::new(0) };
+    static THREAD: std::cell::Cell<u8> = const { std::cell::Cell::new(u8::MAX) };
 }
 
 pub fn set(l: Lang) {
     #[cfg(not(test))]
     CUR.store(l as u8, Ordering::Relaxed);
     #[cfg(test)]
-    CUR.with(|c| c.set(l as u8));
+    set_thread(l);
+}
+
+/// Язык только для текущего потока (тесты).
+pub fn set_thread(l: Lang) {
+    THREAD.with(|c| c.set(l as u8));
 }
 
 pub fn cur() -> Lang {
-    #[cfg(not(test))]
-    let v = CUR.load(Ordering::Relaxed);
-    #[cfg(test)]
-    let v = CUR.with(|c| c.get());
+    let v = match THREAD.with(|c| c.get()) {
+        u8::MAX => CUR.load(Ordering::Relaxed),
+        v => v,
+    };
     ALL[v as usize % ALL.len()]
 }
 
@@ -392,11 +395,21 @@ mod tests {
             include_str!("backend.rs"),
             include_str!("common.rs"),
             include_str!("extras.rs"),
+            include_str!("helper.rs"),
             include_str!("main.rs"),
             include_str!("mirrors.rs"),
+            include_str!("status.rs"),
+            include_str!("summary.rs"),
             include_str!("tui.rs"),
             include_str!("tui/process.rs"),
             include_str!("vpn.rs"),
+            // графический интерфейс COSMIC — отдельный крейт, но переводы общие
+            include_str!("../cosmic/src/applet.rs"),
+            include_str!("../cosmic/src/main.rs"),
+            include_str!("../cosmic/src/model.rs"),
+            include_str!("../cosmic/src/op.rs"),
+            include_str!("../cosmic/src/ui.rs"),
+            include_str!("../cosmic/src/window.rs"),
         ];
         let mut keys = vec![];
         for src in files {

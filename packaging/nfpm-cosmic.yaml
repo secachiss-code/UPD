@@ -1,0 +1,41 @@
+# Пакет upd-cosmic: апплет и окно upd для COSMIC. Собирается через ./package.sh рядом с пакетом upd.
+name: upd-cosmic
+arch: amd64
+platform: linux
+version: ${VERSION}
+release: 1
+section: admin
+priority: optional
+maintainer: somovas
+description: |
+  Апплет upd для панели COSMIC и окно upd: обновления, зеркала, VPN и обслуживание.
+  Привилегированные действия выполняет помощник upd с проверкой прав через polkit.
+license: MIT
+homepage: https://github.com/somovas/upd
+depends:
+  - upd
+contents:
+  - src: LICENSE
+    dst: /usr/share/licenses/upd-cosmic/LICENSE
+    file_info:
+      mode: 0644
+  - src: dist/upd-cosmic-linux-amd64
+    dst: /usr/bin/upd-cosmic
+    file_info:
+      mode: 0755
+  - src: cosmic/res/io.github.upd.desktop
+    dst: /usr/share/applications/io.github.upd.desktop
+    file_info:
+      mode: 0644
+  - src: cosmic/res/io.github.upd.Applet.desktop
+    dst: /usr/share/applications/io.github.upd.Applet.desktop
+    file_info:
+      mode: 0644
+  - src: cosmic/res/icons/io.github.upd.svg
+    dst: /usr/share/icons/hicolor/scalable/apps/io.github.upd.svg
+    file_info:
+      mode: 0644
+  - src: cosmic/res/icons/io.github.upd-symbolic.svg
+    dst: /usr/share/icons/hicolor/symbolic/apps/io.github.upd-symbolic.svg
+    file_info:
+      mode: 0644

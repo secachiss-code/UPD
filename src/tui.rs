@@ -2,10 +2,10 @@
 
 mod process;
 
-use crate::backend::{self, Backend};
-use crate::common::*;
-use crate::mirrors::{apply_mirrors, candidates, load_mirror_state};
-use crate::{extras, gather_status, sub_info, vpn, Status};
+use upd::backend::{self, Backend};
+use upd::common::*;
+use upd::mirrors::{apply_mirrors, candidates, load_mirror_state};
+use upd::{extras, gather_status, sub_info, vpn, Status};
 use ratatui::crossterm::event::{self, Event, KeyCode, KeyEventKind, KeyModifiers};
 use ratatui::crossterm::terminal::{disable_raw_mode, enable_raw_mode};
 use ratatui::layout::{Constraint, Layout};
@@ -2299,7 +2299,7 @@ mod tests {
     fn test02_german_menu_and_russian_layout_hotkeys() {
         let b = FixtureBackend;
         let ui = FixtureUiData;
-        crate::i18n::set(crate::i18n::Lang::De);
+        crate::i18n::set_thread(crate::i18n::Lang::De);
         let mut app = App::new(&b, &ui, Some(Status::default()), Some(VpnPage::default()));
         let mut t = Terminal::new(TestBackend::new(118, 30)).unwrap();
         t.draw(|f| app.draw(f)).unwrap();
@@ -2308,7 +2308,7 @@ mod tests {
         // й — та же клавиша, что q: из меню выходит
         app.key(KeyCode::Char(crate::i18n::latin_key('й')));
         assert!(app.quit);
-        crate::i18n::set(crate::i18n::Lang::Ru);
+        crate::i18n::set_thread(crate::i18n::Lang::Ru);
     }
 
     #[test]

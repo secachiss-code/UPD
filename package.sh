@@ -36,5 +36,9 @@ for target in arch deb rpm; do
 	sed "s|\${STAGE}|$STAGE|g" packaging/nfpm.yaml >"$STAGE/nfpm.yaml"
 	VERSION=$VERSION "$NFPM" package -f "$STAGE/nfpm.yaml" -p "$pkg" -t dist/ >/dev/null
 	rm -rf "$STAGE"
+	# интерфейс COSMIC — отдельный пакет, если build.sh его собрал
+	if [ -f dist/upd-cosmic-linux-amd64 ]; then
+		VERSION=$VERSION "$NFPM" package -f packaging/nfpm-cosmic.yaml -p "$pkg" -t dist/ >/dev/null
+	fi
 done
 ls -1 dist/*"$VERSION"* 2>/dev/null || ls -1 dist/

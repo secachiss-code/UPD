@@ -507,7 +507,7 @@ mod tests {
     /// B06: команда завершилась, её потомок держит PTY; закрытие сессии освобождает поток чтения и убивает потомка.
     #[test]
     fn b06_closing_session_releases_reader_and_group() {
-        let _iso = crate::common::contract_fixtures::isolation_lock();
+        let _iso = upd::common::contract_fixtures::isolation_lock();
         let dir = std::env::temp_dir().join(format!("upd-pty-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let pidfile = dir.join("pid");
