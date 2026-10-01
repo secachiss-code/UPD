@@ -46,7 +46,7 @@ pub fn etc() -> String {
     env_or("UPD_VPN_ETC", "/etc/upd/vpn")
 }
 pub fn home() -> String {
-    env_or("UPD_VPN_HOME", "/var/lib/upd/vpn")
+    env_or("UPD_VPN_HOME", &format!("{}/vpn", state_dir()))
 }
 pub fn core_bin() -> String {
     format!("{}/bin/mihomo", home())
@@ -2693,6 +2693,22 @@ mod contract_tests {
         assert!(subscriptions_lock(false).is_err());
         drop(l1);
         assert!(subscriptions_lock(false).is_ok());
+    }
+
+    #[test]
+    fn vpn_config_lock_needs_only_writable_vpn_home() {
+        let _g = EnvGuard::vpn_dirs();
+        // ExecStartPre cannot write to the parent state directory. Make it
+        // impossible to open anything there even when tests run as root.
+        let state = state_dir();
+        fs::remove_dir(&state).unwrap();
+        fs::write(&state, b"unwritable parent fixture").unwrap();
+        let first = vpn_config_lock(false).unwrap();
+        assert!(vpn_config_lock(false).is_err());
+        assert!(Path::new(&home()).join(".vpn-config.lock").is_file());
+        drop(first);
+        assert!(vpn_config_lock(false).is_ok());
+        assert!(lock(false).is_err());
     }
 
     // --- VPN-01 ---

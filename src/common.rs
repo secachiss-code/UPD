@@ -709,18 +709,24 @@ impl Drop for TempPathGuard {
 pub struct Lock(#[allow(dead_code)] fs::File);
 
 fn named_lock(name: &str, block: bool) -> Result<Lock, String> {
+    lock_in(&state_dir(), name, block)
+}
+
+fn lock_in(dir: &str, name: &str, block: bool) -> Result<Lock, String> {
     if name.is_empty() || Path::new(name).components().count() != 1 {
         return Err(t!("некорректное имя блокировки").into());
     }
-    let dir = state_dir();
-    fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    use std::os::unix::fs::DirBuilderExt;
+    fs::DirBuilder::new().recursive(true).mode(0o700).create(dir).map_err(|e| format!("{dir}: {e}"))?;
+    let path = Path::new(dir).join(name);
     let f = fs::OpenOptions::new()
         .create(true)
         .truncate(false)
         .read(true)
         .write(true)
-        .open(Path::new(&dir).join(name))
-        .map_err(|e| e.to_string())?;
+        .mode(0o600)
+        .open(&path)
+        .map_err(|e| format!("{}: {e}", path.display()))?;
     use std::os::fd::AsRawFd;
     let op = if block { libc::LOCK_EX } else { libc::LOCK_EX | libc::LOCK_NB };
     if unsafe { libc::flock(f.as_raw_fd(), op) } != 0 {
@@ -738,7 +744,9 @@ pub fn subscriptions_lock(block: bool) -> Result<Lock, String> {
 }
 
 /// Order: heavy operation (if held), VPN files, config, subscriptions. State mutex is never held here.
-pub fn vpn_config_lock(block: bool) -> Result<Lock, String> { named_lock(".vpn-config.lock", block) }
+// ExecStartPre runs with ProtectSystem=strict: only the VPN directory is writable.
+// All writers, including Config::save and the helper, must use the same lock here.
+pub fn vpn_config_lock(block: bool) -> Result<Lock, String> { lock_in(&crate::vpn::home(), ".vpn-config.lock", block) }
 
 pub fn config_lock(block: bool) -> Result<Lock, String> {
     let path = PathBuf::from(conf_path());
