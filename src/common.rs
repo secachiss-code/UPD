@@ -27,7 +27,7 @@ pub fn number_setting(key: &str) -> Option<NumberSetting> {
         "parallel" | "parallel_vpn" => (1, MAX_PARALLEL as i64, Count), "min_free_gb" => (0, 1 << 20, Gibibytes),
         "vpn_port" => (1024, 65535, Port), "vpn_mode" => (0, 2, Count),
         "prefetch" | "prefetch_on_battery" | "prefetch_on_metered" | "flatpak" | "aur" | "firmware" | "news" | "snapshot" |
-        "vpn_tun" | "vpn_autostart" | "vpn_direct_ru" | "vpn_direct_lan" | "vpn_auto_select" | "vpn_dns" | "vpn_ipv6" | "vpn_allow_lan" => (0, 1, Flag),
+        "vpn_tun" | "vpn_autostart" | "vpn_direct_ru" | "vpn_direct_lan" | "vpn_auto_select" | "vpn_auto_allow_ru" | "vpn_dns" | "vpn_ipv6" | "vpn_allow_lan" => (0, 1, Flag),
         _ => return None,
     };
     Some(NumberSetting { min, max, step: 1, unit })
@@ -72,6 +72,8 @@ pub const MAX_RETRIES: u32 = 20;
 pub const MAX_TIMEOUT: u64 = 120;
 pub const MAX_MIRRORS: usize = 64;
 
+fn enabled_by_default() -> bool { true }
+
 // ---------- конфиг ----------
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -100,6 +102,8 @@ pub struct Config {
     pub vpn_direct_ru: bool,
     pub vpn_direct_lan: bool,
     pub vpn_auto_select: bool,
+    #[serde(default = "enabled_by_default")]
+    pub vpn_auto_allow_ru: bool,
     pub vpn_dns: bool,
     pub vpn_ipv6: bool,
     pub vpn_allow_lan: bool,
@@ -140,6 +144,7 @@ const DOCS: &[(&str, &str)] = &[
     ("vpn_direct_ru", "VPN: российские сайты и IP — напрямую (по геофайлам)"),
     ("vpn_direct_lan", "VPN: локальная сеть — напрямую"),
     ("vpn_auto_select", "VPN: группа «⚡ Авто» — сама выбирает самый быстрый живой сервер"),
+    ("vpn_auto_allow_ru", "VPN: разрешать российские серверы в автовыборе (по названию сервера)"),
     ("vpn_dns", "VPN: свой DNS (fake-ip, DoH через VPN); 0 — системный DNS"),
     ("vpn_ipv6", "VPN: IPv6"),
     ("vpn_allow_lan", "VPN: пускать другие устройства локальной сети через этот прокси"),
@@ -200,6 +205,7 @@ impl Config {
             vpn_direct_ru: true,
             vpn_direct_lan: true,
             vpn_auto_select: true,
+            vpn_auto_allow_ru: true,
             vpn_dns: true,
             vpn_ipv6: false,
             vpn_allow_lan: false,
@@ -280,6 +286,7 @@ impl Config {
             "vpn_direct_ru" => c.vpn_direct_ru = b,
             "vpn_direct_lan" => c.vpn_direct_lan = b,
             "vpn_auto_select" => c.vpn_auto_select = b,
+            "vpn_auto_allow_ru" => c.vpn_auto_allow_ru = b,
             "vpn_dns" => c.vpn_dns = b,
             "vpn_ipv6" => c.vpn_ipv6 = b,
             "vpn_allow_lan" => c.vpn_allow_lan = b,
@@ -357,6 +364,7 @@ impl Config {
             "vpn_direct_ru" => self.vpn_direct_ru as i64,
             "vpn_direct_lan" => self.vpn_direct_lan as i64,
             "vpn_auto_select" => self.vpn_auto_select as i64,
+            "vpn_auto_allow_ru" => self.vpn_auto_allow_ru as i64,
             "vpn_dns" => self.vpn_dns as i64,
             "vpn_ipv6" => self.vpn_ipv6 as i64,
             "vpn_allow_lan" => self.vpn_allow_lan as i64,

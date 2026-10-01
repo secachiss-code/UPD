@@ -141,7 +141,8 @@ fn snapshots() {
     let _isolation = isolation_lock();
     let temporary = TempDirGuard::new("upd-cosmic-snapshots").unwrap();
     let requested = std::env::var_os("UPD_SNAPSHOTS").map(std::path::PathBuf::from);
-    let dir = requested.as_deref().unwrap_or(temporary.path());
+    let smoke_requested = std::env::var_os("UPD_SMOKE_SNAPSHOTS").map(std::path::PathBuf::from);
+    let dir = requested.as_deref().or(smoke_requested.as_deref()).unwrap_or(temporary.path());
     std::fs::create_dir_all(dir).unwrap();
     let sock = temporary.path().join("fake.sock"); std::fs::write(&sock, "").unwrap();
     let mut env = EnvGuard::new(); env.set("UPD_HELPER_SOCK", &sock);
@@ -149,6 +150,12 @@ fn snapshots() {
     let u = UpdState { checked: now() - 720, list: summary().packages, flatpak: summary().flatpak, ..Default::default() };
     // Mandatory smoke runs even without UPD_SNAPSHOTS. No skipped/no-op visual gate.
     shot(dir, "popup-smoke", Applet::demo(summary(), OpStatus::default(), Some(snapshot_vpn()), true).demo_popup(), (320.0, 480.0), 1.0, &dark);
+    let mut vpn_summary = summary();
+    vpn_summary.packages.clear(); vpn_summary.flatpak.clear(); vpn_summary.news.clear();
+    vpn_summary.reboot = false; vpn_summary.mirrors.failing = 0;
+    let mut vpn_applet = Applet::demo(vpn_summary, OpStatus::default(), Some(snapshot_vpn()), true);
+    vpn_applet.demo_case("vpn-auto");
+    shot(dir, "popup-vpn-auto-smoke", vpn_applet.demo_popup(), (320.0, 480.0), 1.0, &dark);
     shot(dir, "operation-smoke", Window::demo(summary(), u.clone(), operation("prompt"), Page::Updates).demo_view(true), (640.0, 480.0), 1.0, &dark);
     if requested.is_none() { return; }
     for lang in [Lang::Ru, Lang::En, Lang::Ar] {

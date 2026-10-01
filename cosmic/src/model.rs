@@ -77,11 +77,20 @@ pub fn vpn_current(s: &vpn::Snapshot) -> Option<(String, Option<u64>)> {
     Some((last, delay))
 }
 
+/// Auto is always a separate action, even when it would fall outside the short list.
+pub fn vpn_auto_target(s: &vpn::Snapshot) -> Option<(String, String, bool)> {
+    let group = s.chain().first()?.clone();
+    let g = s.groups.iter().find(|g| g.name == group && g.kind == "Selector")?;
+    let name = g.all.iter().find(|name| matches!(name.as_str(), vpn::AUTO_GROUP | "⚡ Авто"))?.clone();
+    let selected = g.now == name;
+    Some((group, name, selected))
+}
+
 /// Серверы главной группы: сначала отвечающие, по задержке.
 pub fn vpn_servers(s: &vpn::Snapshot, limit: usize) -> Option<(String, Vec<(String, Option<u64>)>)> {
     let group = s.chain().first()?.clone();
     let g = s.groups.iter().find(|g| g.name == group)?;
-    let mut v: Vec<(String, Option<u64>)> = g.all.iter().map(|n| (n.clone(), s.delay.get(n).copied().filter(|d| *d > 0))).collect();
+    let mut v: Vec<(String, Option<u64>)> = g.all.iter().filter(|n| !matches!(n.as_str(), vpn::AUTO_GROUP | "⚡ Авто")).map(|n| (n.clone(), s.delay.get(n).copied().filter(|d| *d > 0))).collect();
     v.sort_by_key(|(_, d)| d.unwrap_or(u64::MAX));
     v.truncate(limit);
     Some((group, v))
@@ -250,6 +259,22 @@ mod launcher_tests {
     use super::*;
     use upd::common::contract_fixtures::{TempDirGuard, with_prepend_path};
     use std::os::unix::fs::PermissionsExt;
+    #[test]
+    fn auto_selection_stays_available_outside_the_short_server_list() {
+        let mut snapshot = vpn::Snapshot { groups: vec![
+            vpn::Group { name: "Proxy".into(), kind: "Selector".into(), now: "server-0".into(),
+                all: (0..8).map(|n| format!("server-{n}")).chain([vpn::AUTO_GROUP.into()]).collect() },
+            vpn::Group { name: vpn::AUTO_GROUP.into(), kind: "URLTest".into(), now: "server-0".into(), ..Default::default() },
+        ], ..Default::default() };
+        assert_eq!(vpn_auto_target(&snapshot), Some(("Proxy".into(), vpn::AUTO_GROUP.into(), false)));
+        let (_, servers) = vpn_servers(&snapshot, 5).unwrap();
+        assert_eq!(servers.len(), 5);
+        assert!(!servers.iter().any(|(name, _)| name == vpn::AUTO_GROUP));
+        snapshot.groups[0].now = vpn::AUTO_GROUP.into();
+        assert!(vpn_auto_target(&snapshot).unwrap().2);
+        snapshot.groups[0].all.retain(|name| name != vpn::AUTO_GROUP);
+        assert!(vpn_auto_target(&snapshot).is_none());
+    }
     #[test]
     fn replaced_applet_launches_the_new_window_binary() {
         let dir = TempDirGuard::new("cosmic-replaced-applet").unwrap();

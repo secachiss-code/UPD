@@ -64,6 +64,9 @@ pub(super) struct ProcessSession {
     wake: std::os::unix::net::UnixStream,
     /// этапы команды: строки вида «[3/6] Загрузка»
     stages: Vec<(u32, u32, String)>,
+    progress: super::progress::Progress,
+    line_sequence: u64,
+    answered_question: Option<(u64, String)>,
 }
 
 /// Время старта процесса (поле 22 /proc/PID/stat, в тиках с загрузки).
@@ -87,11 +90,29 @@ fn parse_stage(line: &str) -> Option<(u32, u32, String)> {
         .then(|| (n, m, title.trim().to_string()))
 }
 
+pub(super) fn is_update_stage(line: &str) -> bool {
+    parse_stage(line).is_some_and(|(_, _, title)| {
+        [
+            t!("Зеркала"),
+            t!("Проверка"),
+            t!("Загрузка"),
+            t!("Снапшот"),
+            t!("Установка"),
+            t!("После обновления"),
+        ]
+        .contains(&title.as_str())
+    })
+}
+
 impl ProcessSession {
     pub fn spawn(args: &[String], rows: u16, cols: u16) -> io::Result<Self> {
         let exe = std::env::current_exe()?;
         let mut s = Self::spawn_program(exe.as_os_str(), args, rows, cols)?;
         s.title = format!("upd {}", args.join(" "));
+        if args.first().is_some_and(|arg| arg == "aur") {
+            s.progress.aur = true;
+            s.progress.phase = "Загрузка исходников";
+        }
         Ok(s)
     }
 
@@ -299,6 +320,9 @@ impl ProcessSession {
             reader_blocked,
             wake,
             stages: Vec::new(),
+            progress: super::progress::Progress::default(),
+            line_sequence: 0,
+            answered_question: None,
         })
     }
 
@@ -367,6 +391,45 @@ impl ProcessSession {
 
     pub fn elapsed_secs(&self) -> u64 {
         self.started.elapsed().as_secs()
+    }
+
+    pub fn animation_tick(&self) -> usize {
+        (self.started.elapsed().as_millis() / 150) as usize
+    }
+    pub fn progress(&self) -> &super::progress::Progress {
+        &self.progress
+    }
+    pub fn current_line(&self) -> &str {
+        if !self.current.is_empty() {
+            &self.current
+        } else {
+            self.lines.back().map_or("", String::as_str)
+        }
+    }
+    pub fn question(&self) -> Option<(u64, String, bool)> {
+        if self.finished().is_some() || self.alternate_screen {
+            return None;
+        }
+        let text = self.current_line();
+        let upd::helper::PromptKind::YesNo { default_yes } = upd::helper::prompt_kind(text)? else {
+            return None;
+        };
+        if self
+            .answered_question
+            .as_ref()
+            .is_some_and(|(id, previous)| *id == self.line_sequence && previous == text)
+        {
+            return None;
+        }
+        Some((self.line_sequence, text.to_string(), default_yes))
+    }
+    pub fn answer_question(&mut self, yes: bool) -> io::Result<()> {
+        let Some((id, text, _)) = self.question() else {
+            return Ok(());
+        };
+        self.write_input(if yes { b"y\r" } else { b"n\r" })?;
+        self.answered_question = Some((id, text));
+        Ok(())
     }
 
     pub fn send_key(&mut self, key: KeyCode, modifiers: KeyModifiers) -> io::Result<()> {
@@ -540,6 +603,7 @@ impl ProcessSession {
                 }
             }
         }
+        self.progress.observe(&self.current);
     }
 
     fn record_text(&mut self, text: &str) {
@@ -654,7 +718,9 @@ impl ProcessSession {
         }
     }
     fn push_line(&mut self) {
-        if let Some(stage) = parse_stage(&self.current) {
+        self.progress.observe(&self.current);
+        if let Some(stage) = parse_stage(&self.current).filter(|_| is_update_stage(&self.current)) {
+            self.progress.update_stage();
             if stage.0 == 1 || self.stages.last().is_some_and(|last| last.1 != stage.1) {
                 self.stages.clear();
             }
@@ -667,6 +733,7 @@ impl ProcessSession {
         }
         self.line_bytes += self.current.len();
         self.lines.push_back(std::mem::take(&mut self.current));
+        self.line_sequence = self.line_sequence.wrapping_add(1);
         while self.lines.len() > MAX_LINES || self.line_bytes > MAX_JOURNAL {
             if let Some(line) = self.lines.pop_front() {
                 self.line_bytes -= line.len();
@@ -723,7 +790,12 @@ impl Drop for ProcessSession {
 }
 
 #[cfg(test)]
-fn spawn_with(program: &str, args: &[String], rows: u16, cols: u16) -> io::Result<ProcessSession> {
+pub(super) fn spawn_with(
+    program: &str,
+    args: &[String],
+    rows: u16,
+    cols: u16,
+) -> io::Result<ProcessSession> {
     ProcessSession::spawn_program(std::ffi::OsStr::new(program), args, rows, cols)
 }
 
@@ -994,12 +1066,15 @@ mod parser_limit_tests {
         assert!(p.lines.back().unwrap().ends_with('…'));
         assert!(p.raw.len() <= MAX_RAW);
         for n in 0..100000 {
-            p.record(format!("[{}/6] stage {n}\n", n % 6 + 1).as_bytes());
+            p.record(format!("[{}/6] {}\n", n % 6 + 1, t!("Загрузка")).as_bytes());
         }
         assert!(p.stages.len() <= 6);
         assert!(p.lines.len() <= MAX_LINES);
         assert!(p.line_bytes <= MAX_JOURNAL);
-        assert_eq!(p.stages.last().unwrap().2, "stage 99999");
+        assert_eq!(p.stages.last().unwrap().2, t!("Загрузка"));
+        p.record(b"[1/5] Building CXX object\n");
+        assert_eq!(p.stages.last().unwrap().2, t!("Загрузка"));
+        assert_eq!(p.progress.ratio, Some(0.2));
     }
     #[test]
     fn alternate_screen_osc_cr_and_unicode_limits_are_preserved() {

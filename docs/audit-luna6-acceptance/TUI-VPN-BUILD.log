@@ -1,0 +1,9 @@
+   Compiling upd v0.2.7 (/home/somovas/Проекты/upd)
+    Finished `release` profile [optimized] target(s) in 1m 56s
+
+   Compiling upd v0.2.7 (/home/somovas/Проекты/upd)
+   Compiling upd-cosmic v0.2.7 (/home/somovas/Проекты/upd/cosmic)
+    Finished `release` profile [optimized] target(s) in 5m 43s
+dist/upd-linux-amd64
+dist/upd-cosmic-linux-amd64
+build manifest: /home/somovas/Проекты/upd/dist/build-manifest.tsv

@@ -1294,6 +1294,12 @@ pub fn build_config(c: &Config) -> Result<String, String> {
     let main = main_group(&groups, &rules_now);
     groups.retain(|g| !matches!(g.get("name").and_then(Value::as_str), Some(AUTO_GROUP | AUTO_GROUP_OLD)));
     if c.vpn_auto_select {
+        // Apply to all nodes, including subscription providers. Country labels
+        // come from server names; this does not alter manual selection.
+        let metadata_filter = "(?i)(трафик|traffic|осталось|remain|истека|expire|срок|сайт|website|官网|剩余|到期|流量)";
+        let exclude_filter = if c.vpn_auto_allow_ru { metadata_filter.to_string() } else {
+            format!("{metadata_filter}|🇷🇺|(?i)(россия|россий|russia|russland|russie|俄罗斯|俄羅斯|روسيا)|(?i)(^|[^a-zа-яё])(ru|rus|рф|москва|moscow|moskva|санкт[ -]?петербург|saint[ -]?petersburg|st[ .-]?petersburg|novosibirsk)([^a-zа-яё]|$)")
+        };
         groups.insert(
             0,
             yaml_map(vec![
@@ -1301,7 +1307,7 @@ pub fn build_config(c: &Config) -> Result<String, String> {
                 ("type", k("url-test")),
                 ("include-all", Value::Bool(true)),
                 // служебные «серверы» с остатком трафика и сроком — не серверы
-                ("exclude-filter", k("(?i)(трафик|traffic|осталось|remain|истека|expire|срок|сайт|website|官网|剩余|到期|流量)")),
+                ("exclude-filter", k(&exclude_filter)),
                 ("url", k(TEST_URL)),
                 ("interval", Value::from(300)),
                 ("tolerance", Value::from(50)),
@@ -2776,6 +2782,32 @@ mod contract_tests {
     }
 
     /// B01: listeners, свой DNS, skip-auth-prefixes и прочие ключи подписки не попадают в конфиг.
+    #[test]
+    fn russian_auto_setting_preserves_manual_nodes_and_provider_filtering() {
+        let _g = EnvGuard::vpn_dirs();
+        let profile = clash_profile("proxy-providers:\n  remote: {type: http, url: 'https://example.com/nodes', path: ./providers/remote.yaml}\n");
+        let mut c = Config::defaults(vec![]);
+        let allowed = build_with(&profile, &c).unwrap();
+        let filter = |m: &Mapping| m["proxy-groups"].as_sequence().unwrap().iter()
+            .find(|g| g["name"].as_str() == Some(AUTO_GROUP)).unwrap()["exclude-filter"].as_str().unwrap().to_string();
+        assert!(!filter(&allowed).contains("🇷🇺"));
+        c.set("vpn_auto_allow_ru", "0").unwrap();
+        assert!(c.set("vpn_auto_allow_ru", "2").is_err());
+        let excluded = build_with(&profile, &c).unwrap();
+        assert!(filter(&excluded).contains("🇷🇺"));
+        assert_eq!(allowed["proxies"], excluded["proxies"]);
+        assert_eq!(allowed["proxy-providers"], excluded["proxy-providers"]);
+        let groups = excluded["proxy-groups"].as_sequence().unwrap();
+        assert_eq!(groups[0]["include-all"], Value::Bool(true));
+        let manual = groups.iter().find(|g| g["name"].as_str() == Some("Proxy")).unwrap();
+        assert!(manual.get("exclude-filter").is_none());
+        c.set("vpn_auto_allow_ru", "1").unwrap();
+        assert_eq!(filter(&build_with(&profile, &c).unwrap()), filter(&allowed));
+        let mut legacy = serde_json::to_value(&c).unwrap();
+        legacy.as_object_mut().unwrap().remove("vpn_auto_allow_ru");
+        assert!(serde_json::from_value::<Config>(legacy).unwrap().vpn_auto_allow_ru);
+    }
+
     #[test]
     fn b01_hostile_profile_keys_are_dropped() {
         let _g = EnvGuard::vpn_dirs();

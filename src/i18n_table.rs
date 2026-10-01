@@ -2,6 +2,20 @@
 //! Пустая строка — перевода нет (берётся английский). Файл собирается скриптом из переводов.
 
 pub static T: &[(&str, [&str; 5])] = &[
+    ("Российские серверы в авто", ["Russian servers in auto mode", "Russische Server im Automodus", "Server russi in modalità automatica", "自动模式中的俄罗斯服务器", "الخوادم الروسية في الوضع التلقائي"]),
+    ("Автовыбор недоступен для текущей группы", ["Auto selection is unavailable for the current group", "Automatische Auswahl für diese Gruppe nicht verfügbar", "Selezione automatica non disponibile per questo gruppo", "当前组不支持自动选择", "الاختيار التلقائي غير متاح للمجموعة الحالية"]),
+    ("VPN: разрешать российские серверы в автовыборе (по названию сервера)", ["VPN: allow Russian servers in auto selection (by server name)", "VPN: russische Server automatisch auswählen (nach Servername)", "VPN: consentire server russi nella selezione automatica (per nome)", "VPN：自动选择时允许俄罗斯服务器（按服务器名称）", "VPN: السماح بالخوادم الروسية في الاختيار التلقائي (حسب اسم الخادم)"]),
+    ("Загрузка исходников", ["Downloading sources", "Quellen herunterladen", "Scaricamento sorgenti", "下载源代码", "تنزيل المصادر"]),
+    ("Проверка исходников", ["Validating sources", "Quellen prüfen", "Verifica sorgenti", "验证源代码", "التحقق من المصادر"]),
+    ("Распаковка исходников", ["Extracting sources", "Quellen entpacken", "Estrazione sorgenti", "解压源代码", "استخراج المصادر"]),
+    ("Сборка", ["Building", "Kompilieren", "Compilazione", "编译", "البناء"]),
+    ("Проверка сборки", ["Testing the build", "Build testen", "Verifica compilazione", "测试编译结果", "اختبار البناء"]),
+    ("Упаковка", ["Packaging", "Paket erstellen", "Creazione pacchetto", "打包", "إنشاء الحزمة"]),
+    ("Ожидание ответа", ["Waiting for an answer", "Warten auf Antwort", "In attesa di risposta", "等待回答", "بانتظار الإجابة"]),
+    ("подтвердить", ["confirm", "bestätigen", "conferma", "确认", "تأكيد"]),
+    ("показать / скрыть вывод", ["show / hide output", "Ausgabe anzeigen / ausblenden", "mostra / nascondi output", "显示／隐藏输出", "إظهار / إخفاء المخرجات"]),
+    ("Открыт интерактивный экран — F4, чтобы ответить", ["Interactive screen open — F4 to respond", "Interaktiver Bildschirm offen — F4 zum Antworten", "Schermata interattiva aperta — F4 per rispondere", "已打开交互界面 — 按 F4 回答", "شاشة تفاعلية مفتوحة — F4 للإجابة"]),
+    ("F2 — показать подробный вывод", ["F2 — show detailed output", "F2 — detaillierte Ausgabe anzeigen", "F2 — mostra output dettagliato", "F2 — 显示详细输出", "F2 — عرض المخرجات التفصيلية"]),
     ("Помощник выполняет операцию; после завершения перезапустите его: sudo systemctl restart upd-helper.service", ["The helper is running an operation; restart it afterwards: sudo systemctl restart upd-helper.service", "Der Helfer führt eine Operation aus; starte ihn danach neu: sudo systemctl restart upd-helper.service", "L’assistente sta eseguendo un’operazione; riavvialo al termine: sudo systemctl restart upd-helper.service", "助手正在执行操作；完成后请重启：sudo systemctl restart upd-helper.service", "المساعد ينفذ عملية؛ أعد تشغيله بعد انتهائها: sudo systemctl restart upd-helper.service"]),
     ("{}: пакетный менеджер не поддерживается (есть: pacman, apt, dnf, zypper)", ["{}: package manager not supported (available: pacman, apt, dnf, zypper)", "{}: Paketmanager wird nicht unterstützt (verfügbar: pacman, apt, dnf, zypper)", "{}: gestore pacchetti non supportato (disponibili: pacman, apt, dnf, zypper)", "{}：不支持的包管理器（支持：pacman、apt、dnf、zypper）", "{}: مدير الحزم غير مدعوم (المدعوم: pacman، apt، dnf، zypper)"]),
     ("не удалось подобрать имя временного каталога", ["could not pick a name for the temporary directory", "Kein Name für das temporäre Verzeichnis gefunden", "impossibile scegliere un nome per la directory temporanea", "无法确定临时目录名称", "تعذّر اختيار اسم للمجلد المؤقت"]),

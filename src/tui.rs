@@ -1,6 +1,7 @@
 //! Интерфейс в терминале (ratatui).
 
 mod process;
+mod progress;
 
 use upd::backend::{self, Backend};
 use upd::common::*;
@@ -11,7 +12,7 @@ use ratatui::crossterm::terminal::{disable_raw_mode, enable_raw_mode};
 use ratatui::layout::{Constraint, Layout};
 use ratatui::style::{Color, Modifier, Style, Stylize};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, BorderType, Cell, Paragraph, Row, Table, TableState, Wrap};
+use ratatui::widgets::{Block, BorderType, Cell, Gauge, Paragraph, Row, Table, TableState, Wrap};
 use ratatui::{DefaultTerminal, Frame};
 use process::ProcessSession;
 use std::io::Write;
@@ -212,6 +213,7 @@ fn vpn_opts(c: &Config, st: &vpn::VpnState, unit: &str) -> Result<Vec<Opt>, Stri
         o("mode", t!("Маршрутизация"), [t!("по правилам"), t!("всё через VPN"), t!("всё напрямую")][c.vpn_mode.min(2) as usize].into()),
         o("autostart", t!("Запуск при загрузке"), on_off(c.vpn_autostart)),
         o("auto", t!("Автовыбор сервера (⚡ Авто)"), on_off(c.vpn_auto_select)),
+        o("auto_ru", t!("Российские серверы в авто"), on_off(c.vpn_auto_allow_ru)),
         o("ru", t!("Россия напрямую (геофайлы)"), on_off(c.vpn_direct_ru)),
         o("lan", t!("Локальная сеть напрямую"), on_off(c.vpn_direct_lan)),
         o("dns", t!("Свой DNS (fake-ip)"), on_off(c.vpn_dns)),
@@ -339,6 +341,8 @@ struct App<'a> {
     process: Option<ProcessSession>,
     process_return: Screen,
     process_reported: bool,
+    process_output: bool,
+    process_question: Option<(u64, String, bool)>,
     quit: bool,
 }
 
@@ -431,6 +435,8 @@ impl<'a> App<'a> {
             process: None,
             process_return: Screen::Menu,
             process_reported: false,
+            process_output: false,
+            process_question: None,
             quit: false,
         }
     }
@@ -502,15 +508,13 @@ impl<'a> App<'a> {
             self.aur_poll();
             self.poll_aur_updates();
             if self.scr == Screen::Process {
-                let auto_attach = if let Some(p) = &mut self.process {
+                if let Some(p) = &mut self.process {
                     let _ = p.poll()?;
-                    p.take_attach_request() && p.alternate_screen_active()
-                } else {
-                    false
-                };
-                if auto_attach {
-                    self.attach_process(term, true)?;
+                    // Package helpers can briefly enter an alternate screen. Keep
+                    // the progress view visible; fullscreen is an explicit F4 action.
+                    p.take_attach_request();
                 }
+                self.sync_process_question();
                 self.report_process_completion();
             }
             term.draw(|f| self.draw(f))?;
@@ -527,7 +531,8 @@ impl<'a> App<'a> {
                         }
                         if self.scr == Screen::Process {
                             if k.code == KeyCode::F(4) && self.process.as_ref().and_then(ProcessSession::finished).is_none() {
-                                self.attach_process(term, false)?;
+                                let fullscreen = self.process.as_ref().is_some_and(ProcessSession::alternate_screen_active);
+                                self.attach_process(term, fullscreen)?;
                             } else {
                                 self.key_process(k.code, k.modifiers, term)?;
                             }
@@ -570,6 +575,8 @@ impl<'a> App<'a> {
                 self.process_return = self.scr;
                 self.process = Some(process);
                 self.process_reported = false;
+                self.process_output = false;
+                self.process_question = None;
                 self.scr = Screen::Process;
                 self.msg.clear();
             }
@@ -615,11 +622,13 @@ impl<'a> App<'a> {
         }
         let Some(code) = self.process.as_ref().and_then(ProcessSession::finished) else { return };
         self.process_reported = true;
+        if code != 0 { self.process_output = true; }
         self.msg = if code == 0 { t!("готово").into() } else { format!("{} ({code})", t!("завершилось с ошибкой")) };
         self.after_command();
     }
 
     fn key_process(&mut self, key: KeyCode, modifiers: KeyModifiers, term: &mut DefaultTerminal) -> std::io::Result<()> {
+        if self.process_ui_key(key, modifiers) { return Ok(()); }
         let Some(p) = &mut self.process else { return Ok(()) };
         if p.finished().is_some() {
             match key {
@@ -642,7 +651,46 @@ impl<'a> App<'a> {
         Ok(())
     }
 
-    /// Полный терминал включается вручную по F4 или автоматически для полноэкранного редактора.
+    fn process_ui_key(&mut self, key: KeyCode, modifiers: KeyModifiers) -> bool {
+        if key == KeyCode::F(2) {
+            self.process_output = !self.process_output;
+            return true;
+        }
+        if !modifiers.intersects(KeyModifiers::CONTROL | KeyModifiers::ALT) {
+            if let Some((_, _, yes)) = &mut self.process_question {
+                let submit = match key {
+                    KeyCode::Left => { *yes = true; false }
+                    KeyCode::Right => { *yes = false; false }
+                    KeyCode::Tab | KeyCode::BackTab | KeyCode::Up | KeyCode::Down => { *yes = !*yes; false }
+                    KeyCode::Enter => true,
+                    KeyCode::Char('y' | 'Y' | 'д' | 'Д') => { *yes = true; true }
+                    KeyCode::Char('n' | 'N' | 'т' | 'Т') => { *yes = false; true }
+                    _ => false,
+                };
+                if submit {
+                    if let Some(p) = &mut self.process {
+                        match p.answer_question(*yes) {
+                            Ok(()) => self.process_question = None,
+                            Err(error) => self.msg = t!("ошибка: {0}", error),
+                        }
+                    }
+                }
+                return true;
+            }
+        }
+        false
+    }
+
+    fn sync_process_question(&mut self) {
+        let next = self.process.as_ref().and_then(ProcessSession::question);
+        match (next, &self.process_question) {
+            (Some((id, text, _)), Some((old_id, old_text, _))) if id == *old_id && text == *old_text => {}
+            (Some((id, text, default_yes)), _) => self.process_question = Some((id, text, default_yes)),
+            (None, _) => self.process_question = None,
+        }
+    }
+
+    /// Полный терминал включается только вручную по F4.
     fn attach_process(&mut self, term: &mut DefaultTerminal, auto: bool) -> std::io::Result<()> {
         let size = term.size()?;
         if let Some(p) = &self.process {
@@ -664,7 +712,8 @@ impl<'a> App<'a> {
                     stdout.write_all(&raw[start..])?;
                 } else {
                     for line in p.lines_for(40) {
-                        writeln!(stdout, "{line}")?;
+                        stdout.write_all(line.as_bytes())?;
+                        stdout.write_all(b"\r\n")?;
                     }
                 }
             }
@@ -680,7 +729,7 @@ impl<'a> App<'a> {
                 }
                 if event::poll(Duration::from_millis(100))? {
                     match event::read()? {
-                        Event::Key(k) if k.kind == KeyEventKind::Press && k.code == KeyCode::F(4) && !p.alternate_screen_active() => break,
+                        Event::Key(k) if k.kind == KeyEventKind::Press && k.code == KeyCode::F(4) => break,
                         Event::Key(k) if k.kind == KeyEventKind::Press => { let _ = p.send_key(process_key_code(k.code, k.modifiers), k.modifiers); }
                         Event::Resize(w, h) => { let _ = p.resize(h, w); }
                         _ => {}
@@ -689,10 +738,14 @@ impl<'a> App<'a> {
             }
             Ok(())
         })();
+        // A manually detached editor may still own its alternate screen.
+        // Always leave it before rebuilding ratatui's screen/buffer.
+        let _ = std::io::stdout().write_all(b"\x1b[?1049l\x1b[?1047l\x1b[?47l\x1b[0m");
         let _ = disable_raw_mode();
         *term = ratatui::init();
         term.clear()?;
         if let Some(p) = &self.process {
+            let size = term.size()?;
             let _ = p.resize(size.height.saturating_sub(7), size.width);
         }
         result
@@ -1358,8 +1411,9 @@ impl App<'_> {
                 k
             }
             (Screen::Menu, _) => vec![("↑↓", t!("выбор")), ("enter", t!("выполнить")), ("1-9", t!("пункт")), ("0", t!("выход")), ("i", t!(" Состояние ").trim()), ("r", t!("обновить"))],
-            (Screen::Process, _) if self.process.as_ref().and_then(ProcessSession::finished).is_some() => vec![("enter/q", t!("назад")), ("PgUp/PgDn", t!("листать"))],
-            (Screen::Process, _) => vec![("F4", t!("полный терминал")), ("Alt+PgUp/PgDn", t!("листать")), ("Ctrl+C", t!("отмена"))],
+            (Screen::Process, _) if self.process_question.is_some() => vec![("←→ Tab", t!("выбор")), ("Enter", t!("подтвердить")), ("F2", t!("показать / скрыть вывод")), ("Ctrl+C", t!("отмена"))],
+            (Screen::Process, _) if self.process.as_ref().and_then(ProcessSession::finished).is_some() => vec![("enter/q", t!("назад")), ("F2", t!("показать / скрыть вывод")), ("PgUp/PgDn", t!("листать"))],
+            (Screen::Process, _) => vec![("F2", t!("показать / скрыть вывод")), ("F4", t!("полный терминал")), ("Alt+PgUp/PgDn", t!("листать")), ("Ctrl+C", t!("отмена"))],
             (Screen::Status, _) => vec![("↑↓ PgUp PgDn", t!("листать")), ("r", t!("обновить")), ("q", t!("назад"))],
             (Screen::Pager, _) => {
                 let mut k = vec![("↑↓ PgUp PgDn", t!("листать"))];
@@ -1443,18 +1497,56 @@ impl App<'_> {
 
     fn draw_process(&self, f: &mut Frame, body: ratatui::layout::Rect) {
         let Some(p) = &self.process else { return };
-        let [info, log] = Layout::vertical([Constraint::Length(2), Constraint::Min(3)]).areas(body);
+        let question_height = if self.process_question.is_some() { 6 } else { 0 };
+        let [info, bar, question, log] = Layout::vertical([
+            Constraint::Length(2), Constraint::Length(3), Constraint::Length(question_height), Constraint::Min(0),
+        ]).areas(body);
         let code = p.finished();
         let state = match code {
             Some(0) => Span::styled(t!("готово"), Style::new().fg(Color::Green)),
             Some(130) => Span::styled(t!("отменено"), Style::new().fg(Color::Yellow)),
             Some(_) => Span::styled(t!("завершилось с ошибкой"), Style::new().fg(Color::Red)),
+            None if self.process_question.is_some() => Span::styled(t!("Ожидание ответа"), Style::new().fg(Color::Yellow)),
             None => Span::styled(t!("выполняется..."), Style::new().fg(Color::Yellow)),
         };
         let lines = vec![Line::from(vec![state, Span::styled(format!(" · {}", t!("{} с", p.elapsed_secs())), dim())]), Line::styled(stage_summary(p.stages(), code), dim())];
         f.render_widget(Paragraph::new(lines), info);
-        let lines: Vec<Line> = p.lines_for(log.height.saturating_sub(2) as usize).into_iter().map(|line| Line::raw(tui_vpn_label(&line))).collect();
-        f.render_widget(Paragraph::new(lines).block(Block::bordered().border_type(BorderType::Rounded).border_style(dim()).title(format!(" {} ", p.title))), log);
+        let progress = p.progress();
+        let phase = if progress.aur && !progress.phase.is_empty() { format!("AUR · {}", t!(progress.phase)) }
+            else { p.stages().last().map_or_else(|| p.title.clone(), |stage| stage.2.clone()) };
+        let color = match code { Some(0) => Color::Green, Some(130) => Color::Yellow, Some(_) => Color::Red, None => Color::Cyan };
+        let block = Block::bordered().border_type(BorderType::Rounded).border_style(dim()).title(format!(" {phase} "));
+        if let Some(ratio) = code.filter(|code| *code == 0).map(|_| 1.0).or(progress.ratio) {
+            f.render_widget(Gauge::default().block(block).gauge_style(Style::new().fg(color)).ratio(ratio).label(format!("{:.0}%", ratio * 100.0)), bar);
+        } else {
+            let inside = block.inner(bar);
+            f.render_widget(block, bar);
+            let width = inside.width as usize;
+            let segment = 4.min(width);
+            let start = if code.is_some() || self.process_question.is_some() { 0 } else { p.animation_tick() % (width.saturating_sub(segment) + 1) };
+            let spans: Vec<_> = (0..width).map(|n| Span::styled(if n >= start && n < start + segment { "━" } else { "─" }, Style::new().fg(color))).collect();
+            f.render_widget(Paragraph::new(Line::from(spans)), inside);
+        }
+        if let Some((_, text, yes)) = &self.process_question {
+            let block = Block::bordered().border_type(BorderType::Rounded).border_style(Style::new().fg(Color::Yellow)).title(format!(" {} ", t!("Ожидание ответа")));
+            let inner = block.inner(question);
+            f.render_widget(block, question);
+            let [prompt, buttons] = Layout::vertical([Constraint::Min(1), Constraint::Length(1)]).areas(inner);
+            let text = text.trim().trim_end_matches(':').trim_end().trim_end_matches("[Y/n]").trim_end_matches("[y/N]").trim_end();
+            f.render_widget(Paragraph::new(text).wrap(Wrap { trim: false }), prompt);
+            let choice = |selected, color| if selected { Style::new().fg(Color::Black).bg(color).add_modifier(Modifier::BOLD) } else { Style::new().fg(color) };
+            f.render_widget(Paragraph::new(Line::from(vec![
+                Span::styled(format!("  ✓ {}  ", t!("Да")), choice(*yes, Color::Green)),
+                Span::raw("   "), Span::styled(format!("  ✕ {}  ", t!("Нет")), choice(!*yes, Color::Red)),
+            ])), buttons);
+        }
+        if self.process_output {
+            let lines: Vec<Line> = p.lines_for(log.height.saturating_sub(2) as usize).into_iter().map(|line| Line::raw(tui_vpn_label(&line))).collect();
+            f.render_widget(Paragraph::new(lines).block(Block::bordered().border_type(BorderType::Rounded).border_style(dim()).title(format!(" {} · F2 ", t!("Журнал")))), log);
+        } else {
+            let status = if p.alternate_screen_active() { t!("Открыт интерактивный экран — F4, чтобы ответить").to_string() } else { tui_vpn_label(p.current_line()) };
+            f.render_widget(Paragraph::new(vec![Line::raw(status), Line::styled(t!("F2 — показать подробный вывод"), dim())]).wrap(Wrap { trim: false }), log);
+        }
     }
 
     fn draw_menu(&self, f: &mut Frame, area: ratatui::layout::Rect) {
@@ -1914,6 +2006,7 @@ impl App<'_> {
                         self.vpn_change(label, move |c| {
                             let f = match key {
                                 "auto" => &mut c.vpn_auto_select,
+                                "auto_ru" => &mut c.vpn_auto_allow_ru,
                                 "ru" => &mut c.vpn_direct_ru,
                                 "lan" => &mut c.vpn_direct_lan,
                                 "dns" => &mut c.vpn_dns,
@@ -2292,6 +2385,107 @@ mod tests {
             .map(|y| (0..b.area.width).map(|x| b[(x, y)].symbol().to_string()).collect::<String>().trim_end().to_string())
             .collect::<Vec<_>>()
             .join("\n")
+    }
+
+    #[test]
+    fn failed_process_opens_log_and_f2_can_hide_it() {
+        let _isolation = upd::common::contract_fixtures::isolation_lock();
+        let b = FixtureBackend;
+        let ui = FixtureUiData;
+        let mut app = App::new(&b, &ui, Some(Status::default()), Some(VpnPage::default()));
+        app.scr = Screen::Process;
+        app.process = Some(process::spawn_with("/bin/sh", &["-c".into(), "printf 'build error\\n'; exit 2".into()], 24, 80).unwrap());
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while app.process.as_ref().unwrap().finished().is_none() {
+            app.process.as_mut().unwrap().poll().unwrap();
+            assert!(Instant::now() < deadline);
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        app.report_process_completion();
+        let mut terminal = Terminal::new(TestBackend::new(80, 24)).unwrap();
+        terminal.draw(|f| app.draw(f)).unwrap();
+        assert!(dump(&terminal).contains("Журнал · F2"));
+        assert!(dump(&terminal).contains("build error"));
+        assert!(!dump(&terminal).contains("100%"));
+        app.process_ui_key(KeyCode::F(2), KeyModifiers::NONE);
+        terminal.draw(|f| app.draw(f)).unwrap();
+        assert!(!dump(&terminal).contains("Журнал · F2"));
+    }
+
+    #[test]
+    fn process_progress_log_and_repeated_choices_work_in_small_terminal() {
+        let _isolation = upd::common::contract_fixtures::isolation_lock();
+        crate::i18n::set_thread(crate::i18n::Lang::Ru);
+        let b = FixtureBackend;
+        let ui = FixtureUiData;
+        let mut app = App::new(&b, &ui, Some(Status::default()), Some(VpnPage::default()));
+        app.scr = Screen::Process;
+        app.process = Some(process::spawn_with("/bin/sh", &[
+            "-c".into(),
+            "printf 'hidden history\\n==> Making package: fixture 1\\n==> Starting build()...\\n[3/10] Building CXX object\\nContinue? [Y/n] '; read first; printf '\\nfirst=%s\\nContinue? [Y/n] ' \"$first\"; read second; printf '\\nsecond=%s\\n' \"$second\"".into(),
+        ], 18, 60).unwrap());
+        let mut terminal = Terminal::new(TestBackend::new(60, 18)).unwrap();
+        let poll_until = |app: &mut App<'_>, predicate: fn(&App<'_>) -> bool| {
+            let deadline = Instant::now() + Duration::from_secs(5);
+            loop {
+                app.process.as_mut().unwrap().poll().unwrap();
+                app.sync_process_question();
+                if predicate(app) { break; }
+                assert!(Instant::now() < deadline, "child did not reach expected state");
+                std::thread::sleep(Duration::from_millis(10));
+            }
+        };
+        poll_until(&mut app, |app| app.process_question.is_some());
+        let first_id = app.process_question.as_ref().unwrap().0;
+        terminal.draw(|f| app.draw(f)).unwrap();
+        let compact = dump(&terminal);
+        assert!(compact.contains("AUR · Сборка"), "{compact}");
+        assert!(compact.contains("30%"));
+        assert!(compact.contains("✓ Да") && compact.contains("✕ Нет"));
+        assert!(!compact.contains("hidden history"));
+        for lang in crate::i18n::ALL {
+            crate::i18n::set_thread(lang);
+            for (width, height) in [(60, 18), (80, 24)] {
+                let mut view = Terminal::new(TestBackend::new(width, height)).unwrap();
+                view.draw(|f| app.draw(f)).unwrap();
+                let screen = dump(&view);
+                assert!(screen.contains("AUR") && screen.contains("30%"), "{screen}");
+                assert!(screen.contains(&format!("✓ {}", t!("Да"))) && screen.contains(&format!("✕ {}", t!("Нет"))), "{screen}");
+                assert!(screen.contains("Continue?") && screen.contains("Ctrl+C"), "{screen}");
+                if let Some(dir) = std::env::var_os("UPD_TUI_SNAPSHOTS") {
+                    let dir = std::path::PathBuf::from(dir); std::fs::create_dir_all(&dir).unwrap();
+                    std::fs::write(dir.join(format!("aur-progress-{}-{width}x{height}.txt", lang.code())), screen).unwrap();
+                }
+            }
+        }
+        crate::i18n::set_thread(crate::i18n::Lang::Ru);
+        assert!(app.process_ui_key(KeyCode::F(2), KeyModifiers::NONE));
+        terminal.draw(|f| app.draw(f)).unwrap();
+        let expanded = dump(&terminal);
+        assert!(expanded.contains("Журнал · F2"));
+        assert!(expanded.contains("✓ Да"));
+        assert!(app.process_ui_key(KeyCode::Right, KeyModifiers::NONE));
+        assert!(!app.process_question.as_ref().unwrap().2);
+        assert!(app.process_ui_key(KeyCode::Left, KeyModifiers::NONE));
+        assert!(app.process_question.as_ref().unwrap().2);
+        assert!(app.process_ui_key(KeyCode::Enter, KeyModifiers::NONE));
+        assert!(app.process_question.is_none());
+        app.sync_process_question();
+        assert!(app.process_question.is_none(), "answered prompt must stay dismissed");
+        poll_until(&mut app, |app| app.process_question.is_some());
+        assert_ne!(app.process_question.as_ref().unwrap().0, first_id);
+        assert!(app.process_ui_key(KeyCode::Tab, KeyModifiers::NONE));
+        assert!(!app.process_question.as_ref().unwrap().2);
+        assert!(app.process_ui_key(KeyCode::Enter, KeyModifiers::NONE));
+        poll_until(&mut app, |app| app.process.as_ref().unwrap().finished().is_some());
+        let p = app.process.as_ref().unwrap();
+        assert_eq!(p.finished(), Some(0));
+        let output = p.lines_for(100).join("\n");
+        assert!(output.contains("first=y"), "{output}");
+        assert!(output.contains("second=n"), "{output}");
+        terminal.draw(|f| app.draw(f)).unwrap();
+        assert!(!dump(&terminal).contains("✓ Да"));
+        assert!(dump(&terminal).contains("100%"));
     }
 
     #[test]

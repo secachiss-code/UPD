@@ -1839,6 +1839,7 @@ mod startup_tests {
         let _isolation = isolation_lock();
         let dir = TempDirGuard::new("cosmic-idle-helper-retry").unwrap();
         let mut env = EnvGuard::new(); env.set("UPD_HELPER_SOCK", dir.path().join("absent.sock"));
+        env.set("UPD_STATE_DIR", dir.path());
         let mut w = Window::demo(Summary::default(), UpdState::default(), OpView::default(), Page::Updates);
         w.jobs.demo_phase(Kind::Operation, Phase::Error("old helper protocol".into()));
         let stamp = w.stamp;

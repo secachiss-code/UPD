@@ -24,6 +24,7 @@ pub struct Applet {
     loaded: bool,
     vpn: Option<vpn::Snapshot>,
     servers_open: bool,
+    vpn_auto_allow_ru: bool,
     confirm_reboot: bool,
     /// идёт обращение к помощнику (в том числе ожидание пароля)
     pending: bool,
@@ -48,7 +49,9 @@ pub enum Message {
     Tick,
     Summary(Box<Summary>),
     Op(OpStatus),
-    Vpn(Option<vpn::Snapshot>),
+    Vpn(Option<vpn::Snapshot>, bool),
+    VpnAuto,
+    VpnAutoAllowRu(bool),
     Check,
     Install,
     Open(Option<&'static str>),
@@ -58,6 +61,11 @@ pub enum Message {
     Reboot,
     MirrorCheck,
     Done(Result<(), String>),
+}
+
+fn load_vpn() -> Result<Message, String> {
+    let config = upd::common::Config::load(vec![])?;
+    model::vpn_snapshot().map(|snapshot| Message::Vpn(Some(snapshot), config.vpn_auto_allow_ru))
 }
 
 fn blocking<T: Send + 'static>(f: impl FnOnce() -> Result<T, String> + Send + 'static, m: impl FnOnce(Result<T, String>) -> Message + Send + 'static) -> Task<Message> {
@@ -96,6 +104,7 @@ impl cosmic::Application for Applet {
             loaded: false,
             vpn: None,
             servers_open: false,
+            vpn_auto_allow_ru: true,
             confirm_reboot: false,
             pending: false,
             error: String::new(),
@@ -148,8 +157,8 @@ impl cosmic::Application for Applet {
                     cosmic::task::message(cosmic::Action::Cosmic(cosmic::app::Action::Surface(open))),
                     self.probe(Kind::Summary, "", || model::load_summary().map(|s| Message::Summary(Box::new(s)))),
                 ];
-                if self.summary.vpn.active {
-                    tasks.push(self.probe(Kind::Vpn, "popup", || model::vpn_snapshot().map(|s| Message::Vpn(Some(s)))));
+                if self.summary.vpn.installed && self.summary.vpn.has_subs {
+                    tasks.push(self.probe(Kind::Vpn, "popup", load_vpn));
                 }
                 return Task::batch(tasks);
             }
@@ -214,7 +223,33 @@ impl cosmic::Application for Applet {
                     return self.probe(Kind::Summary, "", || model::load_summary().map(|s| Message::Summary(Box::new(s))));
                 }
             }
-            Message::Vpn(v) => self.vpn = v,
+            Message::Vpn(v, allow_ru) => { self.vpn = v; self.vpn_auto_allow_ru = allow_ru; }
+            Message::VpnAutoAllowRu(on) => {
+                if !self.can_act() { return Task::none(); }
+                self.pending = true;
+                return blocking(move || {
+                    let reply = helper::call_as::<helper::SettingsReply>(&helper::Request::ConfigSet {
+                        key: "vpn_auto_allow_ru".into(), value: if on { "1" } else { "0" }.into(),
+                    })?;
+                    match reply.runtime_error() { Some(error) => Err(error), None => Ok(()) }
+                }, Message::Done);
+            }
+            Message::VpnAuto => {
+                if !self.can_act() { return Task::none(); }
+                if let Some((group, name, _)) = self.vpn.as_ref().and_then(model::vpn_auto_target) {
+                    return self.update(Message::Select(group, name));
+                }
+                self.pending = true;
+                return blocking(|| {
+                    let reply = helper::call_as::<helper::SettingsReply>(&helper::Request::ConfigSet {
+                        key: "vpn_auto_select".into(), value: "1".into(),
+                    })?;
+                    if let Some(error) = reply.runtime_error() { return Err(error); }
+                    let snapshot = model::vpn_snapshot()?;
+                    let (group, name, _) = model::vpn_auto_target(&snapshot).ok_or_else(|| t!("Автовыбор недоступен для текущей группы").to_string())?;
+                    helper::call(&helper::Request::VpnSelect { group, name }).map(|_| ())
+                }, Message::Done);
+            }
             Message::Check => return self.run(&["check"]),
             Message::Install => {
                 if let Err(error) = model::open_window(Some("updates"), Some("update")) { self.error = error; return Task::none(); }
@@ -228,10 +263,11 @@ impl cosmic::Application for Applet {
             Message::ToggleServers => {
                 self.servers_open = !self.servers_open;
                 if self.servers_open {
-                    return self.probe(Kind::Vpn, "popup", || model::vpn_snapshot().map(|s| Message::Vpn(Some(s))));
+                    return self.probe(Kind::Vpn, "popup", load_vpn);
                 }
             }
             Message::Select(group, name) => {
+                if !self.can_act() { return Task::none(); }
                 self.pending = true;
                 return blocking(
                     move || helper::call(&helper::Request::VpnSelect { group, name }).map(|_| ()),
@@ -252,12 +288,15 @@ impl cosmic::Application for Applet {
                     Ok(()) => {
                         self.error.clear();
                         let mut tasks = vec![self.probe(Kind::Operation, "", || model::load_op(true).map(Message::Op))];
-                        if self.summary.vpn.active || self.servers_open {
-                            tasks.push(self.probe(Kind::Vpn, "popup", || model::vpn_snapshot().map(|s| Message::Vpn(Some(s)))));
+                        if self.summary.vpn.installed && self.summary.vpn.has_subs {
+                            tasks.push(self.probe(Kind::Vpn, "popup", load_vpn));
                         }
                         return Task::batch(tasks);
                     }
-                    Err(e) => self.error = e,
+                    Err(e) => {
+                        self.error = e;
+                        return self.probe(Kind::Vpn, "popup", load_vpn);
+                    }
                 }
             }
         }
@@ -329,6 +368,7 @@ impl Applet {
             loaded: true,
             vpn,
             servers_open,
+            vpn_auto_allow_ru: true,
             confirm_reboot: false,
             pending: false,
             error: String::new(),
@@ -347,6 +387,17 @@ impl Applet {
             "denied" => self.error = "polkit: authorization denied".into(),
             "long-error" => self.error = "Сеть недоступна / connection refused: https://example.invalid/long/".repeat(20),
             "stale" => self.summary.checked = upd::common::now().saturating_sub(90000),
+            "vpn-auto" => {
+                self.vpn_auto_allow_ru = false;
+                if let Some(snapshot) = &mut self.vpn {
+                    if let Some(group) = snapshot.groups.first_mut() {
+                        let previous = group.now.clone();
+                        group.all.push(vpn::AUTO_GROUP.into());
+                        group.now = vpn::AUTO_GROUP.into();
+                        snapshot.groups.push(vpn::Group { name: vpn::AUTO_GROUP.into(), kind: "URLTest".into(), now: previous, ..Default::default() });
+                    }
+                }
+            }
             _ => {}
         }
     }
@@ -475,7 +526,16 @@ impl Applet {
                     .spacing(sp.space_xs)
                     .align_y(Alignment::Center),
             ));
+            let allow_ru = widget::toggler(self.vpn_auto_allow_ru)
+                .on_toggle_maybe((self.can_act() && self.vpn.is_some()).then_some(Message::VpnAutoAllowRu));
+            col = col.push(applet::padded_control(hrow(vec![
+                ui::txt(text::body(t!("Российские серверы в авто"))).width(Length::Fill).into(), allow_ru.into(),
+            ])));
             if s.vpn.active {
+                let selected_auto = self.vpn.as_ref().and_then(model::vpn_auto_target).is_some_and(|(_, _, selected)| selected);
+                let mark = if selected_auto { "✓ " } else { "" };
+                col = col.push(applet::menu_button(ui::txt(text::body(format!("{mark}{}", vpn::label(vpn::AUTO_GROUP)))))
+                    .on_press_maybe((self.can_act() && self.vpn.is_some()).then_some(Message::VpnAuto)));
                 let arrow = if self.servers_open { "pan-down-symbolic" } else { "pan-end-symbolic" };
                 col = col.push(
                     applet::menu_button(hrow(vec![ui::txt(text::body(t!("Сервер"))).width(Length::Fill).into(), widget::icon::from_name(arrow).size(16).into()]))
@@ -602,6 +662,7 @@ mod recovery_tests {
         let _isolation = isolation_lock();
         let dir = TempDirGuard::new("cosmic-idle-applet-retry").unwrap();
         let mut env = EnvGuard::new(); env.set("UPD_HELPER_SOCK", dir.path().join("absent.sock"));
+        env.set("UPD_STATE_DIR", dir.path());
         let mut app = Applet::demo(Summary::default(), OpStatus::default(), None, false);
         app.summary_at = Some(Instant::now());
         app.jobs.demo_phase(Kind::Operation, Phase::Error("old helper protocol".into()));
