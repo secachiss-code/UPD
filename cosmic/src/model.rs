@@ -11,8 +11,6 @@ use upd::{backend, i18n, vpn};
 
 pub const APP_ID: &str = "io.github.upd";
 pub const APPLET_ID: &str = "io.github.upd.Applet";
-/// Своя символическая иконка приложения (ставится в hicolor вместе с апплетом).
-pub const ICON: &str = "io.github.upd-symbolic";
 
 /// Язык интерфейса — как у upd (`lang` в /etc/upd.conf или локаль).
 pub fn init_lang() -> i18n::Lang {

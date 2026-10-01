@@ -1,6 +1,7 @@
 //! upd для COSMIC: апплет на панели (`upd-cosmic applet`) и окно (`upd-cosmic [--page РАЗДЕЛ] [--run КОМАНДА]`).
 
 mod applet;
+mod panel;
 mod model;
 mod jobs;
 mod launch;

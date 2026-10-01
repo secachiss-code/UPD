@@ -71,7 +71,7 @@ fn shot(dir: &std::path::Path, name: &str, el: cosmic::Element<'_, impl Clone>, 
     let _ = ui.update(&[cosmic::iced::Event::Window(window::Event::RedrawRequested(std::time::Instant::now()))], mouse::Cursor::Unavailable, &mut renderer, &mut clipboard::Null, &mut messages);
     // Traverse the same focus operation used by Tab and activate every operation
     // button with Enter. Bounds checks catch invisible confirmations/footers.
-    if name.contains("operation") && !name.contains("starting") && !name.contains("disconnected") {
+    if (name.contains("operation") && !name.contains("starting") && !name.contains("disconnected")) || name.starts_with("panel-") {
         use cosmic::iced::advanced::widget::{Operation, operation::{Focusable, Outcome}};
         use cosmic::iced::{Rectangle, keyboard};
         #[derive(Default)]
@@ -120,6 +120,34 @@ fn shot(dir: &std::path::Path, name: &str, el: cosmic::Element<'_, impl Clone>, 
     let decoder = png::Decoder::new(std::fs::File::open(&png_path).unwrap());
     let mut reader = decoder.read_info().unwrap(); let mut decoded = vec![0; reader.output_buffer_size()];
     let info = reader.next_frame(&mut decoded).unwrap(); assert_eq!((info.width, info.height), (w, h));
+}
+
+#[test]
+fn panel_snapshots() {
+    use upd::common::contract_fixtures::{TempDirGuard, isolation_lock};
+    use upd::summary::Badge;
+    use cosmic::iced::{Alignment, Length};
+    use cosmic::widget;
+    let _isolation = isolation_lock();
+    let temporary = TempDirGuard::new("upd-panel-symbols").unwrap();
+    let requested = std::env::var_os("UPD_PANEL_SNAPSHOTS").map(std::path::PathBuf::from);
+    let dir = requested.as_deref().unwrap_or(temporary.path());
+    std::fs::create_dir_all(dir).unwrap();
+    for (theme, theme_name) in [(cosmic::Theme::dark(), "dark"), (cosmic::Theme::light(), "light")] {
+        for scale in [1.0, 1.25, 1.5, 2.0] {
+            let mut rows = widget::column::with_capacity(3).spacing(8);
+            for size in [16, 20, 24] {
+                let mut row = widget::row::with_capacity(11).spacing(4).align_y(Alignment::Center)
+                    .push(widget::text(format!("{size}px")).width(Length::Fixed(38.0)));
+                for badge in [Badge::Idle, Badge::Updates(7), Badge::Updates(12), Badge::Updates(1500),
+                    Badge::Busy(Some((3, 6))), Badge::Waiting, Badge::Error, Badge::Reboot, Badge::Stale(12), Badge::Unverified] {
+                    row = row.push(crate::panel::button(&badge, size, (4, 4), true).on_press(()));
+                }
+                rows = rows.push(row);
+            }
+            shot(dir, &format!("panel-{theme_name}-dpi{scale}"), widget::container(rows).padding(12).into(), (680.0, 152.0), scale, &theme);
+        }
+    }
 }
 fn operation(case: &str) -> OpView {
     let mut op = OpView::default(); op.apply(Event::Reset { command: "update".into(), started: now() - 95 });

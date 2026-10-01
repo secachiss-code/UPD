@@ -306,39 +306,13 @@ impl cosmic::Application for Applet {
     fn view(&self) -> Element<'_, Message> {
         let badge = summary::badge(&self.summary, &self.op);
         let horizontal = self.core.applet.is_horizontal();
-        let (icon, label) = match &badge {
-            Badge::Busy(Some((n, m))) => ("emblem-synchronizing-symbolic", Some(format!("{n}/{m}"))),
-            Badge::Busy(None) => ("emblem-synchronizing-symbolic", None),
-            Badge::Error => ("dialog-warning-symbolic", None),
-            Badge::Reboot => ("system-reboot-symbolic", None),
-            Badge::Updates(n) | Badge::Stale(n) => ("software-update-available-symbolic", Some(n.to_string())),
-            Badge::Idle => (model::ICON, None),
-        };
-        let dim = matches!(badge, Badge::Stale(_));
+        let (size, _) = self.core.applet.suggested_size(true);
+        let padding = self.core.applet.suggested_padding(true);
+        let padding = if horizontal { padding } else { (padding.1, padding.0) };
         let open = |offset, bounds| Message::OpenPopup(offset, bounds);
-        // на вертикальной панели число не помещается: остаётся значок, число — в подсказке
-        let btn = match label.filter(|_| horizontal) {
-            Some(label) => {
-                let (w, h) = self.core.applet.suggested_size(true);
-                let (_, vpad) = self.core.applet.suggested_padding(true);
-                let mut t = self.core.applet.text(label);
-                if dim {
-                    t = t.class(cosmic::theme::Text::Custom(ui::dim_text));
-                }
-                let content = widget::row::with_capacity(2)
-                    .push(widget::icon::from_name(icon).size(w).symbolic(true))
-                    .push(t)
-                    .spacing(4)
-                    .align_y(Alignment::Center);
-                button::custom(content)
-                    .class(cosmic::theme::Button::AppletIcon)
-                    .padding([0, vpad.max(4)])
-                    .height(Length::Fixed(f32::from(h + 2 * vpad)))
-                    .on_press_with_rectangle(open)
-            }
-            None => self.core.applet.icon_button(icon).on_press_with_rectangle(open),
-        };
-        let tip = format!("upd — {}\n{}", summary::headline(&self.summary, &self.op).title(), summary::checked_line(&self.summary));
+        let btn = crate::panel::button(&badge, size, padding, horizontal).on_press_with_rectangle(open);
+        let title = if matches!(badge, Badge::Waiting) { t!("Ожидание ответа").to_string() } else { summary::headline(&self.summary, &self.op).title() };
+        let tip = format!("upd — {title}\n{}", summary::checked_line(&self.summary));
         self.core.applet.applet_tooltip(btn, tip, self.popup.is_some(), Message::Surface, None).into()
     }
 

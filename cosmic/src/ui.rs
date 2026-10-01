@@ -1,7 +1,7 @@
 //! Мелкие строительные блоки интерфейса: ряды с учётом направления текста, баннеры, приглушённый текст.
 
 use crate::model::rtl;
-use cosmic::iced::{Alignment, Color, Length};
+use cosmic::iced::{Alignment, Length};
 use cosmic::widget::{self, button, text};
 use cosmic::{Element, Theme};
 
@@ -18,13 +18,6 @@ pub fn hrow<'a, M: 'a>(mut children: Vec<Element<'a, M>>) -> widget::Row<'a, M, 
         children.reverse();
     }
     widget::Row::with_children(children).spacing(cosmic::theme::spacing().space_xs).align_y(Alignment::Center)
-}
-
-/// Второстепенный текст (устаревшее число на панели).
-pub fn dim_text(theme: &Theme) -> cosmic::iced::widget::text::Style {
-    let mut c: Color = theme.cosmic().on_bg_color().into();
-    c.a = 0.55;
-    cosmic::iced::widget::text::Style { color: Some(c), selected_fill: Color::TRANSPARENT }
 }
 
 /// Карточка-предупреждение со значком, текстом и необязательной кнопкой.

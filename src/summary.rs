@@ -114,16 +114,19 @@ pub struct OpStatus {
 pub enum Badge {
     /// идёт установка (этап n из m, если известен)
     Busy(Option<(u32, u32)>),
+    Waiting,
     Error,
     Reboot,
     Updates(usize),
     /// число с прошлой проверки, которая уже устарела
     Stale(usize),
+    Unverified,
     Idle,
 }
 
 pub fn badge(s: &Summary, op: &OpStatus) -> Badge {
     if op.running {
+        if op.waiting { return Badge::Waiting; }
         return Badge::Busy(op.stage.as_ref().map(|(n, m, _)| (*n, *m)));
     }
     if !s.error.is_empty() {
@@ -134,7 +137,8 @@ pub fn badge(s: &Summary, op: &OpStatus) -> Badge {
     }
     let n = s.total();
     match (n, s.stale()) {
-        (0, _) => Badge::Idle,
+        (0, false) => Badge::Idle,
+        (0, true) => Badge::Unverified,
         (n, false) => Badge::Updates(n),
         (n, true) => Badge::Stale(n),
     }
@@ -326,6 +330,12 @@ mod tests {
         assert!(s.stale());
         assert_eq!(headline(&s, &OpStatus::default()), Headline::NoData);
         assert_ne!(headline(&s, &OpStatus::default()), Headline::UpToDate);
+        assert_eq!(badge(&s, &OpStatus::default()), Badge::Unverified);
+        let mut old = fresh(0);
+        old.taken = old.checked + STALE_AFTER + 1;
+        assert_eq!(badge(&old, &OpStatus::default()), Badge::Unverified);
+        let waiting = OpStatus { running: true, waiting: true, ..Default::default() };
+        assert_eq!(badge(&old, &waiting), Badge::Waiting);
     }
 
     #[test]
