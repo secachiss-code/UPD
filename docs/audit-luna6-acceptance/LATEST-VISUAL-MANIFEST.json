@@ -1,0 +1,860 @@
+[
+  {
+    "file": "case-denied-popup.png",
+    "width": 320,
+    "height": 480,
+    "sha256": "435dfe96824a3d7bc13f09bd0562c9237ca805de72050f098d87720b85b83184"
+  },
+  {
+    "file": "case-denied-window.png",
+    "width": 640,
+    "height": 480,
+    "sha256": "79244feb31473fde3894058f8f4c9ad13330a4a35b2a79e9f5fc6ed094a72f91"
+  },
+  {
+    "file": "case-disconnected-operation.png",
+    "width": 640,
+    "height": 480,
+    "sha256": "53f26b38d214373e472b2742a2ac96a71b24924e5e25a988d993560b1b3e6fbe"
+  },
+  {
+    "file": "case-empty-popup.png",
+    "width": 320,
+    "height": 480,
+    "sha256": "7c67fcc60ad9504c1afe62e408fc78426cd26f6cc626c67d34d650f46219e4ce"
+  },
+  {
+    "file": "case-empty-window.png",
+    "width": 640,
+    "height": 480,
+    "sha256": "6c1a520dfeb278620a60d8483972fafd0024a5d0588a708b15b20a39c69c4744"
+  },
+  {
+    "file": "case-failed-operation.png",
+    "width": 640,
+    "height": 480,
+    "sha256": "2513a9060956f4495b8acc64f1c9796363b92243d8dd46268f3feb901a9cec10"
+  },
+  {
+    "file": "case-helper-unavailable.png",
+    "width": 640,
+    "height": 480,
+    "sha256": "941dd8cb63192e1f66f7b612c88cd2cb22cc1a4bfb29b5d0cc9f0b9e41242959"
+  },
+  {
+    "file": "case-history-operation.png",
+    "width": 640,
+    "height": 480,
+    "sha256": "7218cea912517bd70aac37ada5494c73aedf8f8751eba1974ca5e64578f2bf4a"
+  },
+  {
+    "file": "case-loading-popup.png",
+    "width": 320,
+    "height": 480,
+    "sha256": "0841bdc23c24eb8f575048ccb54f5e13ec3c2604446d3c7fbf715ec8eae038bc"
+  },
+  {
+    "file": "case-loading-window.png",
+    "width": 640,
+    "height": 480,
+    "sha256": "56cdc7c1403e9a2a1dcc8ed152d2d2f100c02027abac79862e13cb4f684f9c14"
+  },
+  {
+    "file": "case-long-error-popup.png",
+    "width": 320,
+    "height": 480,
+    "sha256": "5c5012e1eaa4305ed37a10046121bdc4f343814a6e0a235fa7727695feecf3c8"
+  },
+  {
+    "file": "case-long-error-window.png",
+    "width": 640,
+    "height": 480,
+    "sha256": "b7b1760011856bb3693cb7fa125e1067df9b3184dbb54ae2f66193f9eb9787cb"
+  },
+  {
+    "file": "case-long-prompt-operation.png",
+    "width": 640,
+    "height": 480,
+    "sha256": "ee2bcfdaa60785153976a18d26e18f3a62b2413de18382b328f9be9f71369186"
+  },
+  {
+    "file": "case-many-popup.png",
+    "width": 320,
+    "height": 480,
+    "sha256": "4015fdc91c3f9a1929d334930a408ba06599b699e32e47bdbc1bb1f17e638f91"
+  },
+  {
+    "file": "case-many-window.png",
+    "width": 640,
+    "height": 480,
+    "sha256": "076dbb4d18c12c98304559d316ac753bd04782f32b815c57392cb52b76ba203a"
+  },
+  {
+    "file": "case-stale-popup.png",
+    "width": 320,
+    "height": 480,
+    "sha256": "8c1ba686b1d6a6bfe336f695502f8279a35ce787e7e408f279a80c35170e0002"
+  },
+  {
+    "file": "case-stale-window.png",
+    "width": 640,
+    "height": 480,
+    "sha256": "b6ecb63e10f0107de40de2b84c47186455cd8fed5ded0129cac67ebd55194257"
+  },
+  {
+    "file": "case-starting-operation.png",
+    "width": 640,
+    "height": 480,
+    "sha256": "acaa2fb95ccdcfee422dfc263d0e8abdc0a833fc07917a02d514304f770339ae"
+  },
+  {
+    "file": "locale-de-smoke.png",
+    "width": 640,
+    "height": 480,
+    "sha256": "1a209410c44c3192412ea64a57b2ab90a2de1465faef3a54c2434db083acdb4d"
+  },
+  {
+    "file": "locale-it-smoke.png",
+    "width": 640,
+    "height": 480,
+    "sha256": "ba2013cfda21d62bc8d3ec98b0264740294a75e9cc2e0b4ecbd7c67c381cb6e4"
+  },
+  {
+    "file": "locale-zh-smoke.png",
+    "width": 640,
+    "height": 480,
+    "sha256": "573935b25c66b160dbd4a222dee44ef11df21ef6cf074365ee83adfe68b3ba16"
+  },
+  {
+    "file": "operation-ar-dark-640-dpi1.png",
+    "width": 640,
+    "height": 480,
+    "sha256": "965efb2c18178f3df01028d5aab935d580dfb1c9bda41c74d0e1d7acef6009e7"
+  },
+  {
+    "file": "operation-ar-dark-640-dpi2.png",
+    "width": 1280,
+    "height": 960,
+    "sha256": "ed7c2e33f7668b777677c2002627949b8849f11d88d66ad41a61bc9c898690cd"
+  },
+  {
+    "file": "operation-ar-dark-900-dpi1.png",
+    "width": 900,
+    "height": 700,
+    "sha256": "38c5674d9e46f1d410d8a5d39898e0d20a790c9b6e380eb515ac5079e852721d"
+  },
+  {
+    "file": "operation-ar-dark-900-dpi2.png",
+    "width": 1800,
+    "height": 1400,
+    "sha256": "0942e7d5493090b72e0fd6738d19e04b7babe67dc366d91cea1cfc62e28f68cb"
+  },
+  {
+    "file": "operation-ar-light-640-dpi1.png",
+    "width": 640,
+    "height": 480,
+    "sha256": "9790953a5d82058b8c6c033aa3bac81b135c7439bf911ffff784f33e1f5ba7e0"
+  },
+  {
+    "file": "operation-ar-light-640-dpi2.png",
+    "width": 1280,
+    "height": 960,
+    "sha256": "9647b6a4b9fc92990f2a754394488ef2d0c84e8bfddfa2bc916a776e6a1ce381"
+  },
+  {
+    "file": "operation-ar-light-900-dpi1.png",
+    "width": 900,
+    "height": 700,
+    "sha256": "d6cc2304782772d1b1dfe2f62a97d700f9215506def8e194ef47f84218ee1ca2"
+  },
+  {
+    "file": "operation-ar-light-900-dpi2.png",
+    "width": 1800,
+    "height": 1400,
+    "sha256": "ce1909cb30efb3e6f4578ffce70ef785df44e41bcb0886642b57226f86070866"
+  },
+  {
+    "file": "operation-en-dark-640-dpi1.png",
+    "width": 640,
+    "height": 480,
+    "sha256": "e501f38d2a1ff453c25ffe2cc4d9fb80b8376bbc7c369c8ef315fe6eef7a5d01"
+  },
+  {
+    "file": "operation-en-dark-640-dpi2.png",
+    "width": 1280,
+    "height": 960,
+    "sha256": "4d4dcb23a96ff01eb6e1d5c1b57b5700c9cca034e92f3bd2fedb50dda76a2f51"
+  },
+  {
+    "file": "operation-en-dark-900-dpi1.png",
+    "width": 900,
+    "height": 700,
+    "sha256": "38b95eb2d992642a94a55cf8508652db359160bc58315120fcd17ab89cdd2208"
+  },
+  {
+    "file": "operation-en-dark-900-dpi2.png",
+    "width": 1800,
+    "height": 1400,
+    "sha256": "9aab1a8e514e135f56c3592b7efe2c36e1cd5b24d981ea11b70c6622137708d8"
+  },
+  {
+    "file": "operation-en-light-640-dpi1.png",
+    "width": 640,
+    "height": 480,
+    "sha256": "cfb5ab9097439f22e7feb8d56cbb452e816b1d77814093135f28f4344746a25a"
+  },
+  {
+    "file": "operation-en-light-640-dpi2.png",
+    "width": 1280,
+    "height": 960,
+    "sha256": "61e0b583a7d6a64bfa189fd0d841abb66902d6f46a99a62643271e3e11c1f867"
+  },
+  {
+    "file": "operation-en-light-900-dpi1.png",
+    "width": 900,
+    "height": 700,
+    "sha256": "715ff3457cd6b46a368aac814c210a6b020a04facddf8c323066f66eb06d0927"
+  },
+  {
+    "file": "operation-en-light-900-dpi2.png",
+    "width": 1800,
+    "height": 1400,
+    "sha256": "eba77b262f4f08e59a9085fce0671a50ffcc374c1984be598309f9424fd6d2cc"
+  },
+  {
+    "file": "operation-ru-dark-640-dpi1.png",
+    "width": 640,
+    "height": 480,
+    "sha256": "7c4a55a8083b32493dd34ad80cb79dc6859d309d9b6b5832b2db3d6d95ede121"
+  },
+  {
+    "file": "operation-ru-dark-640-dpi2.png",
+    "width": 1280,
+    "height": 960,
+    "sha256": "c11ee0449a67c9cdfe0879c7f67e4dfa336e7c07c6c00671909be056800cf7d4"
+  },
+  {
+    "file": "operation-ru-dark-900-dpi1.png",
+    "width": 900,
+    "height": 700,
+    "sha256": "386d6450d626c7e18a038e856c47a29043afe85a1b1d8fec2f17fdc2c2770a4e"
+  },
+  {
+    "file": "operation-ru-dark-900-dpi2.png",
+    "width": 1800,
+    "height": 1400,
+    "sha256": "50b71bb15bec50ba7c1939c853d56a50835e3dd194e6179b44e9e0638be684f3"
+  },
+  {
+    "file": "operation-ru-light-640-dpi1.png",
+    "width": 640,
+    "height": 480,
+    "sha256": "1d339910cdef7193a244b04870bd8742f61786e16442de5f8e2293e0afa05d54"
+  },
+  {
+    "file": "operation-ru-light-640-dpi2.png",
+    "width": 1280,
+    "height": 960,
+    "sha256": "689cb5189bacd3d20db72b965b50e51ae85b013c9fd34a05116f9e333525d5c0"
+  },
+  {
+    "file": "operation-ru-light-900-dpi1.png",
+    "width": 900,
+    "height": 700,
+    "sha256": "0f9d07b6f13bd158882beea81aa7374aa9c0d7ee031290d9353d422f4e660b0c"
+  },
+  {
+    "file": "operation-ru-light-900-dpi2.png",
+    "width": 1800,
+    "height": 1400,
+    "sha256": "57e1231f8bfa7171599b539d29495613a55f7808de103c60bc181c967c330b34"
+  },
+  {
+    "file": "operation-smoke.png",
+    "width": 640,
+    "height": 480,
+    "sha256": "0b20eaf6bbef340108951acd83e94c44df056335165066ba51102d44d76c22b6"
+  },
+  {
+    "file": "popup-ar-dark-320-dpi1.png",
+    "width": 320,
+    "height": 480,
+    "sha256": "cb7791f950d425de1bc339791d7e71cfc97350a663a4bce106e835f0fe70bfe2"
+  },
+  {
+    "file": "popup-ar-dark-320-dpi2.png",
+    "width": 640,
+    "height": 960,
+    "sha256": "2a4f0a18738e2c012e547f46cd821d3cd7141cbcb2983dfa0a802482b9167cab"
+  },
+  {
+    "file": "popup-ar-dark-360-dpi1.png",
+    "width": 360,
+    "height": 480,
+    "sha256": "6f93b93a0c2f809cbe0c33647cb126da9e0d5bbe16fe86d02544bdbda12f1eed"
+  },
+  {
+    "file": "popup-ar-dark-360-dpi2.png",
+    "width": 720,
+    "height": 960,
+    "sha256": "55cd5adda3ab8a4dd79d6c6ea85cc403bf2b93c37476b5d941586d9eee9ec168"
+  },
+  {
+    "file": "popup-ar-light-320-dpi1.png",
+    "width": 320,
+    "height": 480,
+    "sha256": "d98392004d0fd1520e2565033cde5eb86ef879b1585249412e193d89ba38b8a9"
+  },
+  {
+    "file": "popup-ar-light-320-dpi2.png",
+    "width": 640,
+    "height": 960,
+    "sha256": "3c78bfff59bd6ffb4c6883a083aae60243807c2f971508c7e479d3b8dc86c774"
+  },
+  {
+    "file": "popup-ar-light-360-dpi1.png",
+    "width": 360,
+    "height": 480,
+    "sha256": "fe2006bdbd32895c7775bc6804d5f2a3377bb735e31c2e90e4a527285875ee95"
+  },
+  {
+    "file": "popup-ar-light-360-dpi2.png",
+    "width": 720,
+    "height": 960,
+    "sha256": "baa0e5570ad308af59017d1c4b7799103dc226fdd2c3ce92f2869804909958d8"
+  },
+  {
+    "file": "popup-en-dark-320-dpi1.png",
+    "width": 320,
+    "height": 480,
+    "sha256": "4fbc99f7a57d586b232abc778ea99130e964c35888160a5afae6856a024704b4"
+  },
+  {
+    "file": "popup-en-dark-320-dpi2.png",
+    "width": 640,
+    "height": 960,
+    "sha256": "edf29f508f47eaee8960317bb8b2398bfae100f30eb0a3a898c3fad003c3a3fc"
+  },
+  {
+    "file": "popup-en-dark-360-dpi1.png",
+    "width": 360,
+    "height": 480,
+    "sha256": "f92add1cf7b2ea4275ba2e8530756578de34293682708a867fa944d939f0e1d7"
+  },
+  {
+    "file": "popup-en-dark-360-dpi2.png",
+    "width": 720,
+    "height": 960,
+    "sha256": "7b648d6befef76df5211cd5b1b03076b14b2be6f96841d1fe1ce7c17624970a6"
+  },
+  {
+    "file": "popup-en-light-320-dpi1.png",
+    "width": 320,
+    "height": 480,
+    "sha256": "4336283e6bec1019b63a599a6774f6460bd56aa12fca92ca14844fff667d5731"
+  },
+  {
+    "file": "popup-en-light-320-dpi2.png",
+    "width": 640,
+    "height": 960,
+    "sha256": "fc7dc99adebb3fe3b81bc93aa4b19c66ffaa739957ef116b1eeb4b5dc4dd5fe0"
+  },
+  {
+    "file": "popup-en-light-360-dpi1.png",
+    "width": 360,
+    "height": 480,
+    "sha256": "973972c105124da7731e205cbb56d4c48117aa65bc19983c9f680f39314be545"
+  },
+  {
+    "file": "popup-en-light-360-dpi2.png",
+    "width": 720,
+    "height": 960,
+    "sha256": "59c05099e5f7900d646980cfd37670adb465a7acca24920a8289207efa675c6b"
+  },
+  {
+    "file": "popup-ru-dark-320-dpi1.png",
+    "width": 320,
+    "height": 480,
+    "sha256": "99c2e061914fc1d887011db6dc415ac36f0ca24eb7b620eac82b8d02c18016f8"
+  },
+  {
+    "file": "popup-ru-dark-320-dpi2.png",
+    "width": 640,
+    "height": 960,
+    "sha256": "5a736c406af447a8ef4b59926bf2ef3a8199c7bde0ec8fea50f84ea80d89418e"
+  },
+  {
+    "file": "popup-ru-dark-360-dpi1.png",
+    "width": 360,
+    "height": 480,
+    "sha256": "d66c38236365d8246057df77e1d86f3dc650002b988f9184753635e2058d0a63"
+  },
+  {
+    "file": "popup-ru-dark-360-dpi2.png",
+    "width": 720,
+    "height": 960,
+    "sha256": "4068a6c38e90feda4966bb69548f7bdabb37fae6b90df5b926ecbf177347efc1"
+  },
+  {
+    "file": "popup-ru-light-320-dpi1.png",
+    "width": 320,
+    "height": 480,
+    "sha256": "a2400153dcb5fa671f4c362db6f33769a3d46efaa5b301756787e0f42102b975"
+  },
+  {
+    "file": "popup-ru-light-320-dpi2.png",
+    "width": 640,
+    "height": 960,
+    "sha256": "009423912570f1504b82feaee8842cdd601663cfa9da9a8864048f5d39a5ecb3"
+  },
+  {
+    "file": "popup-ru-light-360-dpi1.png",
+    "width": 360,
+    "height": 480,
+    "sha256": "50165ef729cd250bc990274ebab1bd778e31ccff483c864b98f1c2bc2380dc5e"
+  },
+  {
+    "file": "popup-ru-light-360-dpi2.png",
+    "width": 720,
+    "height": 960,
+    "sha256": "c07572c15eadf810fc1c189ee6dff979d9204d8af635879aada0663e3f699146"
+  },
+  {
+    "file": "popup-smoke.png",
+    "width": 320,
+    "height": 480,
+    "sha256": "99c2e061914fc1d887011db6dc415ac36f0ca24eb7b620eac82b8d02c18016f8"
+  },
+  {
+    "file": "window-settings-ar-dark-640-dpi1.png",
+    "width": 640,
+    "height": 480,
+    "sha256": "bd2dcebbe090e8cb3d53eb7a66380e08f417c15d13daa3c033f54d49136bf160"
+  },
+  {
+    "file": "window-settings-ar-dark-640-dpi2.png",
+    "width": 1280,
+    "height": 960,
+    "sha256": "46303c6a5214c087adde0d72aaee0e1672f4cc15cf53b6d644dc086de67f2bdb"
+  },
+  {
+    "file": "window-settings-ar-dark-900-dpi1.png",
+    "width": 900,
+    "height": 700,
+    "sha256": "67029e8c0b049570a31281e370a733144bae847cd459e335603c80ed062d90cb"
+  },
+  {
+    "file": "window-settings-ar-dark-900-dpi2.png",
+    "width": 1800,
+    "height": 1400,
+    "sha256": "1f51c8334c75c2febb462868bd1e2381350843aad114a609ccb840e06a4b7b29"
+  },
+  {
+    "file": "window-settings-ar-light-640-dpi1.png",
+    "width": 640,
+    "height": 480,
+    "sha256": "6f8a2bac78e47eb8c7cbf7828e60ca83c9718c48ff6245cb98a04081492b5143"
+  },
+  {
+    "file": "window-settings-ar-light-640-dpi2.png",
+    "width": 1280,
+    "height": 960,
+    "sha256": "c4132716d960c5b8410fa4e23cfc7878b97a004db1c48b8197277b3b25c64dab"
+  },
+  {
+    "file": "window-settings-ar-light-900-dpi1.png",
+    "width": 900,
+    "height": 700,
+    "sha256": "b2a676427ca21b690f78381533e1075fdd177aeac76dd8913650389605fd75bc"
+  },
+  {
+    "file": "window-settings-ar-light-900-dpi2.png",
+    "width": 1800,
+    "height": 1400,
+    "sha256": "2a0c69b40938490f81bc5ae6b1978d5c573cf66ed212baa499740ce63271366f"
+  },
+  {
+    "file": "window-settings-en-dark-640-dpi1.png",
+    "width": 640,
+    "height": 480,
+    "sha256": "fc55fe1be01d42a3c84ada9346275c5ca4df86d490a4e5b51da47f5a6cc5d839"
+  },
+  {
+    "file": "window-settings-en-dark-640-dpi2.png",
+    "width": 1280,
+    "height": 960,
+    "sha256": "ec1eec0c5444220bfd9133aea8f5aa1f3db7436b4c56f2c47aa6a07c9ac2329b"
+  },
+  {
+    "file": "window-settings-en-dark-900-dpi1.png",
+    "width": 900,
+    "height": 700,
+    "sha256": "3b4c3011fc033b48bdf238673c3b40120fac02f3e8358212c3704b44e47a6938"
+  },
+  {
+    "file": "window-settings-en-dark-900-dpi2.png",
+    "width": 1800,
+    "height": 1400,
+    "sha256": "1657223cd3de13a2280ab4fcc58985ed91e107fa7371675239abdc7a4e16a95d"
+  },
+  {
+    "file": "window-settings-en-light-640-dpi1.png",
+    "width": 640,
+    "height": 480,
+    "sha256": "fa9e5dca4e5e71c8efb30351757deca0d11574b19c06c10d8dbd3605152bed95"
+  },
+  {
+    "file": "window-settings-en-light-640-dpi2.png",
+    "width": 1280,
+    "height": 960,
+    "sha256": "4f694e6303cf468f6f55af148a9816e6fbb946973eca77e5630d5313baf17de1"
+  },
+  {
+    "file": "window-settings-en-light-900-dpi1.png",
+    "width": 900,
+    "height": 700,
+    "sha256": "2e7affa3e6349ca541d21a08a2d989dfeaa260590f8f39682c6841fcd7ae1a8e"
+  },
+  {
+    "file": "window-settings-en-light-900-dpi2.png",
+    "width": 1800,
+    "height": 1400,
+    "sha256": "da627c6e7056d088748261fee611f1713f142cb33ab5320cf02909b676531d44"
+  },
+  {
+    "file": "window-settings-ru-dark-640-dpi1.png",
+    "width": 640,
+    "height": 480,
+    "sha256": "14223686859c35e613d11fb5846f8fe2b65fdf4c9161ae4f341eed9bb15b1aa7"
+  },
+  {
+    "file": "window-settings-ru-dark-640-dpi2.png",
+    "width": 1280,
+    "height": 960,
+    "sha256": "2250b657671a9a717163baeb8643c3d621d7cd9e711445d5b10f42050680ef0e"
+  },
+  {
+    "file": "window-settings-ru-dark-900-dpi1.png",
+    "width": 900,
+    "height": 700,
+    "sha256": "c17911e4a0864004e36f83cfced7f3a7a2203be4707b9987f1e9308f646f057a"
+  },
+  {
+    "file": "window-settings-ru-dark-900-dpi2.png",
+    "width": 1800,
+    "height": 1400,
+    "sha256": "922af20b7ae5e7634ddceb35f6484c075f3598c9edf5704a3d4916de2a272791"
+  },
+  {
+    "file": "window-settings-ru-light-640-dpi1.png",
+    "width": 640,
+    "height": 480,
+    "sha256": "c78ff3557e955d35e34ea9812778f7abdfbff10877b485a6850d993a4c25526f"
+  },
+  {
+    "file": "window-settings-ru-light-640-dpi2.png",
+    "width": 1280,
+    "height": 960,
+    "sha256": "78a4b11fb623ba8991af5bce8ffa8b3791c1b5a451fe31052a2c48147cf06ba0"
+  },
+  {
+    "file": "window-settings-ru-light-900-dpi1.png",
+    "width": 900,
+    "height": 700,
+    "sha256": "2658ea6345982028e0788784d8bbe37a1f71e62700c6b85cc431d7b70bbe7f41"
+  },
+  {
+    "file": "window-settings-ru-light-900-dpi2.png",
+    "width": 1800,
+    "height": 1400,
+    "sha256": "74015ecd86f63d52953511874e058fa2d4fbefdc8c8ee619fec682f058ccc05c"
+  },
+  {
+    "file": "window-updates-ar-dark-640-dpi1.png",
+    "width": 640,
+    "height": 480,
+    "sha256": "59b49b228309ba958ffd21176f2623cf903608ed2487307e9daf7d124b0037f0"
+  },
+  {
+    "file": "window-updates-ar-dark-640-dpi2.png",
+    "width": 1280,
+    "height": 960,
+    "sha256": "b0c9c02e0b25b394f6325b9aac9072d20113b0ef8be11b67d0d9d263ec12e8ef"
+  },
+  {
+    "file": "window-updates-ar-dark-900-dpi1.png",
+    "width": 900,
+    "height": 700,
+    "sha256": "fa0cf428e23b4ca466caedc50a29d0797c9349d66ecab88c98caf95863cf4bbf"
+  },
+  {
+    "file": "window-updates-ar-dark-900-dpi2.png",
+    "width": 1800,
+    "height": 1400,
+    "sha256": "53ebe7f9753b49e36c6af04b8a4e273a4a4c12f652091a56586f642d76fac4f1"
+  },
+  {
+    "file": "window-updates-ar-light-640-dpi1.png",
+    "width": 640,
+    "height": 480,
+    "sha256": "bf5c90d83922df8c7b95a07920210b27d0a2b8412bd7e440c8f000adcca71235"
+  },
+  {
+    "file": "window-updates-ar-light-640-dpi2.png",
+    "width": 1280,
+    "height": 960,
+    "sha256": "f4ff4489fc45e631eed24a8503014bede8fa45f7cb7d74d116587ec20a5161fa"
+  },
+  {
+    "file": "window-updates-ar-light-900-dpi1.png",
+    "width": 900,
+    "height": 700,
+    "sha256": "5812eec009397dc48bd78932a9b6a3066b1cb2f83aa3191c21fa4ca0afe5c2b8"
+  },
+  {
+    "file": "window-updates-ar-light-900-dpi2.png",
+    "width": 1800,
+    "height": 1400,
+    "sha256": "79e305deea2bf368909c0542a4cb1da19478406668909a401d9e86cce9a23348"
+  },
+  {
+    "file": "window-updates-en-dark-640-dpi1.png",
+    "width": 640,
+    "height": 480,
+    "sha256": "c86bd0647b5d803d4e9977916f9f6075e4cdb49e7da8809b0626e2f2a0361f3e"
+  },
+  {
+    "file": "window-updates-en-dark-640-dpi2.png",
+    "width": 1280,
+    "height": 960,
+    "sha256": "629137db8334e683822bfe3cdddeaf04a952922a66c34ed9d4794aec0576f2d7"
+  },
+  {
+    "file": "window-updates-en-dark-900-dpi1.png",
+    "width": 900,
+    "height": 700,
+    "sha256": "0ac8d155a8a6c7352a888de5e2ce8d3a0aa2a8a9e875222ea6a1c277b004983b"
+  },
+  {
+    "file": "window-updates-en-dark-900-dpi2.png",
+    "width": 1800,
+    "height": 1400,
+    "sha256": "dc7ea34ab8ec691207ec8215ab7ee633f9091f1f4b8c570fa3387e5af5a99e43"
+  },
+  {
+    "file": "window-updates-en-light-640-dpi1.png",
+    "width": 640,
+    "height": 480,
+    "sha256": "02ec266941e6489bbf6600951fcd778838ba733925b188dc8278f470067bd91e"
+  },
+  {
+    "file": "window-updates-en-light-640-dpi2.png",
+    "width": 1280,
+    "height": 960,
+    "sha256": "ec0554c63d1fd2728791248d2fc825bdca5f0427f6ce80b65ccdd5d82150c664"
+  },
+  {
+    "file": "window-updates-en-light-900-dpi1.png",
+    "width": 900,
+    "height": 700,
+    "sha256": "711968323f7c076bd4f871752f3146c4b24e9ecae9d5dcda81723c06b5401ae6"
+  },
+  {
+    "file": "window-updates-en-light-900-dpi2.png",
+    "width": 1800,
+    "height": 1400,
+    "sha256": "a506e9f71b8f0883bb9ee457932d0c8429432d25e07c420baeaa23b49a58fbe9"
+  },
+  {
+    "file": "window-updates-ru-dark-640-dpi1.png",
+    "width": 640,
+    "height": 480,
+    "sha256": "452766b30539705b2d0d2b6fdf0684e4fe54a8de02a9aa179a2f71108226fc88"
+  },
+  {
+    "file": "window-updates-ru-dark-640-dpi2.png",
+    "width": 1280,
+    "height": 960,
+    "sha256": "754b1ba59f063befe9e1484c6c4a13ade0cae6deb13265e208b84ac3b60f5677"
+  },
+  {
+    "file": "window-updates-ru-dark-900-dpi1.png",
+    "width": 900,
+    "height": 700,
+    "sha256": "4dd56da0c428bed7d1ab66277b7598e858ac32538227f2d0cfae2cbdc4eed2be"
+  },
+  {
+    "file": "window-updates-ru-dark-900-dpi2.png",
+    "width": 1800,
+    "height": 1400,
+    "sha256": "35dcaf26504cbc284ff956d71fa364c9439de7c0b20c52264bcd35df9ded6331"
+  },
+  {
+    "file": "window-updates-ru-light-640-dpi1.png",
+    "width": 640,
+    "height": 480,
+    "sha256": "81114c952371049009c5a5ff2960d832b05ec85e2f51c33e3d6d94b1707f928c"
+  },
+  {
+    "file": "window-updates-ru-light-640-dpi2.png",
+    "width": 1280,
+    "height": 960,
+    "sha256": "950445cf24c2c1574ada6e37e75abf44fa3cc0f78ec382336a8fd953da39cd99"
+  },
+  {
+    "file": "window-updates-ru-light-900-dpi1.png",
+    "width": 900,
+    "height": 700,
+    "sha256": "8684a4fde656254c33734d604e5056b28e7b83e0562d93c3927729048e51b8d9"
+  },
+  {
+    "file": "window-updates-ru-light-900-dpi2.png",
+    "width": 1800,
+    "height": 1400,
+    "sha256": "1083fba1f00be977c8874159cb5ff58f1d65e7ba0a2e95b5e3f0f8a51c1b0a2a"
+  },
+  {
+    "file": "window-vpn-ar-dark-640-dpi1.png",
+    "width": 640,
+    "height": 480,
+    "sha256": "10651d006dca7da49fbd4043f2db15c5a1bc44c63963a96acd14f5b54635e8ca"
+  },
+  {
+    "file": "window-vpn-ar-dark-640-dpi2.png",
+    "width": 1280,
+    "height": 960,
+    "sha256": "f187c82b6628e5f4f3cc55c6979fbaf6e78a89fec44f71d19da347b160a75d5a"
+  },
+  {
+    "file": "window-vpn-ar-dark-900-dpi1.png",
+    "width": 900,
+    "height": 700,
+    "sha256": "bb4a506e07c94ac7e7e87312910af6f56351d70c27a57666dc31713e067c5571"
+  },
+  {
+    "file": "window-vpn-ar-dark-900-dpi2.png",
+    "width": 1800,
+    "height": 1400,
+    "sha256": "969601f56c7d154f08d1c577d1c5668e588a01e96780a8e2f4748677b303e145"
+  },
+  {
+    "file": "window-vpn-ar-light-640-dpi1.png",
+    "width": 640,
+    "height": 480,
+    "sha256": "8c5eca6fcadac412c2ef9e86b6cad4ca5820071f85632517e118fe7d82644f5c"
+  },
+  {
+    "file": "window-vpn-ar-light-640-dpi2.png",
+    "width": 1280,
+    "height": 960,
+    "sha256": "c0ab52fcde000ef6b885f544dd7d75fef51fdf7158eb4b60a8854942f07d34c9"
+  },
+  {
+    "file": "window-vpn-ar-light-900-dpi1.png",
+    "width": 900,
+    "height": 700,
+    "sha256": "fee0220dbc9c1fc280c5fa0b187d8df160986fd013c372d48df337d094f572b9"
+  },
+  {
+    "file": "window-vpn-ar-light-900-dpi2.png",
+    "width": 1800,
+    "height": 1400,
+    "sha256": "6ea26dd00a2b93bdb9befce7dcbf75c13c4aca3076fa02695a5463bcb018278b"
+  },
+  {
+    "file": "window-vpn-en-dark-640-dpi1.png",
+    "width": 640,
+    "height": 480,
+    "sha256": "c10bea9df0fcbd01350315933db97101dd2c794f9bfa4ac55621fcfd5c6b0c88"
+  },
+  {
+    "file": "window-vpn-en-dark-640-dpi2.png",
+    "width": 1280,
+    "height": 960,
+    "sha256": "93caf8a0837d18a4857fbcbcfd3e0a30a136676714c3efc4ace02bb09cec0384"
+  },
+  {
+    "file": "window-vpn-en-dark-900-dpi1.png",
+    "width": 900,
+    "height": 700,
+    "sha256": "df13bf667f66b6c511694751eefe21bfc25367ca31f5ad6c3146b54baafa15d7"
+  },
+  {
+    "file": "window-vpn-en-dark-900-dpi2.png",
+    "width": 1800,
+    "height": 1400,
+    "sha256": "8015fea85d6255e331407b0f889da57aa5474c78a214e3ba206833962cfb7abb"
+  },
+  {
+    "file": "window-vpn-en-light-640-dpi1.png",
+    "width": 640,
+    "height": 480,
+    "sha256": "d71cfa86a89fb8606f421c240498991369823cfe67a064d77266e44b1ca0b018"
+  },
+  {
+    "file": "window-vpn-en-light-640-dpi2.png",
+    "width": 1280,
+    "height": 960,
+    "sha256": "3a0c82a801c377bc13256e2846664620038c4f803bda6b1d5c0efc3aa7cc408c"
+  },
+  {
+    "file": "window-vpn-en-light-900-dpi1.png",
+    "width": 900,
+    "height": 700,
+    "sha256": "0f7a559f93e29aef09d581dc25f26c0829282d7b1ac5291316d1c7eefb6c167f"
+  },
+  {
+    "file": "window-vpn-en-light-900-dpi2.png",
+    "width": 1800,
+    "height": 1400,
+    "sha256": "e5cf9822dc24fd4bafe27beb7b26983ee32079c4a415aed428a52251266ce086"
+  },
+  {
+    "file": "window-vpn-ru-dark-640-dpi1.png",
+    "width": 640,
+    "height": 480,
+    "sha256": "010ab5720069641d88704d8df4264a25f8f79781b32bd02a06964f8ac4c7dd4b"
+  },
+  {
+    "file": "window-vpn-ru-dark-640-dpi2.png",
+    "width": 1280,
+    "height": 960,
+    "sha256": "6accfe45c65584b5acd9e7d18bd7588786a1f0320797327afc44a83ba2059c66"
+  },
+  {
+    "file": "window-vpn-ru-dark-900-dpi1.png",
+    "width": 900,
+    "height": 700,
+    "sha256": "9cb7e70806818376e137bee6c6d1be9f9a23d2e022df52a25c9b3ab91be7a00a"
+  },
+  {
+    "file": "window-vpn-ru-dark-900-dpi2.png",
+    "width": 1800,
+    "height": 1400,
+    "sha256": "de7da9bae1dd0fea2c6e508fd74adb451b66393fb55eebdde35ab5e7be59e0c1"
+  },
+  {
+    "file": "window-vpn-ru-light-640-dpi1.png",
+    "width": 640,
+    "height": 480,
+    "sha256": "870d030559ce982e30b7021ff52493f59d82dfc6e8ab8dd0efab9cc31a5b4120"
+  },
+  {
+    "file": "window-vpn-ru-light-640-dpi2.png",
+    "width": 1280,
+    "height": 960,
+    "sha256": "3c5fb937f34516f1973493c85f447ceace72ba361b5ca9dbe0a01e0f12c4c671"
+  },
+  {
+    "file": "window-vpn-ru-light-900-dpi1.png",
+    "width": 900,
+    "height": 700,
+    "sha256": "1cae267df563035ab40a3df19132f911e1753d9956c7e1036d595e5e3a491269"
+  },
+  {
+    "file": "window-vpn-ru-light-900-dpi2.png",
+    "width": 1800,
+    "height": 1400,
+    "sha256": "93e23ef4a43a4a5a3a1bf18b4833bfea46b5760e7f5a9f9268522f7607ec0fde"
+  }
+]

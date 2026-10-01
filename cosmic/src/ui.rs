@@ -32,7 +32,7 @@ pub fn banner<'a, M: Clone + 'static>(icon: &'static str, message: String, actio
     let sp = cosmic::theme::spacing();
     let mut items: Vec<Element<'a, M>> = vec![
         widget::icon::from_name(icon).size(16).into(),
-        txt(text::body(message)).width(Length::Fill).wrapping(cosmic::iced::widget::text::Wrapping::WordOrGlyph).into(),
+        widget::container(widget::scrollable(txt(text::body(message)).width(Length::Fill).wrapping(cosmic::iced::widget::text::Wrapping::WordOrGlyph)).height(Length::Shrink)).max_height(96.0).width(Length::Fill).into(),
     ];
     if let Some((label, m)) = action {
         items.push(button::text(label).on_press(m).into());

@@ -40,3 +40,7 @@ subs.json
 .grok/
 .cursor/
 AGENTS.md
+
+# Python test helpers
+__pycache__/
+*.py[cod]

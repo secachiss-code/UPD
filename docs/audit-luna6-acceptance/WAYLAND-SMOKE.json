@@ -1,0 +1,46 @@
+{
+  "compositor": "cosmic-comp 1.0.0 (0fbd4574ef4caf74769a617d205fd1fc909ac9b1)",
+  "binary": "upd-cosmic 0.2.7 release GNU",
+  "isolation": "private D-Bus, temporary XDG config/cache/data and UPD state/config; empty PATH; helper socket absent",
+  "checks": [
+    {
+      "page": "updates",
+      "alive_after_5s": true,
+      "surface_commit": true,
+      "surface_attach": true,
+      "panic": false
+    },
+    {
+      "page": "mirrors",
+      "alive_after_5s": true,
+      "surface_commit": true,
+      "surface_attach": true,
+      "panic": false
+    },
+    {
+      "page": "vpn",
+      "alive_after_5s": true,
+      "surface_commit": true,
+      "surface_attach": true,
+      "panic": false
+    },
+    {
+      "page": "maintenance",
+      "alive_after_5s": true,
+      "surface_commit": true,
+      "surface_attach": true,
+      "panic": false
+    },
+    {
+      "page": "settings",
+      "alive_after_5s": true,
+      "surface_commit": true,
+      "surface_attach": true,
+      "panic": false
+    }
+  ],
+  "limitations": [
+    "5 seconds per page; unsupported backend/error state due to empty PATH",
+    "no keyboard, popup, screenshot or VM integration acceptance"
+  ]
+}

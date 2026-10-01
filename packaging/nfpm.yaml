@@ -31,8 +31,11 @@ contents:
   - src: ${STAGE}/usr/lib/NetworkManager/
     dst: /usr/lib/NetworkManager/
     type: tree
-  - src: ${STAGE}/extra/
-    dst: /
+  - src: ${STAGE}/extra/usr/share/
+    dst: /usr/share/
+    type: tree
+  - src: ${STAGE}/extra/etc/
+    dst: /etc/
     type: tree
 scripts:
   postinstall: packaging/scripts/postinstall.sh

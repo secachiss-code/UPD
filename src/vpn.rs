@@ -684,6 +684,7 @@ fn classify_sub(body: &str) -> Result<(String, usize), String> {
 }
 
 pub fn add_sub(url: &str, name: &str, c: &Config, log: Log) -> Result<(), String> {
+    let _vpn_files = vpn_config_lock(true)?;
     let _lock = subscriptions_lock(true)?;
     subscription_url(url)?;
     let mut subs = load_subs()?;
@@ -737,6 +738,7 @@ impl SubRef {
 }
 
 pub fn delete_sub(r: &SubRef) -> Result<String, String> {
+    let _vpn_files = vpn_config_lock(true)?;
     let _lock = subscriptions_lock(true)?;
     let mut subs = load_subs()?;
     let idx = r.resolve(&subs)?;
@@ -752,6 +754,7 @@ pub fn delete_sub(r: &SubRef) -> Result<String, String> {
 }
 
 pub fn use_sub(r: &SubRef) -> Result<String, String> {
+    let _vpn_files = vpn_config_lock(true)?;
     let _lock = subscriptions_lock(true)?;
     let mut subs = load_subs()?;
     let s = subs.list[r.resolve(&subs)?].clone();
@@ -762,6 +765,7 @@ pub fn use_sub(r: &SubRef) -> Result<String, String> {
 
 /// Обновить подписки: все (force) или те, у которых подошёл срок. true — активная изменилась.
 pub fn update_subs(c: &Config, log: Log, force: bool) -> Result<bool, String> {
+    let _vpn_files = vpn_config_lock(true)?;
     let _lock = subscriptions_lock(true)?;
     update_subs_locked(c, log, force)
 }
@@ -1352,6 +1356,12 @@ pub fn build_config(c: &Config) -> Result<String, String> {
 }
 
 pub fn write_config(c: &Config) -> Result<bool, String> {
+    let _vpn_files = vpn_config_lock(true)?;
+    let latest = if Path::new(&conf_path()).exists() { Config::load(c.mirrors.clone())? } else { c.clone() };
+    write_config_locked(&latest)
+}
+
+fn write_config_locked(c: &Config) -> Result<bool, String> {
     let y = build_config(c)?;
     private_dir(&home())?;
     let p = config_path();
@@ -1760,10 +1770,16 @@ pub fn conflict(c: &Config) -> Option<String> {
 }
 
 /// Применить изменения настроек: пересобрать конфиг и перезагрузить работающее ядро.
-pub fn apply(c: &Config, log: Log) -> Result<(), String> {
-    let changed = write_config(c)?;
+pub fn apply(c: &Config, user: Option<&UserContext>, log: Log) -> Result<(), String> {
+    let (changed, latest) = {
+        let _vpn_files = vpn_config_lock(true)?;
+        let latest = if Path::new(&conf_path()).exists() { Config::load(c.mirrors.clone())? } else { c.clone() };
+        (write_config_locked(&latest)?, latest)
+    };
+    let c = &latest;
     if !service_active() {
         log(t!("конфиг собран; VPN не запущен"));
+        sysproxy(c, user).map_err(|error| format!("VPN configuration saved, but user proxy failed: {error}; retry: upd vpn restart"))?;
         return Ok(());
     }
     if changed {
@@ -1779,21 +1795,37 @@ pub fn apply(c: &Config, log: Log) -> Result<(), String> {
     } else {
         log(t!("конфиг не изменился"));
     }
-    sysproxy(c);
+    sysproxy(c, user).map_err(|error| format!("VPN core applied, but user proxy failed: {error}; retry: upd vpn restart"))?;
     Ok(())
 }
 
+/// Configuration is already persisted; absent subscriptions are an explicit pending state.
+pub fn apply_saved(c: &Config, user: Option<&UserContext>, log: Log) -> Result<(), String> {
+    if load_subs()?.list.is_empty() {
+        log("settings saved; VPN pending until a subscription is added");
+        return Ok(());
+    }
+    apply(c, user, log).map_err(|error| format!("settings saved, but not applied: {error}; retry: upd vpn restart"))
+}
+
+pub fn apply_saved_mode(c: &Config, user: Option<&UserContext>, log: Log) -> Result<(), String> {
+    let _vpn_files = vpn_config_lock(true)?;
+    if load_subs()?.list.is_empty() { log("settings saved; VPN pending until a subscription is added"); return Ok(()); }
+    let latest = if Path::new(&conf_path()).exists() { Config::load(c.mirrors.clone())? } else { c.clone() };
+    write_config_locked(&latest).and_then(|_| if running() { set_mode(latest.vpn_mode_name()) } else { Ok(()) })
+        .and_then(|_| sysproxy(&latest, user).map(|_| ()))
+        .map_err(|error| format!("settings saved, but not applied: {error}; retry: upd vpn restart"))
+}
+
 /// Режим «только прокси»: включить системный прокси GNOME пользователю; в TUN — выключить.
-pub fn sysproxy(c: &Config) {
-    let Some(user) = invoking_user() else { return };
-    if !have("gsettings") {
-        return;
-    }
-    let uid = out("id", &["-u", &user]).0.trim().to_string();
-    if uid.is_empty() {
-        return;
-    }
-    let bus = format!("DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/{uid}/bus");
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum SysproxyStatus { BackgroundSkipped, Applied { uid: u32, enabled: bool, port: u16 } }
+
+pub fn sysproxy(c: &Config, user: Option<&UserContext>) -> Result<SysproxyStatus, String> {
+    let Some(user) = user else { return Ok(SysproxyStatus::BackgroundSkipped); };
+    if !have("gsettings") { return Err(format!("UID {}: gsettings is unavailable", user.uid)); }
+    let runtime = user.runtime_dir.to_string_lossy().into_owned();
+    let bus = format!("unix:path={runtime}/bus");
     let on = !c.vpn_tun && service_active();
     let mut cmds: Vec<Vec<String>> = vec![vec!["org.gnome.system.proxy".into(), "mode".into(), if on { "manual" } else { "none" }.into()]];
     if on {
@@ -1805,10 +1837,19 @@ pub fn sysproxy(c: &Config) {
         cmds.push(vec!["org.gnome.system.proxy".into(), "ignore-hosts".into(), "['localhost', '127.0.0.0/8', '::1', '192.168.0.0/16', '10.0.0.0/8', '172.16.0.0/12']".into()]);
     }
     for a in cmds {
-        let mut args: Vec<&str> = vec!["-u", &user, "--", "env", &bus, "gsettings", "set"];
-        args.extend(a.iter().map(String::as_str));
-        let _ = run(true, &[], "runuser", &args);
+        let result = if unsafe { libc::geteuid() } == user.uid {
+            let mut args = vec!["set"]; args.extend(a.iter().map(String::as_str));
+            run(true, &[("XDG_RUNTIME_DIR", &runtime), ("DBUS_SESSION_BUS_ADDRESS", &bus)], "gsettings", &args)
+        } else {
+            let runtime_env = format!("XDG_RUNTIME_DIR={runtime}");
+            let bus_env = format!("DBUS_SESSION_BUS_ADDRESS={bus}");
+            let mut args = vec!["-u", user.name.as_str(), "--", "env", &runtime_env, &bus_env, "gsettings", "set"];
+            args.extend(a.iter().map(String::as_str));
+            run(true, &[], "runuser", &args)
+        };
+        result.map_err(|error| format!("UID {} ({}): {error}", user.uid, user.name))?;
     }
+    Ok(SysproxyStatus::Applied { uid: user.uid, enabled: on, port: c.vpn_port })
 }
 
 // ======================= ядро: mihomo, обновление по релизам FlClash =======================
@@ -1884,6 +1925,7 @@ fn verify_core_gz_digest(raw_digest: &str, gz: &[u8]) -> Result<(), String> {
 
 /// Скачать и поставить mihomo (сборка под процессор, проверка SHA-256). true — ядро сменилось.
 pub fn core_install(c: &Config, log: Log, force: bool) -> Result<bool, String> {
+    let _vpn_files = vpn_config_lock(true)?;
     let rel = gh_latest("MetaCubeX/mihomo", c.vpn_port)?;
     let tag = rel["tag_name"].as_str().ok_or(t!("нет tag_name в релизе mihomo"))?.to_string();
     let cur = core_version();
@@ -2203,6 +2245,7 @@ fn validate_geo_file(remote: &str, data: &[u8]) -> Result<(), String> {
 }
 
 pub fn geo_update(c: &Config, log: Log, only_missing: bool) -> Result<(), String> {
+    let _vpn_files = vpn_config_lock(true)?;
     private_dir(&home())?;
     let mut errs = vec![];
     for (file, remote) in GEO {
@@ -2276,33 +2319,20 @@ pub fn prepare(c: &Config, log: Log) -> Result<(), String> {
 
 /// Фоновое обслуживание (из upd auto): подписки по сроку, ядро по сигналу FlClash.
 pub fn maintain(c: &Config, log: Log) {
-    {
+    let changed = {
+        let _vpn_files = match vpn_config_lock(true) { Ok(lock) => lock, Err(error) => { log(&error); return; } };
         let _lock = match subscriptions_lock(true) {
             Ok(lock) => lock,
-            Err(e) => {
-                log(&t!("VPN: блокировка подписок не получена: {0}", e));
-                return;
-            }
+            Err(error) => { log(&error); return; }
         };
-        let subs = match load_subs() {
-            Ok(subs) => subs,
-            Err(e) => {
-                log(&t!("VPN: подписки не прочитаны: {0}", e));
-                return;
-            }
-        };
-        if subs.list.is_empty() {
-            return;
-        }
+        let subs = match load_subs() { Ok(subs) => subs, Err(error) => { log(&error); return; } };
+        if subs.list.is_empty() { return; }
         match update_subs_locked(c, log, false) {
-            Ok(true) => match apply(c, log) {
-                Ok(()) => {}
-                Err(e) => log(&format!("VPN: {e}")),
-            },
-            Ok(false) => {}
-            Err(e) => log(&t!("VPN: подписки не обновлены: {0}", e)),
+            Ok(changed) => changed,
+            Err(error) => { log(&t!("VPN: подписки не обновлены: {0}", error)); false }
         }
-    }
+    };
+    if changed { if let Err(error) = apply(c, None, log) { log(&format!("VPN: {error}")); } }
     let st = load_state();
     if !elapsed_at_least(st.checked, hours_secs(c.vpn_core_check_h)) && core_version().is_some() {
         return;

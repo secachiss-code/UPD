@@ -76,7 +76,7 @@ fn main() {
     if !user_cmd {
         become_root();
     }
-    let c = match Config::load(b.default_mirrors()) {
+    let mut c = match Config::load(b.default_mirrors()) {
         Ok(c) => c,
         Err(e) => {
             eprintln!("upd: {e}");
@@ -746,7 +746,8 @@ fn cmd_vpn(c: &Config, pos: &[String]) -> i32 {
     let sub = pos.first().map(String::as_str).unwrap_or("status");
     let arg = pos.get(1).map(String::as_str);
     let mut c = c.clone();
-    let apply = |c: &Config| err_code(vpn::apply(c, &stdlog));
+    let user = match cli_user_context() { Ok(user) => user, Err(error) => return err_code(Err(error)) };
+    let apply = |c: &Config| err_code(vpn::apply_saved(c, user.as_ref(), &stdlog));
     match sub {
         "help" => {
             print!("{}", t!(VPN_USAGE));
@@ -822,7 +823,7 @@ fn cmd_vpn(c: &Config, pos: &[String]) -> i32 {
                                         errors.push(t!("VPN не удалось остановить: {0}", e));
                                     }
                                 }
-                                vpn::sysproxy(&c);
+                                if let Err(error) = vpn::sysproxy(&c, user.as_ref()) { errors.push(format!("VPN subscription removed, but user proxy failed: {error}")); }
                                 if c.vpn_autostart {
                                     if let Err(e) = vpn::autostart(false) {
                                         errors.push(t!("автозапуск VPN не удалось выключить: {0}", e));
@@ -879,20 +880,20 @@ fn cmd_vpn(c: &Config, pos: &[String]) -> i32 {
                 return err_code(Err(e));
             }
             println!("{}", t!("запускаю службу..."));
-            let r = vpn::start(&c);
+            let mut r = vpn::start(&c);
             if r.is_ok() {
                 std::thread::sleep(std::time::Duration::from_secs(2));
-                vpn::sysproxy(&c);
+                if let Err(error) = vpn::sysproxy(&c, user.as_ref()) { r = Err(format!("VPN started, but user proxy failed: {error}; retry: upd vpn restart")); }
                 println!("VPN: {}", vpn_line());
             }
             err_code(r)
         }
         "stop" => {
             let r = vpn::stop();
-            vpn::sysproxy(&c);
-            err_code(r)
+            let proxy = vpn::sysproxy(&c, user.as_ref()).map(|_| ()).map_err(|error| format!("VPN stopped, but user proxy failed: {error}; retry: upd vpn stop"));
+            err_code(r.and(proxy))
         }
-        "restart" => err_code(vpn::restart(&c)),
+        "restart" => err_code(vpn::restart(&c).and_then(|_| vpn::sysproxy(&c, user.as_ref()).map(|_| ()).map_err(|error| format!("VPN restarted, but user proxy failed: {error}; retry: upd vpn restart")))),
         "tun" | "proxy" => {
             c.vpn_tun = sub == "tun";
             if let Err(e) = c.save() {
@@ -905,13 +906,7 @@ fn cmd_vpn(c: &Config, pos: &[String]) -> i32 {
             if let Err(e) = c.save() {
                 return err_code(Err(e.to_string()));
             }
-            if let Err(e) = vpn::write_config(&c) {
-                return err_code(Err(e));
-            }
-            if vpn::running() {
-                return err_code(vpn::set_mode(sub));
-            }
-            0
+            err_code(vpn::apply_saved_mode(&c, user.as_ref(), &stdlog))
         }
         "servers" => {
             let s = vpn::snapshot();
@@ -1015,6 +1010,16 @@ fn print_status(b: &dyn Backend) {
 
 // ---------- уведомления (от имени пользователя) ----------
 
+fn notify_once(seen: &mut BTreeMap<String, String>, key: &str, val: String, title: &str, body: &str) -> Result<(), String> {
+    if seen.get(key) == Some(&val) { return Ok(()); }
+    let mut command = std::process::Command::new("notify-send");
+    command.args(["-a", "upd", "-i", "system-software-update", title, body]);
+    let mut policy = CapturePolicy::background(Some(256)); policy.stderr_max = 8192;
+    let output = capture_with_policy(&mut command, policy).map_err(String::from)?;
+    if !output.status.success() { return Err(format!("notify-send exited with {}", output.status)); }
+    seen.insert(key.into(), val); Ok(())
+}
+
 fn cmd_notify() {
     if !have("notify-send") || upd::summary::applet_running() {
         // апплет COSMIC сам показывает уведомления, с кнопками действий
@@ -1024,11 +1029,7 @@ fn cmd_notify() {
     let cache = format!("{home}/.cache/upd-notified.json");
     let mut seen: BTreeMap<String, String> = fs::read(&cache).ok().and_then(|b| serde_json::from_slice(&b).ok()).unwrap_or_default();
     let mut send = |key: &str, val: String, title: &str, body: &str| {
-        if seen.get(key) == Some(&val) {
-            return;
-        }
-        let _ = std::process::Command::new("notify-send").args(["-a", "upd", "-i", "system-software-update", title, body]).status();
-        seen.insert(key.into(), val);
+        if let Err(error) = notify_once(&mut seen, key, val, title, body) { eprintln!("upd notify: {error}"); }
     };
     let u: UpdState = load_json("updates.json");
     let total = u.list.len() + u.flatpak.len();
@@ -1136,12 +1137,13 @@ fn gui_source(exe: &Path) -> Option<std::path::PathBuf> {
     ["upd-cosmic", "upd-cosmic-linux-amd64"].iter().map(|n| dir.join(n)).find(|p| p.is_file())
 }
 
+fn install_binary(src: &Path, target: &Path) -> Result<(), String> {
+    let bytes = fs::read(src).map_err(|error| format!("{}: {error}", src.display()))?;
+    atomic_write(target, &bytes, 0o755).map_err(|error| format!("{}: {error}", target.display()))
+}
+
 fn install_gui(src: &Path) -> Result<(), String> {
-    let tmp = format!("{GUI_BIN}.new");
-    fs::copy(src, &tmp)
-        .and_then(|_| fs::set_permissions(&tmp, std::os::unix::fs::PermissionsExt::from_mode(0o755)))
-        .and_then(|_| fs::rename(&tmp, GUI_BIN))
-        .map_err(|e| format!("{GUI_BIN}: {e}"))?;
+    install_binary(src, Path::new(GUI_BIN))?;
     for (path, body) in GUI_FILES {
         write_file(path, body, 0o644)?;
     }
@@ -1621,8 +1623,7 @@ fn cmd_install(b: &dyn Backend, c: &Config, pkg: bool) -> i32 {
         }
     } else if exe != Path::new(LOCAL_BIN) {
         let _ = fs::create_dir_all("/usr/local/bin");
-        let tmp = format!("{LOCAL_BIN}.new");
-        if let Err(e) = fs::copy(&exe, &tmp).and_then(|_| fs::set_permissions(&tmp, std::os::unix::fs::PermissionsExt::from_mode(0o755))).and_then(|_| fs::rename(&tmp, LOCAL_BIN)) {
+        if let Err(e) = install_binary(&exe, Path::new(LOCAL_BIN)) {
             eprintln!("{}", t!("не удалось скопировать бинарник: {0}", e));
             return 1;
         }
@@ -1645,10 +1646,10 @@ fn cmd_install(b: &dyn Backend, c: &Config, pkg: bool) -> i32 {
             let _ = c.save();
         }
     }
-    let c = &c;
     if !Path::new(&conf_path()).exists() {
         let _ = c.save();
     }
+    let c = &c;
     ok(t!("настройки: {}", conf_path()));
     let _ = fs::create_dir_all(state_dir());
 
@@ -1725,14 +1726,14 @@ fn cmd_uninstall(b: &dyn Backend, pkg: bool) -> i32 {
     if !pkg {
         remove_gui();
     }
-    vpn::sysproxy(&c);
+    let proxy_result = cli_user_context().and_then(|user| vpn::sysproxy(&c, user.as_ref()).map(|_| ()));
     let _ = fs::remove_file(CRON_PATH);
     garuda_skip_mirrors(false);
     for f in garuda_unalias(false) {
         println!("{}", t!("убрано снятие алиаса upd: {0}", f));
     }
     println!("{}", t!("upd удалён. Оставлены настройки и данные: {}, {} (подписки VPN), {} — удали вручную, если не нужны.", conf_path(), vpn::etc(), state_dir()));
-    0
+    err_code(proxy_result)
 }
 
 #[cfg(test)]
@@ -1741,6 +1742,44 @@ mod contract_tests {
     use std::path::Path;
 
     // --- INSTALL-01 ---
+    #[test]
+    fn review_binary_install_concurrency_never_mixes_files() {
+        use upd::common::contract_fixtures::TempDirGuard;
+        use std::os::unix::fs::PermissionsExt;
+        let dir = TempDirGuard::new("upd-binary-install").unwrap();
+        let source_a = dir.path().join("a"); let source_b = dir.path().join("b");
+        std::fs::write(&source_a, vec![b'a'; 65536]).unwrap();
+        std::fs::write(&source_b, vec![b'b'; 65536]).unwrap();
+        let target = dir.path().join("installed");
+        let barrier = std::sync::Arc::new(std::sync::Barrier::new(8));
+        let mut workers = Vec::new();
+        for n in 0..8 { let source = if n % 2 == 0 { source_a.clone() } else { source_b.clone() };
+            let target = target.clone(); let barrier = barrier.clone();
+            workers.push(std::thread::spawn(move || { barrier.wait(); install_binary(&source, &target).unwrap(); })); }
+        for worker in workers { worker.join().unwrap(); }
+        let bytes = std::fs::read(&target).unwrap(); assert_eq!(bytes.len(), 65536);
+        assert!(bytes.iter().all(|byte| *byte == bytes[0]));
+        assert_eq!(std::fs::metadata(target).unwrap().permissions().mode() & 0o777, 0o755);
+        assert!(!dir.path().read_dir().unwrap().any(|entry| entry.unwrap().file_name().to_string_lossy().ends_with(".tmp")));
+    }
+
+    #[test]
+    fn review_failed_notification_is_not_marked_seen_and_can_retry() {
+        use upd::common::contract_fixtures::{isolation_lock, TempDirGuard, EnvGuard};
+        use std::os::unix::fs::PermissionsExt;
+        let _isolation = isolation_lock(); let dir = TempDirGuard::new("upd-notification-fail").unwrap();
+        let notify = dir.path().join("notify-send");
+        std::fs::write(&notify, "#!/bin/sh\nexit 1\n").unwrap();
+        std::fs::set_permissions(&notify, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let mut env = EnvGuard::new(); env.set("PATH", dir.path());
+        let mut seen = BTreeMap::new();
+        assert!(notify_once(&mut seen, "updates", "version1".into(), "title", "body").is_err());
+        assert!(!seen.contains_key("updates"));
+        std::fs::write(&notify, "#!/bin/sh\nexit 0\n").unwrap();
+        assert!(notify_once(&mut seen, "updates", "version1".into(), "title", "body").is_ok());
+        assert_eq!(seen.get("updates").map(String::as_str), Some("version1"));
+    }
+
     #[test]
     fn install01_package_install_requires_package_script_env() {
         let _isolation = upd::common::contract_fixtures::isolation_lock();
@@ -1941,7 +1980,7 @@ mod contract_tests {
         let log_s = log.to_str().unwrap().replace('\'', "");
         write_stub(&bin, "systemctl", &format!("#!/bin/sh\necho \"$@\" >> '{log_s}'\nif [ \"$1\" = is-active ]; then echo active; fi\nexit 0\n"));
         write_stub(&bin, "id", "#!/bin/sh\necho 1000\n");
-        write_stub(&bin, "gsettings", "#!/bin/sh\nexit 0\n");
+        write_stub(&bin, "gsettings", &format!("#!/bin/sh\necho \"$@\" >> '{log_s}'\nexit 0\n"));
         write_stub(&bin, "runuser", &format!("#!/bin/sh\necho \"$@\" >> '{log_s}'\nexit 0\n"));
         let subs = serde_json::json!({
             "active": "a1",
@@ -1953,7 +1992,7 @@ mod contract_tests {
             std::env::set_var("UPD_VPN_ETC", etc.to_str().unwrap());
             std::env::set_var("UPD_VPN_HOME", home.to_str().unwrap());
             std::env::set_var("UPD_STATE_DIR", state.to_str().unwrap());
-            std::env::set_var("SUDO_USER", "updtest");
+            std::env::set_var("SUDO_USER", UserContext::from_uid(libc::geteuid()).unwrap().name);
         }
         let code = {
             let _path = upd::common::contract_fixtures::prepend_path(&bin);

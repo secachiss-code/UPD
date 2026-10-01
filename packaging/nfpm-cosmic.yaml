@@ -19,7 +19,7 @@ contents:
     dst: /usr/share/licenses/upd-cosmic/LICENSE
     file_info:
       mode: 0644
-  - src: dist/upd-cosmic-linux-amd64
+  - src: ${GUI_BIN}
     dst: /usr/bin/upd-cosmic
     file_info:
       mode: 0755

@@ -9,9 +9,9 @@
 | `lib.rs` | Библиотека: подключает модули ниже и общие для CLI, TUI и COSMIC типы. |
 | `main.rs` | Бинарник: разбор CLI, повышение привилегий, порядок обновления, установка/удаление, генерация systemd-файлов, хуков и политики polkit. |
 | `status.rs` | Полная сводка состояния (`gather_status`) для `upd status`, TUI и раздела «Обслуживание». |
-| `summary.rs` | Лёгкий снимок для панели (только чтение общедоступных файлов) и приоритеты значка и заголовка. |
+| `summary.rs` | Снимок для панели из файлов и ограниченных probes; приоритеты значка и заголовка. |
 | `helper.rs` | Помощник графического интерфейса `upd helper`: протокол JSON по Unix-сокету, проверка прав через polkit, одна долгая операция в PTY, клиент для интерфейса. |
-| `common.rs` | Структура `Config`, JSON-состояние, atomic write, `flock`, команды ОС, сеть, батарея, диск, reboot и поиск процессов со старыми библиотеками. |
+| `common.rs`, `common/probe.rs` | Config и транзакции, JSON/atomic write, flock, bounded capture/deadlines/cancel, контекст UID, команды ОС и сведения о системе. |
 | `backend.rs` | Trait `Backend` и адаптеры `Pacman`, `Apt`, `Rpm` для пакетных менеджеров. |
 | `mirrors.rs` | Определение сети, кандидаты зеркал, параллельные пробы, оценка свежести и скорости, предзагрузка обновлений. |
 | `extras.rs` | Flatpak, AUR (обновление, поиск через AUR RPC v5, установка через paru/yay), fwupd, новости Arch, snapper/timeshift, перезапуск служб. |
@@ -135,3 +135,73 @@ rustup target add x86_64-unknown-linux-musl
 `build.sh` собирает и интерфейс COSMIC (`dist/upd-cosmic-linux-amd64`), если в системе есть заголовки wayland и xkbcommon; `UPD_NO_GUI=1` отключает это. Отдельно: `cd cosmic && cargo build --release`.
 
 Встроенные тесты расположены в модулях `src/*.rs`; тест TUI рендерит несколько экранов через `TestBackend`. Изменения конфигурации следует сверять с `Config::defaults`, `Config::load`, `Config::save` и текстом пользовательской документации.
+
+
+## Контракты helper и GUI после аудита Luna 6
+
+Протокол JSON имеет `protocol_version = 2` в Envelope/Reply/OperationEvent.
+Клиент сначала отправляет Hello; несовпадение версии останавливает запрос до
+мутации, без fallback. Каждый запуск получает уникальный operation_id, вопрос —
+prompt_id. Input/Cancel относятся к конкретной операции; Input одноразовый.
+Владелец и ID повторно проверяются после polkit. Replay имеет явную границу
+ReplayComplete; старые callbacks не изменяют новую операцию.
+
+Runner владеет Child, process group, PTY-input и reader. Ввод ограничен 1024
+байтами и одной строкой без control characters, имеет deadline 1 s и очередь
+16 команд; запись/ожидание выполняются вне State mutex. Echo отключается до
+ввода. Cancel возвращает принятый/отклонённый результат; inline операции явно
+сообщают Unsupported. При выходе leader PGID сразу очищается, drain ограничен
+500 ms, reader пробуждается и join-ится до завершения runner.
+
+До авторизации резервируются квоты 16 глобальных/8 на UID соединений. Полный
+запрос: 64 KiB / 2 s. Event: 128 KiB, Reply: 20 MiB, запись: 2 s, replay: 3 s.
+Строка/partial: 16 KiB; журнал: 5000 строк / 3 MiB; replay: 4 MiB;
+subscriber: 256 событий / 4 MiB. Partial coalesces; overflow сообщает Gap и
+закрывает подписку. Disconnect обнаруживается без нового вывода; RAII снимает
+подписку/квоту. GUI использует bounded каналы и пробуждает socket-reader при
+отмене stream.
+
+Config сохраняется через уникальный exclusive temp, mode при создании,
+fsync файла, rename и fsync каталога. Транзакция read-modify-write сериализуется
+межпроцессным flock; старый снимок изменяет только свои поля, с merge зеркал.
+Порядок блокировок и runtime-apply описан в
+[AUDIT-LUNA6-LOCKS.md](AUDIT-LUNA6-LOCKS.md). UserContext берётся из peer UID/NSS
+или явного CLI invoking user; daemon не меняет глобальное окружение. Фоновый
+процесс без пользователя пропускает его sysproxy; ошибки применения видны.
+
+`common/probe.rs` обслуживает stdout/stderr одним poll-loop, без reader threads.
+Read-only probe имеет общий deadline 30 s, output budgets и cancel; отдельная
+process group завершается и reap-ится на ошибке/timeout. Установка/AUR и команды,
+ждущие пользователя, используют interactive policy, а не 30-секундный предел.
+
+`cosmic/src/jobs.rs`: для каждого Kind максимум один фактический worker и одно
+последнее отложенное задание. Поколения ключа/страницы отбрасывают старые ответы;
+отмена future не освобождает слот, пока blocking worker не завершён. Состояния
+Idle/Loading/Ready/Error, retries с backoff. I/O выполняется в spawn_blocking.
+`cosmic/src/launch.rs`: один bounded reaper (256 children / 32 ошибок), без
+ожидания child в UI; spawn/exit errors доступны интерфейсу.
+
+## Свежие артефакты и воспроизводимые проверки
+
+build.sh использует явные musl/GNU targets и --locked, уникальный staging и
+logs. Версии свежих CLI/GUI сверяются через --version. `dist/build-manifest.tsv`
+(либо UPD_BUILD_MANIFEST) содержит результаты только текущего запуска; package.sh
+использует собственный manifest/staging и не включает старый GUI при пропуске
+его сборки. На ошибке выводится лог; посторонние файлы dist не удаляются.
+
+`./tests/check_audit.sh` собирает обычные CLI/GUI бинарники (чтобы проверить production monomorphization), запускает core (musl), отдельный Cosmic (GNU), packaging
+fixtures и проверки новых модулей. Нужны локальные Unix sockets/PTY. Полная
+матрица: `UPD_FULL_VISUAL=1 ./tests/check_audit.sh`; без неё Cosmic suite всё равно
+рендерит два PNG smoke и проверяет encoder/decoder. Доказательства и ограничения:
+[AUDIT-LUNA6-FINDINGS.md](AUDIT-LUNA6-FINDINGS.md),
+[визуальная приёмка](audit-luna6-acceptance/README.md),
+[ресурсные gates](audit-luna6-acceptance/RESOURCE-GATES.md).
+
+
+Последующее [ревью исходной базы](AUDIT-LUNA6-PRIOR-REVIEW.md) уточнило TUI
+lifecycle: Child/reader принадлежат ProcessSession, лидер наблюдается WNOWAIT
+до cleanup группы и reap; завершённая сессия не держит reader. Nonblocking PTY
+input имеет deadline 100 ms. COSMIC action notifications ограничены четырьмя
+workers, ждут до 5 min с bounded capture; CLI notifications — до 30 s и не
+помечают failure как доставленный. Ручной install бинарников использует тот же
+unique/exclusive atomic_write (с однократным чтением install source в память).

@@ -1678,6 +1678,7 @@ impl App<'_> {
     fn vpn_change(&mut self, label: String, change: impl FnOnce(&mut Config) + Send + 'static) {
         let mirrors = self.b.default_mirrors();
         self.start_action(label, move || {
+            let user = match cli_user_context() { Ok(user) => user, Err(error) => return error };
             let mut c = match Config::load(mirrors) {
                 Ok(c) => c,
                 Err(e) => return t!("конфиг не прочитан: {0}", e),
@@ -1687,7 +1688,7 @@ impl App<'_> {
                 return t!("не сохранено: {0}", e);
             }
             let log = std::cell::RefCell::new(vec![]);
-            if let Err(e) = vpn::apply(&c, &|s| log.borrow_mut().push(s.to_string())) {
+            if let Err(e) = vpn::apply_saved(&c, user.as_ref(), &|s| log.borrow_mut().push(s.to_string())) {
                 log.borrow_mut().push(t!("ошибка: {0}", e));
             }
             log.into_inner().join("; ")
@@ -1871,6 +1872,7 @@ impl App<'_> {
                         let mode = (c.vpn_mode + 1) % 3;
                         let mirrors = self.b.default_mirrors();
                         self.start_action(t!("маршрутизация").into(), move || {
+                            let user = match cli_user_context() { Ok(user) => user, Err(error) => return error };
                             let mut c = match Config::load(mirrors) {
                                 Ok(c) => c,
                                 Err(e) => return t!("конфиг не прочитан: {0}", e),
@@ -1879,13 +1881,10 @@ impl App<'_> {
                             if let Err(e) = c.save() {
                                 return t!("не сохранено: {0}", e);
                             }
-                            if let Err(e) = vpn::write_config(&c) {
-                                return t!("ошибка: {0}", e);
-                            }
-                            match vpn::running().then(|| vpn::set_mode(c.vpn_mode_name())) {
-                                Some(Err(e)) => t!("ошибка: {0}", e),
-                                _ => t!("маршрутизация сохранена").into(),
-                            }
+                            let log = std::cell::RefCell::new(Vec::new());
+                            if let Err(error) = vpn::apply_saved_mode(&c, user.as_ref(), &|text| log.borrow_mut().push(text.to_string())) { return error; }
+                            let text = log.into_inner().join("; ");
+                            if text.is_empty() { t!("маршрутизация сохранена").into() } else { text }
                         });
                     }
                     "autostart" => {
@@ -1905,7 +1904,7 @@ impl App<'_> {
                             }
                             match vpn::autostart(on) {
                                 Ok(()) => t!("запуск при загрузке: {}", on_off(on)),
-                                Err(e) => t!("ошибка: {0}", e),
+                                Err(e) => format!("settings saved, but autostart not applied: {e}; retry: upd vpn restart"),
                             }
                         });
                     }
@@ -2525,4 +2524,27 @@ mod tests {
         assert!(stage_summary(&st, Some(130)).contains("⊘ Проверка"));
         assert_eq!(stage_summary(&[], Some(0)), "");
     }
+    #[test]
+    fn audit_minimal_tui_surfaces_keep_errors_and_keyboard_footer() {
+        let (b, ui) = (FixtureBackend, FixtureUiData);
+        for lang in crate::i18n::ALL {
+            crate::i18n::set_thread(lang);
+            for (width, height) in [(80, 24), (60, 18)] {
+                let mut app = App::new(&b, &ui, Some(Status::default()), Some(page_with_subs(&["a", "c"])));
+                app.scr = Screen::Vpn; app.v.tab = 1; app.v.subs.select(Some(1));
+                let mut terminal = Terminal::new(TestBackend::new(width, height)).unwrap();
+                terminal.draw(|f| app.draw(f)).unwrap();
+                let screen = dump(&terminal);
+                assert!(screen.contains("name-c") && screen.contains("HTTP 403"), "{screen}");
+                assert!(screen.lines().rev().take(3).any(|line| line.contains(" q ")), "{screen}");
+                if let Some(dir) = std::env::var_os("UPD_TUI_SNAPSHOTS") {
+                    let dir = std::path::PathBuf::from(dir); std::fs::create_dir_all(&dir).unwrap();
+                    std::fs::write(dir.join(format!("vpn-{}-{width}x{height}.txt", lang.code())), &screen).unwrap();
+                }
+                app.key(KeyCode::Esc); assert!(app.scr == Screen::Menu);
+            }
+        }
+        crate::i18n::set_thread(crate::i18n::Lang::Ru);
+    }
+
 }

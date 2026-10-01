@@ -5923,10 +5923,12 @@ version = "0.2.7"
 dependencies = [
  "libc",
  "libcosmic",
+ "png 0.17.16",
  "serde",
  "serde_json",
  "tokio",
  "upd",
+ "url",
 ]
 
 [[package]]

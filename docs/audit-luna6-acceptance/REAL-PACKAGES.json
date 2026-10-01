@@ -1,0 +1,32 @@
+[
+  {
+    "package": "upd-0.2.7-1-x86_64.pkg.tar.zst",
+    "binary_sha256": "cd2b925e608c220fdce66686b34030c605a83c20c81263a0a4514d097249e023",
+    "name_version_arch_checked": true
+  },
+  {
+    "package": "upd_0.2.7-1_amd64.deb",
+    "binary_sha256": "cd2b925e608c220fdce66686b34030c605a83c20c81263a0a4514d097249e023",
+    "name_version_arch_checked": true
+  },
+  {
+    "package": "upd-0.2.7-1.x86_64.rpm",
+    "binary_sha256": "cd2b925e608c220fdce66686b34030c605a83c20c81263a0a4514d097249e023",
+    "name_version_arch_checked": true
+  },
+  {
+    "package": "upd-cosmic-0.2.7-1-x86_64.pkg.tar.zst",
+    "binary_sha256": "92a21092d4c8818479b897f85e8f9acb92bb58ff2565a4a8ce8671e2cf9760db",
+    "name_version_arch_checked": true
+  },
+  {
+    "package": "upd-cosmic_0.2.7-1_amd64.deb",
+    "binary_sha256": "92a21092d4c8818479b897f85e8f9acb92bb58ff2565a4a8ce8671e2cf9760db",
+    "name_version_arch_checked": true
+  },
+  {
+    "package": "upd-cosmic-0.2.7-1.x86_64.rpm",
+    "binary_sha256": "92a21092d4c8818479b897f85e8f9acb92bb58ff2565a4a8ce8671e2cf9760db",
+    "name_version_arch_checked": true
+  }
+]

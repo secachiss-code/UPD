@@ -1,0 +1,17 @@
+ upd  aggiornamento del sistema · Fixture Linux
+○ spenta
+s — accendi
+
+ 1 Server  2 Abbonamenti  3 Impostazioni   istantanea 00:10:
+╭ Abbonamenti — ● attivo ──────────────────────────────────╮
+│   abbonamento                   traffico / scadenza      │
+│   1. name-a                                              │
+│   2. name-c                     ⚠ HTTP 403 — очень длинна│
+│                                                          │
+│                                                          │
+│                                                          │
+╰──────────────────────────────────────────────────────────╯
+«name-c» · example.com · 0 nodi · aggiornata mai · ⚠ HTTP
+403 — очень длинная причина ошибки подписки
+ q indietro tab 1-3 scheda s on/off enter rendi attivo
+ n aggiungi u aggiorna x elimina

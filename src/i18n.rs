@@ -407,6 +407,7 @@ mod tests {
             include_str!("../cosmic/src/applet.rs"),
             include_str!("../cosmic/src/main.rs"),
             include_str!("../cosmic/src/model.rs"),
+            include_str!("../cosmic/src/jobs.rs"),
             include_str!("../cosmic/src/op.rs"),
             include_str!("../cosmic/src/ui.rs"),
             include_str!("../cosmic/src/window.rs"),

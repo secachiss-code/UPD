@@ -13,6 +13,7 @@ upd = { path = ".." }
 libc = "0.2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+url = "2.5"
 tokio = { version = "1", features = ["rt", "sync", "time"] }
 
 [dependencies.libcosmic]
@@ -20,6 +21,9 @@ git = "https://github.com/pop-os/libcosmic"
 rev = "213b264bd3c0a9c751f0e8664053d59b08b21bba"
 default-features = false
 features = ["applet", "applet-token", "tokio", "wayland", "winit", "multi-window", "dbus-config", "a11y", "single-instance"]
+
+[dev-dependencies]
+png = "0.17"
 
 [profile.release]
 lto = "thin"

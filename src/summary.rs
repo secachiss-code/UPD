@@ -4,6 +4,7 @@
 
 use crate::backend::Backend;
 use crate::common::*;
+use crate::helper::{OperationId, PromptId};
 use crate::mirrors::load_mirror_state;
 use crate::vpn;
 use serde::{Deserialize, Serialize};
@@ -102,6 +103,10 @@ pub struct OpStatus {
     pub finished: i64,
     /// операция ждёт ответа да/нет
     pub waiting: bool,
+    /// идентификатор текущей или последней операции helper
+    pub operation_id: Option<OperationId>,
+    /// id вопроса, если команда ждёт однократный ответ
+    pub prompt_id: Option<PromptId>,
 }
 
 /// Значок на панели: из нескольких состояний показывается одно — с наивысшим приоритетом.

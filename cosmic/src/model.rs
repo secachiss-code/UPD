@@ -3,7 +3,7 @@
 
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
-use std::process::{Command, Stdio};
+use std::process::Command;
 use upd::common::{fmt_bytes, load_json, UpdState};
 use upd::helper::{self, Request};
 use upd::summary::{OpStatus, Summary};
@@ -27,11 +27,8 @@ pub fn rtl() -> bool {
 }
 
 /// Снимок для панели. Помощник спрашивается, только если upd занят (иначе он запускался бы каждые несколько секунд).
-pub fn load_summary() -> Summary {
-    match backend::detect() {
-        Ok(b) => upd::summary::gather(b.as_ref()),
-        Err(_) => Summary::default(),
-    }
+pub fn load_summary() -> Result<Summary, String> {
+    backend::detect().map(|b| upd::summary::gather(b.as_ref()))
 }
 
 /// Занят ли upd: команда держит блокировку /var/lib/upd/.lock (flock), её видно и обычному пользователю.
@@ -59,16 +56,13 @@ pub fn state_stamp() -> u64 {
 }
 
 /// Состояние операции: у помощника, если он её ведёт; иначе — по блокировке upd (фоновая проверка, TUI).
-pub fn load_op(ask_helper: bool) -> OpStatus {
+pub fn load_op(ask_helper: bool) -> Result<OpStatus, String> {
     let busy = upd_busy();
     if (busy || ask_helper) && helper::available() {
-        if let Ok(st) = helper::call_as::<OpStatus>(&Request::Status) {
-            if st.running || !busy {
-                return st;
-            }
-        }
+        let st = helper::call_as::<OpStatus>(&Request::Status)?;
+        if st.running || !busy { return Ok(st); }
     }
-    OpStatus { running: busy, command: if busy { "auto".into() } else { String::new() }, ..Default::default() }
+    Ok(OpStatus { running: busy, command: if busy { "auto".into() } else { String::new() }, ..Default::default() })
 }
 
 pub fn vpn_snapshot() -> Result<vpn::Snapshot, String> {
@@ -93,13 +87,14 @@ pub fn vpn_servers(s: &vpn::Snapshot, limit: usize) -> Option<(String, Vec<(Stri
     Some((group, v))
 }
 
-pub fn start(args: &[&str]) -> Result<(), String> {
-    helper::call(&Request::Start { args: args.iter().map(|s| s.to_string()).collect() }).map(|_| ())
+pub fn start(args: &[&str]) -> Result<helper::OperationId, String> {
+    helper::call_as::<helper::StartReply>(&Request::Start { args: args.iter().map(|s| s.to_string()).collect() })
+        .map(|reply| reply.operation_id)
 }
 
 /// Окно upd: страница и, при необходимости, команда, которую окно запустит и покажет.
-pub fn open_window(page: Option<&str>, run: Option<&str>) {
-    let exe = std::env::current_exe().unwrap_or_else(|_| "upd-cosmic".into());
+pub fn open_window(page: Option<&str>, run: Option<&str>) -> Result<(), String> {
+    let exe = std::env::current_exe().map_err(|e| e.to_string())?;
     let mut c = Command::new(exe);
     if let Some(p) = page {
         c.args(["--page", p]);
@@ -107,7 +102,7 @@ pub fn open_window(page: Option<&str>, run: Option<&str>) {
     if let Some(r) = run {
         c.args(["--run", r]);
     }
-    let _ = c.stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null()).spawn();
+    crate::launch::spawn(&mut c).map(|_| ()).map_err(|e| format!("upd-cosmic: {e}"))
 }
 
 /// Интерактивные инструменты (pacdiff, редактор правил VPN) запускаются в терминале.
@@ -126,23 +121,21 @@ pub fn open_terminal(args: &[&str]) -> Result<(), String> {
         ("xterm", &["-e"]),
     ];
     for (term, pre) in candidates {
-        if upd::common::have(term) {
-            return Command::new(term)
-                .args(pre)
-                .args(&cmd)
-                .stdin(Stdio::null())
-                .stdout(Stdio::null())
-                .stderr(Stdio::null())
-                .spawn()
-                .map(|_| ())
-                .map_err(|e| format!("{term}: {e}"));
+        match crate::launch::spawn(Command::new(term).args(pre).args(&cmd)) {
+            Ok(_) => return Ok(()),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
+            Err(error) => return Err(format!("{term}: {error}")),
         }
     }
     Err(upd::t!("не найден эмулятор терминала").into())
 }
 
-pub fn open_url(url: &str) {
-    let _ = Command::new("xdg-open").arg(url).stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null()).spawn();
+pub fn open_url(address: &str) -> Result<(), String> {
+    let url = url::Url::parse(address).map_err(|_| upd::t!("Некорректная веб-ссылка").to_string())?;
+    if !matches!(url.scheme(), "http" | "https") || url.host_str().is_none() {
+        return Err(upd::t!("Разрешены только веб-ссылки HTTP и HTTPS").into());
+    }
+    crate::launch::spawn(Command::new("xdg-open").arg(url.as_str())).map(|_| ()).map_err(|e| format!("xdg-open: {e}"))
 }
 
 pub fn reboot() -> Result<(), String> {
@@ -233,5 +226,47 @@ pub fn ellipsize(s: &str, max: usize) -> String {
         s.to_string()
     } else {
         s.chars().take(max.saturating_sub(1)).collect::<String>() + "…"
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct Metadata { pub busy: bool, pub stamp: u64, pub lang: i18n::Lang, pub launch_errors: Vec<String> }
+pub fn metadata() -> Metadata { Metadata { busy: upd_busy(), stamp: state_stamp(), lang: init_lang(), launch_errors: crate::launch::errors() } }
+
+#[cfg(test)]
+mod launcher_tests {
+    use super::*;
+    use upd::common::contract_fixtures::{TempDirGuard, with_prepend_path};
+    use std::os::unix::fs::PermissionsExt;
+    #[test]
+    fn web_scheme_validation_precedes_launcher_and_https_is_one_argument() {
+        let dir = TempDirGuard::new("cosmic-web-launch").unwrap();
+        let marker = dir.path().join("arguments");
+        let body = format!("#!/bin/sh\nprintf '%s\\n' \"$#\" \"$1\" > '{}'\n", marker.display());
+        std::fs::write(dir.path().join("xdg-open"), body).unwrap();
+        std::fs::set_permissions(dir.path().join("xdg-open"), std::fs::Permissions::from_mode(0o755)).unwrap();
+        with_prepend_path(dir.path(), || {
+            for url in ["file:///tmp/test", "javascript:alert(1)", "data:text/plain,test", "not a url"] { assert!(open_url(url).is_err()); }
+            assert!(!marker.exists());
+            open_url("https://example.invalid/a?x=1&y=2").unwrap();
+        });
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
+        while !marker.exists() { assert!(std::time::Instant::now() < deadline); std::thread::sleep(std::time::Duration::from_millis(10)); }
+        assert_eq!(std::fs::read_to_string(marker).unwrap(), "1\nhttps://example.invalid/a?x=1&y=2\n");
+    }
+    #[test]
+    fn terminal_permission_error_does_not_launch_fallback() {
+        let dir = TempDirGuard::new("cosmic-terminal-failure").unwrap();
+        std::fs::write(dir.path().join("cosmic-term"), "#!/bin/sh\nexit 0\n").unwrap();
+        std::fs::set_permissions(dir.path().join("cosmic-term"), std::fs::Permissions::from_mode(0o644)).unwrap();
+        let marker = dir.path().join("fallback");
+        std::fs::write(dir.path().join("xdg-terminal-exec"), format!("#!/bin/sh\ntouch '{}'\n", marker.display())).unwrap();
+        std::fs::set_permissions(dir.path().join("xdg-terminal-exec"), std::fs::Permissions::from_mode(0o755)).unwrap();
+        let error = with_prepend_path(dir.path(), || {
+            let mut env = upd::common::contract_fixtures::EnvGuard::new();
+            env.set("PATH", dir.path());
+            open_terminal(&["vpn", "rules"])
+        }).unwrap_err();
+        assert!(error.contains("cosmic-term")); assert!(!marker.exists());
     }
 }

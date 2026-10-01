@@ -1,0 +1,289 @@
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.14s
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.12s
+     Running unittests src/lib.rs (target/x86_64-unknown-linux-musl/debug/deps/upd-666adf2436816268)
+
+running 149 tests
+test backend::contract_tests::apt01_merge_keeps_admin_line_after_mirror_apply ... ok
+test backend::contract_tests::apt02_merge_rejects_orphan_mirror_list_reference ... ok
+test backend::contract_tests::pacman_mirrorlist_managed_only_for_arch_core ... ok
+test backend::contract_tests::fs01_does_not_use_predictable_tmp_path ... ok
+test backend::contract_tests::fs01_private_temp_dir_mode_and_cleanup ... ok
+test backend::contract_tests::sec04c_atomic_write_preserves_private_mode ... ok
+test backend::contract_tests::sec04a_apt_backup_is_private ... ok
+test backend::contract_tests::sec04b_apt_original_uri_file_is_private ... ok
+test backend::contract_tests::upd05_zypper_empty_stdout_is_ok ... ok
+test common::atomic_write_tests::atomic_write_16_concurrent_paths_keep_complete_content ... ok
+test common::atomic_write_tests::atomic_write_concurrent_same_path_never_exposes_mixed_content ... ok
+test common::atomic_write_tests::atomic_write_directory_sync_error_reports_commit_stage ... ok
+test common::atomic_write_tests::atomic_write_failure_before_rename_preserves_target_and_cleans_temp ... ok
+test common::atomic_write_tests::atomic_write_rename_failure_preserves_target_and_cleans_temp ... ok
+test common::atomic_write_tests::atomic_write_temp_symlink_collision_does_not_follow_target ... ok
+test common::atomic_write_tests::atomic_write_uses_exact_mode_and_replaces_symlink_entry ... ok
+test common::contract_tests::b07_eof_is_refusal_even_with_default_yes ... ok
+test backend::contract_tests::upd05_zypper_failure_is_not_empty_list ... ok
+test backend::contract_tests::upd05_zypper_parses_update_lines ... ok
+test common::contract_tests::data04_unreadable_config_is_error_without_clobber ... ok
+test common::contract_tests::net01_gateway_change_changes_fingerprint_id ... ok
+test common::contract_tests::net01_ipv6_gateway_decodes ... ok
+test common::contract_tests::net01_ipv6_only_route_is_online ... ok
+test common::contract_tests::net01_no_default_routes_offline ... ok
+test common::contract_tests::net01_parses_ipv6_default_from_fixture ... ok
+test common::contract_tests::sys01_systemd_cgroup_v1_path ... ok
+test common::contract_tests::sys01_systemd_cgroup_v2_path ... ok
+test common::contract_tests::sys01_systemd_service_from_cgroup ... ok
+test common::contract_tests::sys02_lib_modules_layout_keeps_running_kernel ... ok
+test common::contract_tests::sys02_module_dirs_has_no_duplicates ... ok
+test backend::contract_tests::upd07_pacman_missing_exit_code_is_error ... ok
+test common::probe::tests::both_streams_have_typed_limits ... ok
+test common::contract_tests::b08_config_upper_bounds ... ok
+test common::probe::tests::setup_failure_drops_owned_child_and_group ... ok
+test common::contract_tests::b11_command_output_is_limited ... ok
+test common::setting_schema_tests::every_numeric_setting_accepts_schema_bounds_and_rejects_outside ... ok
+test extras::aur_identity_tests::current_user_runs_directly_and_keeps_arguments ... ok
+test extras::aur_identity_tests::root_switch_has_separator_and_builds_cannot_target_root ... ok
+test extras::contract_tests::aur_search_parses_and_rejects_bad_names ... ok
+test extras::contract_tests::upd04a_flatpak_empty_stdout_is_ok ... ok
+test extras::contract_tests::upd04a_flatpak_error_is_not_empty_list ... ok
+test extras::contract_tests::upd04a_flatpak_malformed_is_error ... ok
+test extras::contract_tests::upd04a_flatpak_valid_line_parsed ... ok
+test extras::contract_tests::upd04a_missing_optional_flatpak_is_skipped ... ok
+test extras::contract_tests::upd04b_fwupd_command_failure_is_error ... ok
+test extras::contract_tests::upd04b_fwupd_empty_devices_is_ok ... ok
+test common::probe::tests::cancellation_and_scope_failure_are_visible ... ok
+test extras::contract_tests::upd04b_fwupd_invalid_json_is_error ... ok
+test extras::contract_tests::upd04b_fwupd_refresh_nothing_to_do_is_ok ... ok
+test extras::contract_tests::upd04c_aur_empty_stdout_is_checked ... ok
+test extras::contract_tests::upd04c_aur_exit1_with_stderr_is_error ... ok
+test extras::contract_tests::upd04c_aur_exit1_without_output_is_empty ... ok
+test extras::contract_tests::upd04c_aur_failure_is_not_empty_list ... ok
+test extras::contract_tests::upd06_flatpak_checks_system_scope_without_user ... ok
+test helper::frame_tests::answers_are_limited_without_consuming_prompt ... ok
+test helper::frame_tests::authorization_owner_is_rechecked_after_barrier ... ok
+test helper::frame_tests::cancellation_wakes_blocked_event_reader ... ok
+test helper::frame_tests::connection_guards_release_quotas_on_unwind ... ok
+test helper::frame_tests::connection_spawn_failure_releases_guard ... ok
+test extras::contract_tests::upd06_flatpak_checks_user_and_system_scopes ... ok
+test helper::frame_tests::debug_request_redacts_answer ... ok
+test common::probe::tests::sleeping_probe_times_out_and_preserves_caller_group ... ok
+test helper::frame_tests::helper_frame_accepts_one_byte_fragments ... ok
+test helper::frame_tests::helper_frame_limit_accepts_exact_and_rejects_one_over ... ok
+test helper::frame_tests::helper_frame_reports_eof_inside_json ... ok
+test helper::frame_tests::delayed_fake_authorizer_denies_foreign_uid_and_cannot_cancel_next_operation ... ok
+test helper::frame_tests::journal_and_escaped_replay_have_byte_budgets ... ok
+test helper::frame_tests::malformed_event_frame_is_an_error ... ok
+test helper::frame_tests::slow_reader_has_absolute_write_deadline ... ok
+test helper::frame_tests::full_pty_input_expires_without_blocking_state_or_cancel ... ok
+test helper::frame_tests::subscriber_coalesces_partial_and_reports_count_and_byte_overflow ... ok
+test helper::reply_deadline_tests::slow_drip_reply_cannot_extend_absolute_deadline ... ok
+test helper::terminal_boundary_tests::every_utf8_boundary_invalid_prefix_and_eof_tail_survive ... ok
+test helper::frame_tests::large_vpn_list_fits_snapshot_frame_budget ... ok
+test helper::terminal_boundary_tests::tabs_ansi_osc_and_cr_are_bounded ... ok
+test helper::tests::callbacks_from_old_operation_cannot_change_current_journal ... ok
+test helper::tests::failed_prompt_write_cannot_be_replayed ... ok
+test helper::tests::finish_emits_one_terminal_event ... ok
+test helper::tests::only_check_and_vpn_toggle_skip_the_password ... ok
+test helper::tests::only_listed_commands_are_allowed ... ok
+test helper::tests::operation_ids_are_unique_within_and_across_helper_instances ... ok
+test helper::tests::operation_state_machine ... ok
+test helper::tests::protocol_roundtrip_keeps_url_in_body ... ok
+test helper::tests::stages_and_prompts ... ok
+test helper::tests::stale_prompt_from_previous_operation_is_rejected_once ... ok
+test helper::tests::term_keeps_split_utf8 ... ok
+test helper::tests::term_strips_ansi_and_rewrites_on_cr ... ok
+test helper::tests::inline_operation_reports_cancellation_as_unsupported ... ok
+test i18n::tests::fill_positional_indexed_and_specs ... ok
+test i18n::tests::lang_codes ... ok
+test i18n::tests::layouts_map_to_latin ... ok
+test i18n::tests::switching_language_translates ... ok
+test i18n::tests::table_has_no_duplicate_keys ... ok
+test i18n::tests::every_source_key_is_translated ... ok
+test i18n::tests::translations_keep_placeholders ... ok
+test i18n::tests::yes_no_many_languages ... ok
+test mirrors::contract_tests::b09_candidates_dedup_is_linear_and_bounded ... ok
+test mirrors::contract_tests::net02_retries_pinned_after_all_fail ... ok
+test mirrors::contract_tests::net03_accepts_minimal_apt_inrelease ... ok
+test mirrors::contract_tests::net03_content_range_len_parses ... ok
+test mirrors::contract_tests::net03_rejects_html_captive_portal ... ok
+test mirrors::contract_tests::b08_measure_caps_threads_and_honours_deadline ... ok
+test mirrors::contract_tests::net03_rejects_truncated_inrelease ... ok
+test mirrors::contract_tests::net04_pending_fingerprint_on_apply_error ... ok
+test mirrors::contract_tests::space01a_unknown_size_message_is_distinct ... ok
+test mirrors::contract_tests::space01a_unknown_size_skips_prefetch ... ok
+test mirrors::contract_tests::space01b_uses_existing_secondary_cache_dir ... ok
+test mirrors::contract_tests::space01c_statvfs_failure_surfaces_error ... ok
+test summary::tests::badge_priority_follows_design_table ... ok
+test summary::tests::headline_states ... ok
+test summary::tests::low_space_is_a_warning_not_a_check_failure ... ok
+test summary::tests::mirror_problem_only_when_managed ... ok
+test summary::tests::stale_data_never_reads_as_zero_updates ... ok
+test vpn::contract_tests::auto_group_label_and_rules_follow_language ... ok
+test vpn::contract_tests::b01_hostile_profile_keys_are_dropped ... ok
+test vpn::contract_tests::b01_provider_paths_are_confined ... ok
+test vpn::contract_tests::b02_api_over_unix_socket ... ok
+test vpn::contract_tests::b03_gunzip_is_limited ... ok
+test vpn::contract_tests::b13_port_conflict_is_reported_by_vpn_build ... ok
+test vpn::contract_tests::b14_prepare_without_core_fails_fast ... ok
+test vpn::contract_tests::b15_userinfo_counters_are_exact_and_safe ... ok
+test vpn::contract_tests::b22_delete_and_use_by_id_survive_list_change ... ok
+test helper::frame_tests::slowloris_has_absolute_request_deadline ... ok
+test vpn::contract_tests::b24_conflict_needs_real_port_or_tun ... ok
+test vpn::contract_tests::b25_huge_interval_does_not_overflow ... ok
+test vpn::contract_tests::data01_subscriptions_lock_serializes ... ok
+test vpn::contract_tests::data02_missing_subs_is_ok_corrupt_is_error ... ok
+test vpn::contract_tests::data03_delete_sub_persists_json_before_profile_removal ... ok
+test vpn::contract_tests::geo01_rejects_truncated_geo_file ... ok
+test vpn::contract_tests::geo01_truncated_download_keeps_previous_file ... ok
+test vpn::contract_tests::parse01_pct_decode_malformed_percent_does_not_panic ... ok
+test vpn::contract_tests::parse01_pct_decode_utf8_percent ... ok
+test vpn::contract_tests::sec01_fetch_failure_never_leaks_subscription_url ... ok
+test vpn::contract_tests::sec01_safe_ureq_error_hides_url ... ok
+test vpn::contract_tests::sec01_scrub_stored_error_and_publish ... ok
+test vpn::contract_tests::sec01_transport_error_hides_url ... ok
+test vpn::contract_tests::sec02_accepts_matching_digest ... ok
+test vpn::contract_tests::sec02_rejects_missing_or_bad_digest ... ok
+test vpn::contract_tests::sec03_rejects_http_subscription_url ... ok
+test vpn::contract_tests::sec05_strips_control_chars_from_profile_name ... ok
+test vpn::contract_tests::vpn01_delete_last_subscription_clears_list ... ok
+test vpn::contract_tests::vpn02_listen_ports_keep_local_and_drop_foreign ... ok
+test vpn::contract_tests::vpn02_proc_ipv6_addr_parses_loopback_listener ... ok
+test vpn::contract_tests::vpn03_restart_failure_is_recorded_and_success_applies_tag ... ok
+test vpn::contract_tests::vpn_rules_existing_file_is_read ... ok
+test vpn::contract_tests::vpn_rules_io_failure_is_not_empty_rules ... ok
+test common::probe::tests::exited_leader_cannot_leave_background_work ... ok
+test vpn::contract_tests::b23_alias_bomb_is_rejected_by_budget ... ok
+test mirrors::contract_tests::upd01_gather_marks_update_list_failure ... ok
+
+test result: ok. 149 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 4.18s
+
+     Running unittests src/main.rs (target/x86_64-unknown-linux-musl/debug/deps/upd-0f6c6f51ae575f7d)
+
+running 41 tests
+test contract_tests::install01_manual_layout_uses_local_bin ... ok
+test contract_tests::gui02_helper_socket_units_and_desktop_files ... ok
+test contract_tests::gui01_polkit_policy_limits_passwordless_actions ... ok
+test contract_tests::install01_package_install_requires_package_script_env ... ok
+test contract_tests::install03_garuda_unalias_after_source_and_back ... ok
+test contract_tests::install02_rejects_foreign_unit_file ... ok
+test contract_tests::install04_system_identifiers_do_not_depend_on_language ... ok
+test contract_tests::upd02a_flatpak_upgrade_error_is_recorded ... ok
+test contract_tests::upd02b_firmware_upgrade_error_preserves_first_failure ... ok
+test contract_tests::upd03_auto_failure_exit_code ... ok
+test contract_tests::upd04a_flatpak_check_failure_affects_exit ... ok
+test contract_tests::upd04b_firmware_check_failure_affects_exit ... ok
+test contract_tests::upd04c_full_update_line_needs_successful_empty_aur ... ok
+test contract_tests::review_binary_install_concurrency_never_mixes_files ... ok
+test contract_tests::install02_removes_owned_units_and_keeps_foreign ... ok
+test contract_tests::vpn03_core_update_restart_failure_message ... ok
+test tui::process::parser_limit_tests::alternate_screen_osc_cr_and_unicode_limits_are_preserved ... ok
+test contract_tests::review_failed_notification_is_not_marked_seen_and_can_retry ... ok
+test tui::process::parser_limit_tests::utf8_invalid_prefix_boundaries_and_eof_tail ... ok
+test contract_tests::vpn01_last_subscription_stops_service ... ok
+test contract_tests::vpn01_stop_failure_is_an_error_after_delete ... ok
+test tui::process::tests::audit_resize_ctrl_c_and_utf8_terminal_session ... ok
+test tui::process::parser_limit_tests::million_tabs_and_hundred_thousand_stages_remain_bounded ... ok
+test tui::process::tests::b06_closing_session_releases_reader_and_group ... ok
+test tui::process::tests::b06_drop_after_reader_exit_does_not_raise_sigpipe ... ok
+test tui::process::tests::b06_reused_pid_is_not_our_group ... ok
+test tui::process::tests::stage_lines_are_parsed ... ok
+test tui::tests::audit_minimal_tui_surfaces_keep_errors_and_keyboard_footer ... ok
+test tui::tests::b04_job_runs_once_and_queues_one_repeat ... ok
+test tui::tests::b16_aur_error_does_not_show_previous_results ... ok
+test tui::tests::b21_lost_worker_is_reported_and_retryable ... ok
+test tui::tests::b22_tui_confirm_is_bound_to_id ... ok
+test tui::process::tests::review_full_pty_input_has_a_deadline_and_keeps_poll_responsive ... ok
+test tui::process::tests::review_full_reader_queue_drop_joins_and_reaps_active_child ... ok
+test tui::process::tests::review_reader_spawn_failure_rolls_back_child ... ok
+test tui::tests::test02_german_menu_and_russian_layout_hotkeys ... ok
+test tui::tests::u05_stage_summary ... ok
+test tui::tests::u07_input_shows_hint_and_keeps_bad_value ... ok
+test tui::tests::test01_menu_vpn_navigation_uses_fixed_state ... ok
+test tui::tests::u03_narrow_subscriptions_keep_name_and_error ... ok
+test tui::tests::u04_empty_servers_explain_why ... ok
+
+test result: ok. 41 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.70s
+
+     Running tests/audit_contracts.rs (target/x86_64-unknown-linux-musl/debug/deps/audit_contracts-c7a63d79bfb0e877)
+
+running 24 tests
+test audit_utf8_preserves_valid_tail_after_invalid_byte ... ok
+test audit_term_bounds_long_lines ... ok
+test audit_closed_attach_releases_helper_thread_and_fd ... ok
+test cli_and_inline_configset_use_same_peer_proxy_context_and_report_errors ... ok
+test concurrent_cli_and_helper_write_complete_latest_vpn_yaml ... ok
+test concurrent_cli_language_and_helper_field_preserve_separate_state_files ... ok
+test config_rejects_dns_collision_and_reports_pending_then_apply_failure ... ok
+test config_save_merges_stale_fields_and_mirror_changes ... ok
+test explicit_user_context_keeps_proxy_uids_and_environment_separate ... ok
+test helper_client_rejects_old_server_before_mutation ... ok
+test helper_fixture_runs_fake_child_and_reaps_helper ... ok
+test helper_framing_preserves_events_coalesced_with_reply ... ok
+test helper_framing_reports_malformed_event_json ... ok
+test helper_idle_exit_after_last_subscription ... ok
+test helper_overload_has_resource_plateau_and_returns_fds_threads_children ... ok
+test helper_restart_does_not_fabricate_success_for_untracked_operation ... ok
+test helper_runner_cancel_stops_continuous_output ... ok
+test helper_runner_drains_descendant_and_switches_without_stale_output ... ok
+test helper_runner_launch_failures_finish_and_clean_up ... ok
+test helper_secret_answer_is_not_echoed_or_replayed ... ok
+test helper_subprocess_receives_peer_identity_without_ambient_daemon_user ... ok
+test new_helper_rejects_legacy_mutation_without_protocol_version ... ok
+test two_helper_processes_preserve_distinct_config_fields ... ok
+test waiting_config_file_lock_does_not_block_status_or_cancel ... ok
+
+test result: ok. 24 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 32.92s
+
+   Doc-tests upd
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.44s
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.40s
+     Running unittests src/main.rs (target/x86_64-unknown-linux-gnu/debug/deps/upd_cosmic-b80977dcbbc55863)
+
+running 24 tests
+test jobs::tests::failed_worker_is_error_and_retry_has_backoff ... ok
+test jobs::tests::old_query_and_closed_page_results_are_rejected ... ok
+test jobs::tests::cancelled_await_does_not_release_running_worker ... ok
+test model::launcher_tests::terminal_permission_error_does_not_launch_fallback ... ok
+test model::launcher_tests::web_scheme_validation_precedes_launcher_and_https_is_one_argument ... ok
+test notifications::tests::notification_workers_have_a_quota_and_release_it_after_completion ... ok
+test launch::tests::long_child_does_not_block_launch_and_missing_launcher_is_error ... ok
+test op::history_tests::erroneous_exit_and_zero_stage_never_report_success_progress ... ok
+test op::history_tests::scroll_holds_history_until_follow_tail ... ok
+test op::tests::dropping_stream_guard_cancels_reader ... ok
+test op::tests::events_build_the_view ... ok
+test op::tests::slow_gui_queue_and_journal_are_bounded ... ok
+test launch::tests::hundred_children_are_reaped_without_a_thread_per_child ... ok
+test window::mutation_tests::gui_ranges_show_large_legal_values_without_clamping ... ok
+test window::mutation_tests::polkit_refusal_restores_committed_value_and_rejects_stale_reply ... ok
+test window::mutation_tests::saved_apply_failure_displays_actual_saved_value ... ok
+test window::mutation_tests::subscription_form_survives_busy_and_refusal_and_clears_only_matching_success ... ok
+test window::operation_tests::cancel_refusal_and_disconnect_are_explicit ... ok
+test window::operation_tests::double_answer_is_blocked_and_failure_can_be_retried ... ok
+test window::operation_tests::restarted_helper_and_delayed_callbacks_never_report_false_success ... ok
+test window::startup_tests::update_activation_waits_for_summary_before_choosing_terminal ... ok
+test notifications::tests::stalled_or_noisy_notification_is_bounded_and_action_is_whitelisted ... ok
+test jobs::tests::hundred_ticks_queue_only_latest_and_keep_heartbeat_alive ... ok
+test snapshots::snapshots has been running for over 60 seconds
+test snapshots::snapshots ... ok
+
+test result: ok. 24 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 114.70s
+
+....
+----------------------------------------------------------------------
+Ran 4 tests in 0.877s
+
+OK
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.40s
+     Running unittests src/main.rs (target/x86_64-unknown-linux-gnu/debug/deps/upd_cosmic-b80977dcbbc55863)
+
+running 1 test
+test snapshots::snapshots has been running for over 60 seconds
+checked screenshots: /tmp/upd-acceptance-current/screens
+test snapshots::snapshots ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 23 filtered out; finished in 117.47s
+
+Visual matrix: /tmp/upd-acceptance-current/screens

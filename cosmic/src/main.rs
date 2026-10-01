@@ -2,6 +2,9 @@
 
 mod applet;
 mod model;
+mod jobs;
+mod launch;
+mod notifications;
 mod op;
 mod ui;
 mod window;
@@ -18,6 +21,10 @@ fn main() -> cosmic::iced::Result {
             std::process::exit(1);
         }
         return cosmic::applet::run::<applet::Applet>(());
+    }
+    if args.iter().any(|a| a == "--version" || a == "-V") {
+        println!("upd-cosmic {}", env!("CARGO_PKG_VERSION"));
+        return Ok(());
     }
     if args.iter().any(|a| a == "--help" || a == "-h") {
         println!("upd-cosmic applet                      — {}", upd::t!("апплет на панели COSMIC"));

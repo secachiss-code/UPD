@@ -1,0 +1,22 @@
+ upd  system update · Fixture Linux
+○ off
+s — turn on
+
+ 1 Servers  2 Subscriptions  3 Settings   snapshot 00:10:49
+╭ Subscriptions — ● active ────────────────────────────────────────────────────╮
+│   subscription                            traffic / expiry                   │
+│   1. name-a                                                                  │
+│   2. name-c                               ⚠ HTTP 403 — очень длинная причина │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+«name-c» · example.com · 0 nodes · updated never · ⚠ HTTP 403 — очень длинная
+причина ошибки подписки
+ q back tab 1-3 tab s on/off enter make active n add u update x delete

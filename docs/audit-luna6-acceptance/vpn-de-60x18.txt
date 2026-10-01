@@ -1,0 +1,17 @@
+ upd  Systemaktualisierung · Fixture Linux
+○ aus
+s — einschalten
+
+ 1 Server  2 Abonnements  3 Einstellungen   Stand 00:10:49
+╭ Abonnements — ● aktiv ───────────────────────────────────╮
+│   Abonnement                    Volumen / Ablauf         │
+│   1. name-a                                              │
+│   2. name-c                     ⚠ HTTP 403 — очень длинна│
+│                                                          │
+│                                                          │
+│                                                          │
+╰──────────────────────────────────────────────────────────╯
+«name-c» · example.com · 0 Knoten · aktualisiert nie · ⚠
+HTTP 403 — очень длинная причина ошибки подписки
+ q zurück tab 1-3 Reiter s ein/aus enter aktivieren
+ n hinzufügen u aktualisieren x löschen

@@ -2,6 +2,7 @@
 //! и экраном долгой операции поверх текущего раздела.
 
 use crate::model::{self, Prefs};
+use crate::jobs::{Jobs, Kind, Completion, Phase};
 use crate::op::{self, OpView};
 use crate::ui::{self, hrow, txt};
 use cosmic::app::{Core, Task};
@@ -111,15 +112,32 @@ pub struct RestartInfo {
 
 type Loaded<T> = Option<Result<T, String>>;
 
+struct SettingMutation { id: u64, draft: Config }
+
 pub struct Window {
+    jobs: Jobs<Message>,
+    next_request: u64,
+    setting_mutation: Option<SettingMutation>,
+    pending_start: Option<u64>,
+    queued_start: Option<Vec<String>>,
+    submitted_sub: Option<(String, String)>,
+    answer_request: Option<u64>,
+    cancel_request: Option<u64>,
     core: Core,
     nav: nav_bar::Model,
     page: Page,
     summary: Summary,
+    summary_loaded: bool,
     upd_state: UpdState,
     op_status: OpStatus,
     op: OpView,
     op_gen: u64,
+    operation_id: Option<helper::OperationId>,
+    op_view_id: Option<helper::OperationId>,
+    prompt_id: Option<helper::PromptId>,
+    start_pending: bool,
+    pending_event_id: Option<helper::OperationId>,
+    replaying_current_operation: bool,
     attached: bool,
     show_op: bool,
     confirm_cancel: bool,
@@ -158,23 +176,31 @@ pub struct Window {
     prefs: Prefs,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub enum Message {
+    Probe(Completion<Message>),
+    Metadata(model::Metadata),
+    Maintenance(Shared<Status>, Vec<String>, Vec<String>, RestartInfo),
     Tick,
     Summary(Box<Summary>, Box<UpdState>),
     OpStatus(OpStatus),
-    OpEvent(Option<helper::Event>),
+    OpEvent(u64, Result<Option<helper::OperationEvent>, String>),
     Reattach,
     Reboot,
     Start(Vec<String>),
-    Started(Result<(), String>),
+    Started(u64, Result<helper::OperationId, String>),
     ShowOp(bool),
+    AnswerResult(u64, helper::OperationId, helper::PromptId, Result<(), String>),
+    CancelResult(u64, helper::OperationId, Result<(), String>),
+    LogScroll(bool),
+    FollowLog,
     Answer(String),
     AnswerInput(String),
     ToggleReveal,
     Cancel,
     CopyLog,
     Done(Result<(), String>),
+    Settings(u64, Result<helper::SettingsReply, String>),
     DismissError,
     // обновления
     ToggleAllPackages,
@@ -199,47 +225,60 @@ pub enum Message {
     ToggleSubHidden,
     AddSub,
     DeleteSub(String),
-    Terminal(Vec<&'static str>),
+    Terminal(Vec<String>),
     // обслуживание
-    Status(Shared<Status>),
-    Snapshots(Result<Vec<String>, String>),
-    History(Result<Vec<String>, String>),
-    Restart(Result<RestartInfo, String>),
     // настройки
     Set(&'static str, String),
     Lang(usize),
     Notifications(bool),
 }
 
-fn blocking<T: Send + 'static>(f: impl FnOnce() -> T + Send + 'static, m: impl FnOnce(T) -> Message + Send + 'static) -> Task<Message> {
-    cosmic::task::future(async move {
-        match tokio::task::spawn_blocking(f).await {
-            Ok(v) => m(v),
-            Err(e) => Message::Done(Err(e.to_string())),
+impl std::fmt::Debug for Message {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::SubUrl(_) => f.write_str("SubUrl(<redacted>)"),
+            Self::Answer(_) | Self::AnswerInput(_) => f.write_str("Answer(<redacted>)"),
+            Self::Probe(c) => f.debug_struct("Probe").field("kind", &c.kind).finish_non_exhaustive(),
+            _ => f.debug_tuple("WindowMessage").field(&std::mem::discriminant(self)).finish(),
         }
+    }
+}
+
+fn blocking<T: Send + 'static>(f: impl FnOnce() -> Result<T, String> + Send + 'static, m: impl FnOnce(Result<T, String>) -> Message + Send + 'static) -> Task<Message> {
+    cosmic::task::future(async move {
+        let result = tokio::task::spawn_blocking(f).await.unwrap_or_else(|e| Err(e.to_string()));
+        m(result)
     })
 }
 
-fn load_summary() -> Message {
-    Message::Summary(Box::new(model::load_summary()), Box::new(model::update_state()))
+fn load_summary() -> Result<Message, String> {
+    Ok(Message::Summary(Box::new(model::load_summary()?), Box::new(model::update_state())))
 }
 
-fn load_mirrors() -> Message {
-    let cfg = upd::backend::detect().ok().and_then(|b| Config::load(b.default_mirrors()).ok());
-    Message::Mirrors(Box::new(upd::mirrors::load_mirror_state()), cfg.map(Box::new))
+fn load_mirrors() -> Result<Message, String> {
+    let backend = upd::backend::detect()?;
+    let cfg = Config::load(backend.default_mirrors())?;
+    Ok(Message::Mirrors(Box::new(upd::mirrors::load_mirror_state()), Some(Box::new(cfg))))
 }
 
-fn load_vpn(with_snapshot: bool) -> Message {
+fn load_vpn(with_snapshot: bool) -> Result<Message, String> {
     let state = vpn::load_state();
-    let (snap, err) = if with_snapshot {
-        match model::vpn_snapshot() {
-            Ok(s) => (Some(Box::new(s)), String::new()),
-            Err(e) => (None, e),
-        }
-    } else {
-        (None, String::new())
+    let snap = if with_snapshot { Some(Box::new(model::vpn_snapshot()?)) } else { None };
+    Ok(Message::VpnData(Box::new(state), snap, String::new()))
+}
+
+fn load_maintenance() -> Result<Message, String> {
+    let backend = upd::backend::detect()?;
+    let status = Shared(Arc::new(upd::gather_status(backend.as_ref())));
+    let snapshots = helper::call_as(&Request::Query { what: "snapshots".into() })?;
+    let history = helper::call_as(&Request::Query { what: "history".into() })?;
+    let v = helper::call(&Request::Query { what: "restart".into() })?;
+    let restart = RestartInfo {
+        services: serde_json::from_value(v["services"].clone()).map_err(|e| e.to_string())?,
+        critical: serde_json::from_value(v["critical"].clone()).map_err(|e| e.to_string())?,
+        apps: serde_json::from_value(v["apps"].clone()).map_err(|e| e.to_string())?,
     };
-    Message::VpnData(Box::new(state), snap, err)
+    Ok(Message::Maintenance(status, snapshots, history, restart))
 }
 
 /// Язык: 0 — как в системе, дальше — по списку upd.
@@ -271,21 +310,36 @@ impl cosmic::Application for Window {
         }
         nav.activate_position(0);
         let mut w = Window {
+            jobs: Jobs::default(),
+            next_request: 0,
+            setting_mutation: None,
+            pending_start: None,
+            queued_start: None,
+            submitted_sub: None,
+            answer_request: None,
+            cancel_request: None,
             core,
             nav,
             page: Page::Updates,
             summary: Summary::default(),
+            summary_loaded: false,
             upd_state: UpdState::default(),
             op_status: OpStatus::default(),
             op: OpView::default(),
             op_gen: 0,
+            operation_id: None,
+            op_view_id: None,
+            prompt_id: None,
+            start_pending: false,
+            pending_event_id: None,
+            replaying_current_operation: false,
             attached: true,
             show_op: false,
             confirm_cancel: false,
             confirm_reboot: false,
             pending: false,
-            busy: model::upd_busy(),
-            stamp: model::state_stamp(),
+            busy: false,
+            stamp: 0,
             summary_at: Some(std::time::Instant::now()),
             error: String::new(),
             notice: String::new(),
@@ -310,7 +364,7 @@ impl cosmic::Application for Window {
             restart: None,
             prefs: model::load_prefs(),
         };
-        let mut tasks = vec![blocking(|| (), |_| load_summary()), blocking(|| model::load_op(true), Message::OpStatus), blocking(|| (), |_| load_mirrors())];
+        let mut tasks = vec![w.probe(Kind::Summary, "", load_summary), w.probe(Kind::Mirrors, "", load_mirrors), w.probe(Kind::Operation, "", || model::load_op(true).map(Message::OpStatus)), w.probe(Kind::Metadata, "", || Ok(Message::Metadata(model::metadata())))];
         tasks.push(w.activate(flags));
         tasks.push(w.update_title());
         (w, Task::batch(tasks))
@@ -337,7 +391,8 @@ impl cosmic::Application for Window {
     fn subscription(&self) -> Subscription<Message> {
         let mut subs = vec![cosmic::iced::time::every(Duration::from_secs(4)).map(|_| Message::Tick)];
         if self.attached && helper::available() {
-            subs.push(Subscription::run_with(self.op_gen, op::events).map(Message::OpEvent));
+            let generation = self.op_gen;
+            subs.push(Subscription::run_with(generation, op::events).with(generation).map(|(generation, event)| Message::OpEvent(generation, event)));
         }
         Subscription::batch(subs)
     }
@@ -352,49 +407,162 @@ impl cosmic::Application for Window {
 
     fn update(&mut self, message: Message) -> Task<Message> {
         match message {
-            Message::Tick => {
-                model::init_lang();
-                self.busy = model::upd_busy();
+            Message::Probe(completion) => {
+                let (accept, repeat) = self.jobs.complete(&completion, Message::Probe);
+                if accept {
+                    match completion.result {
+                        Ok(message) => return Task::batch([self.update(*message), repeat]),
+                        Err(error) => match completion.kind {
+                            Kind::News => self.news_all = Some(Err(error)),
+                            Kind::AurUpdates => self.aur_updates = Some(Err(error)),
+                            Kind::AurSearch => self.aur_results = Some(Err(error)),
+                            Kind::Vpn => self.snap_error = error,
+                            _ => {}
+                        }
+                    }
+                }
+                return repeat;
+            }
+            Message::Tick => return self.probe(Kind::Metadata, "", || Ok(Message::Metadata(model::metadata()))),
+            Message::Metadata(meta) => {
+                if !meta.launch_errors.is_empty() { self.error = meta.launch_errors.join("\n"); }
+                self.busy = meta.busy;
                 let mut tasks = vec![];
-                // сводка (с обходом /etc в поисках новых конфигов) — только если файлы состояния изменились или раз в минуту
-                let stamp = model::state_stamp();
-                if stamp != self.stamp || self.summary_at.is_none_or(|t| t.elapsed() > Duration::from_secs(60)) {
-                    self.stamp = stamp;
+                if meta.stamp != self.stamp || self.summary_at.is_none_or(|t| t.elapsed() > Duration::from_secs(60)) || matches!(self.jobs.phase(Kind::Summary), Phase::Error(_)) {
+                    self.stamp = meta.stamp;
                     self.summary_at = Some(std::time::Instant::now());
-                    tasks.push(blocking(|| (), |_| load_summary()));
+                    tasks.push(self.probe(Kind::Summary, "", load_summary));
                 }
                 if self.busy || self.op.running() {
-                    tasks.push(blocking(|| model::load_op(true), Message::OpStatus));
+                    tasks.push(self.probe(Kind::Operation, "", || model::load_op(true).map(Message::OpStatus)));
                 }
                 if self.page == Page::Vpn && !self.show_op {
                     let active = self.summary.vpn.active;
-                    tasks.push(blocking(move || load_vpn(active), |m| m));
+                    tasks.push(self.probe(Kind::Vpn, "vpn", move || load_vpn(active)));
                 }
                 return Task::batch(tasks);
             }
+            Message::Maintenance(status, snapshots, history, restart) => {
+                self.status = Some(status); self.snapshots = Some(Ok(snapshots));
+                self.history = Some(Ok(history)); self.restart = Some(Ok(restart));
+            }
             Message::Summary(s, u) => {
                 self.summary = *s;
+                self.summary_loaded = true;
                 self.upd_state = *u;
+                if self.config.is_some() { if let Some(args) = self.queued_start.take() { return self.update(Message::Start(args)); } }
             }
-            Message::OpStatus(st) => self.op_status = st,
-            Message::OpEvent(Some(ev)) => {
-                let exited = matches!(ev, helper::Event::Exit { .. });
-                let started = matches!(ev, helper::Event::Reset { .. });
-                self.op.apply(ev);
+            Message::OpStatus(st) => {
+                let status_matches_current = self.operation_id.as_ref().is_none_or(|current| Some(current) == st.operation_id.as_ref());
+                if !self.start_pending && status_matches_current {
+                    self.operation_id = st.operation_id.clone();
+                    self.prompt_id = st.prompt_id;
+                    self.op_status = st;
+                } else if self.start_pending {
+                    self.op_status = st;
+                }
+            }
+            Message::OpEvent(generation, Ok(Some(frame))) => {
+                if generation != self.op_gen {
+                    return Task::none();
+                }
+                if self.replaying_current_operation {
+                    if self.operation_id.as_ref() == Some(&frame.operation_id) {
+                        if matches!(&frame.event, helper::Event::ReplayComplete) {
+                            self.replaying_current_operation = false;
+                            self.op.connected();
+                        }
+                        return Task::none();
+                    }
+                    self.replaying_current_operation = false;
+                }
+                let started = matches!(&frame.event, helper::Event::Reset { .. });
+                let same_operation = self.operation_id.as_ref() == Some(&frame.operation_id);
+                // Reset is authoritative for the helper's current operation. Other event types
+                // must match the current id so queued output from an older operation is ignored.
+                let accept = same_operation || started && (self.operation_id.is_none() || self.start_pending);
+                if !accept {
+                    return Task::none();
+                }
+                if matches!(&frame.event, helper::Event::ReplayComplete) {
+                    self.op.connected();
+                    return Task::none();
+                }
+                if started && same_operation && !self.start_pending && self.op_view_id.as_ref() == Some(&frame.operation_id) {
+                    // The helper replays the whole journal on reattach. Keep the current view and
+                    // scroll offset intact until its explicit replay boundary arrives.
+                    self.replaying_current_operation = true;
+                    return Task::none();
+                }
+                if !same_operation {
+                    self.answer_request = None; self.cancel_request = None;
+                    self.operation_id = Some(frame.operation_id.clone());
+                    self.prompt_id = None;
+                    self.op = OpView::default();
+                }
+                if started {
+                    self.op_view_id = Some(frame.operation_id.clone());
+                }
+                if started && self.start_pending {
+                    self.pending_event_id = Some(frame.operation_id.clone());
+                }
+                let preserve_input = (same_operation && started).then(|| (self.op.answer.clone(), self.op.reveal));
+                match &frame.event {
+                    helper::Event::Prompt { .. } => {
+                        let Some(prompt_id) = frame.prompt_id else {
+                            self.error = "helper event is missing its prompt id".into();
+                            return Task::none();
+                        };
+                        if self.prompt_id != Some(prompt_id) { self.answer_request = None; }
+                        self.prompt_id = Some(prompt_id);
+                    }
+                    helper::Event::Answered => {
+                        if self.prompt_id != frame.prompt_id {
+                            return Task::none();
+                        }
+                        self.prompt_id = None; self.answer_request = None;
+                    }
+                    helper::Event::Exit { .. } => self.prompt_id = None,
+                    _ => {}
+                }
+                let exited = matches!(&frame.event, helper::Event::Exit { .. });
+                self.op.apply(frame.event);
+                if let Some((answer, reveal)) = preserve_input {
+                    self.op.answer = answer;
+                    self.op.reveal = reveal;
+                }
                 if started {
                     self.confirm_cancel = false;
                 }
-                let mut tasks = vec![cosmic::iced::widget::operation::snap_to_end(LOG_ID.clone())];
+                if exited { self.answer_request = None; self.cancel_request = None; }
+                let mut tasks = vec![];
+                if self.op.tail.follow { tasks.push(cosmic::iced::widget::operation::snap_to_end(LOG_ID.clone())); }
                 if exited {
-                    tasks.push(blocking(|| (), |_| load_summary()));
-                    tasks.push(blocking(|| model::load_op(true), Message::OpStatus));
+                    tasks.push(self.probe(Kind::Summary, "", load_summary));
+                    tasks.push(self.probe(Kind::Operation, "", || model::load_op(true).map(Message::OpStatus)));
                     tasks.push(self.reload_page());
                 }
                 return Task::batch(tasks);
             }
-            Message::OpEvent(None) => {
+            Message::OpEvent(generation, Ok(None)) => {
+                if generation != self.op_gen {
+                    return Task::none();
+                }
                 // помощник закрыл соединение (завершился по простою или перезапущен) — переподключиться позже
                 self.attached = false;
+                if self.op.exit.is_none() { self.op.phase = op::Phase::Disconnected; }
+                return cosmic::task::future(async {
+                    tokio::time::sleep(Duration::from_secs(3)).await;
+                    Message::Reattach
+                });
+            }
+            Message::OpEvent(generation, Err(error)) => {
+                if generation != self.op_gen {
+                    return Task::none();
+                }
+                self.error = error;
+                self.attached = false;
+                if self.op.exit.is_none() { self.op.phase = op::Phase::Disconnected; }
                 return cosmic::task::future(async {
                     tokio::time::sleep(Duration::from_secs(3)).await;
                     Message::Reattach
@@ -412,24 +580,61 @@ impl cosmic::Application for Window {
                 }
             }
             Message::Start(args) => {
+                if args.first().is_some_and(|arg| arg == "update") && (!self.summary_loaded || self.config.is_none()) {
+                    self.queued_start = Some(args);
+                    return Task::batch([self.probe(Kind::Summary, "", load_summary), self.probe(Kind::Mirrors, "", load_mirrors)]);
+                }
+                if args.first().is_some_and(|arg| arg == "aur" || arg == "update" && self.update_in_terminal()) {
+                    if !self.pending && !self.op.running() && !self.busy { return self.update(Message::Terminal(args)); }
+                    return Task::none();
+                }
+                if self.pending || self.op.running() || self.busy { self.error = t!("upd занят").into(); return Task::none(); }
+                let request = self.request_id();
+                self.pending_start = Some(request);
+                self.op.phase = op::Phase::Starting;
                 self.pending = true;
                 self.error.clear();
                 self.show_op = true;
                 self.confirm_cancel = false;
+                self.jobs.invalidate(&[Kind::Operation, Kind::Vpn, Kind::News, Kind::AurUpdates, Kind::AurSearch, Kind::Maintenance]);
+                self.start_pending = true;
+                self.pending_event_id = None;
                 return blocking(
                     move || {
                         let a: Vec<&str> = args.iter().map(String::as_str).collect();
                         model::start(&a)
                     },
-                    Message::Started,
+                    move |result| Message::Started(request, result),
                 );
             }
-            Message::Started(r) => {
+            Message::Started(request, r) => {
+                if self.pending_start != Some(request) { return Task::none(); }
+                self.pending_start = None;
                 self.pending = false;
-                if let Err(e) = r {
-                    self.error = e;
-                    if !self.op.running() {
-                        self.show_op = false;
+                self.start_pending = false;
+                match r {
+                    Ok(operation_id) => {
+                        if let Some((url, name)) = self.submitted_sub.take() {
+                            if self.sub_url == url { self.sub_url.clear(); }
+                            if self.sub_name == name { self.sub_name.clear(); }
+                        }
+                        if self.pending_event_id.take().is_some_and(|observed| observed != operation_id) {
+                            self.error = "helper start reply did not match the operation event stream".into();
+                            self.prompt_id = None;
+                            self.op = OpView::default();
+                            self.op_view_id = None;
+                            self.op_gen += 1;
+                        }
+                        self.operation_id = Some(operation_id);
+                    }
+                    Err(error) => {
+                        self.submitted_sub = None;
+                        self.pending_event_id = None;
+                        self.error = error;
+                        self.op.connected();
+                        if !self.op.running() {
+                            self.show_op = false;
+                        }
                     }
                 }
                 // новая операция придёт в уже открытый поток событий; если он оборвался — подключиться заново
@@ -439,29 +644,56 @@ impl cosmic::Application for Window {
                 }
             }
             Message::ShowOp(v) => {
+                if v { self.jobs.invalidate(&[Kind::Vpn, Kind::News, Kind::AurUpdates, Kind::AurSearch, Kind::Maintenance]); }
                 self.show_op = v;
-                return self.update_title();
+                return if v { self.update_title() } else { Task::batch([self.update_title(), self.reload_page()]) };
             }
+            Message::LogScroll(at_end) => self.op.scroll(at_end),
+            Message::FollowLog => { self.op.scroll(true); return cosmic::iced::widget::operation::snap_to_end(LOG_ID.clone()); }
             Message::Answer(a) => {
-                self.op.answer.clear();
-                return blocking(move || helper::call(&Request::Input { data: a }).map(|_| ()), Message::Done);
+                if self.answer_request.is_some() || !self.attached { return Task::none(); }
+                if let Err(error) = helper::validate_answer(&a) { self.error = error; return Task::none(); }
+                let (Some(operation_id), Some(prompt_id)) = (self.operation_id.clone(), self.prompt_id) else { return Task::none(); };
+                let request = self.request_id(); self.answer_request = Some(request); self.op.phase = op::Phase::Answering;
+                let reply_id = operation_id.clone();
+                return blocking(move || helper::call(&Request::Input { operation_id, prompt_id, data: a }).map(|_| ()),
+                    move |result| Message::AnswerResult(request, reply_id, prompt_id, result));
             }
-            Message::AnswerInput(s) => self.op.answer = s,
+            Message::AnswerResult(request, operation_id, prompt_id, result) => {
+                if self.answer_request != Some(request) { return Task::none(); }
+                self.answer_request = None;
+                if self.operation_id.as_ref() != Some(&operation_id) || self.prompt_id != Some(prompt_id) { return Task::none(); }
+                match result {
+                    Ok(()) => { self.prompt_id = None; self.op.prompt = None; self.op.answer.clear(); self.op.phase = op::Phase::Running; }
+                    Err(error) => { self.error = error; self.op.phase = if self.attached { op::Phase::Prompt } else { op::Phase::Disconnected }; }
+                }
+            }
+            Message::AnswerInput(s) => { if self.answer_request.is_none() { self.op.answer = s; } }
             Message::ToggleReveal => self.op.reveal = !self.op.reveal,
             Message::Cancel => {
-                if !self.confirm_cancel {
-                    self.confirm_cancel = true;
-                    return Task::none();
+                if self.cancel_request.is_some() || !self.attached { return Task::none(); }
+                if !self.confirm_cancel { self.confirm_cancel = true; return Task::none(); }
+                let Some(operation_id) = self.operation_id.clone() else { return Task::none(); };
+                let request = self.request_id(); self.cancel_request = Some(request); self.op.phase = op::Phase::Cancelling;
+                let reply_id = operation_id.clone();
+                return blocking(move || helper::call(&Request::Cancel { operation_id }).map(|_| ()),
+                    move |result| Message::CancelResult(request, reply_id, result));
+            }
+            Message::CancelResult(request, operation_id, result) => {
+                if self.cancel_request != Some(request) { return Task::none(); }
+                self.cancel_request = None; self.confirm_cancel = false;
+                if self.operation_id.as_ref() != Some(&operation_id) { return Task::none(); }
+                match result {
+                    Ok(()) => { self.op.cancel_sent = true; self.op.phase = op::Phase::CancelAccepted; }
+                    Err(error) => { self.error = error.clone(); self.op.phase = op::Phase::CancelRejected(error); }
                 }
-                self.op.cancel_sent = true;
-                return blocking(|| helper::call(&Request::Cancel).map(|_| ()), Message::Done);
             }
             Message::CopyLog => {
                 self.notice = t!("Журнал скопирован").into();
-                return cosmic::iced::clipboard::write(self.op.full_log());
+                return cosmic::iced::clipboard::write(self.op.available_log());
             }
             Message::Done(r) => {
-                self.pending = false;
+                if self.setting_mutation.is_none() && self.pending_start.is_none() { self.pending = false; }
                 match r {
                     Ok(()) => return self.reload_page(),
                     Err(e) => self.error = e,
@@ -474,47 +706,44 @@ impl cosmic::Application for Window {
             Message::ToggleAllPackages => self.show_all_packages = !self.show_all_packages,
             Message::LoadNews => {
                 self.news_all = None;
-                return blocking(|| upd::extras::arch_news(0), Message::News);
+                return self.probe(Kind::News, "updates", || upd::extras::arch_news(0).map(|v| Message::News(Ok(v))));
             }
             Message::News(r) => self.news_all = Some(r),
-            Message::OpenUrl(u) => model::open_url(&u),
+            Message::OpenUrl(u) => { if let Err(error) = model::open_url(&u) { self.error = error; } },
             Message::CheckAur => {
                 self.aur_updates = None;
-                return blocking(
-                    || {
-                        let user = helper::user_name(unsafe { libc::getuid() }).unwrap_or_default();
-                        upd::extras::aur_updates(&user)
-                    },
-                    Message::AurUpdates,
-                );
+                return self.probe(Kind::AurUpdates, "updates", || {
+                    let user = upd::common::UserContext::from_uid(unsafe { libc::geteuid() })?;
+                    upd::extras::aur_updates(&user.name).map(|v| Message::AurUpdates(Ok(v)))
+                });
             }
             Message::AurUpdates(r) => self.aur_updates = Some(r),
-            Message::AurQuery(q) => self.aur_query = q,
+            Message::AurQuery(q) => {
+                if self.aur_query != q { self.jobs.invalidate(&[Kind::AurSearch]); self.aur_results = None; }
+                self.aur_query = q;
+            },
             Message::AurSearch => {
                 let q = self.aur_query.trim().to_string();
                 if q.len() < 2 {
                     return Task::none();
                 }
                 self.aur_results = None;
-                return blocking(move || upd::extras::aur_search(&q), Message::AurResults);
+                let key = q.clone();
+                return self.probe(Kind::AurSearch, &key, move || upd::extras::aur_search(&q).map(|v| Message::AurResults(Ok(v))));
             }
             Message::AurResults(r) => self.aur_results = Some(r),
             Message::Mirrors(m, c) => {
-                self.pending = false;
                 self.mirrors = *m;
-                if let Some(c) = c {
-                    self.config = Some(*c);
-                }
+                if self.setting_mutation.is_none() { if let Some(c) = c { self.config = Some(*c); } }
+                if self.summary_loaded && self.config.is_some() { if let Some(args) = self.queued_start.take() { return self.update(Message::Start(args)); } }
             }
             Message::MirrorInput(s) => self.mirror_input = s,
             Message::VpnData(state, snap, err) => {
                 self.vpn_state = *state;
-                if let Some(s) = snap {
-                    self.snap = Some(*s);
-                }
+                self.snap = snap.map(|s| *s);
                 self.snap_error = err;
             }
-            Message::RefreshVpn => return blocking(|| load_vpn(true), |m| m),
+            Message::RefreshVpn => return self.probe(Kind::Vpn, "vpn", || load_vpn(true)),
             Message::Select(group, name) => {
                 return blocking(move || helper::call(&Request::VpnSelect { group, name }).map(|_| ()), Message::Done);
             }
@@ -522,21 +751,31 @@ impl cosmic::Application for Window {
                 self.notice = t!("Замер задержек…").into();
                 return blocking(move || helper::call(&Request::VpnDelay { group }).map(|_| ()), Message::Done);
             }
-            Message::SubUrl(s) => self.sub_url = s,
-            Message::SubName(s) => self.sub_name = s,
+            Message::SubUrl(s) => { if self.submitted_sub.is_none() { self.sub_url = s; } },
+            Message::SubName(s) => { if self.submitted_sub.is_none() { self.sub_name = s; } },
             Message::ToggleSubHidden => self.sub_hidden = !self.sub_hidden,
             Message::AddSub => {
+                if self.pending || self.op.running() || self.busy { self.error = t!("upd занят").into(); return Task::none(); }
                 let (url, name) = (self.sub_url.trim().to_string(), self.sub_name.trim().to_string());
                 if !url.starts_with("https://") {
                     self.error = t!("Адрес подписки должен начинаться с https://").into();
                     return Task::none();
                 }
-                self.sub_url.clear();
-                self.sub_name.clear();
+                let request = self.request_id();
+                self.pending_start = Some(request);
+                self.op.phase = op::Phase::Starting;
+                self.submitted_sub = Some((self.sub_url.clone(), self.sub_name.clone()));
                 self.show_op = true;
                 self.pending = true;
+                self.confirm_cancel = false;
+                self.jobs.invalidate(&[Kind::Operation, Kind::Vpn, Kind::News, Kind::AurUpdates, Kind::AurSearch, Kind::Maintenance]);
+                self.start_pending = true;
+                self.pending_event_id = None;
                 // адрес уходит помощнику в теле запроса, а не в аргументах команды
-                return blocking(move || helper::call(&Request::VpnAdd { url, name }).map(|_| ()), Message::Started);
+                return blocking(
+                    move || helper::call_as::<helper::StartReply>(&Request::VpnAdd { url, name }).map(|reply| reply.operation_id),
+                    move |result| Message::Started(request, result),
+                );
             }
             Message::DeleteSub(id) => {
                 if self.confirm_delete.as_deref() != Some(&id) {
@@ -547,27 +786,34 @@ impl cosmic::Application for Window {
                 return self.update(Message::Start(vec!["vpn".into(), "del".into(), format!("id:{id}")]));
             }
             Message::Terminal(args) => {
+                let args: Vec<&str> = args.iter().map(String::as_str).collect();
                 if let Err(e) = model::open_terminal(&args) {
                     self.error = e;
                 }
             }
-            Message::Status(s) => self.status = Some(s),
-            Message::Snapshots(r) => self.snapshots = Some(r),
-            Message::History(r) => self.history = Some(r),
-            Message::Restart(r) => self.restart = Some(r),
             Message::Set(key, value) => {
-                // сразу показываем новое значение; ошибка — вернётся прежнее при перечитывании
-                if let Some(c) = self.config.as_mut() {
-                    let _ = c.set(key, &value);
-                }
+                if self.pending { return Task::none(); }
+                let Some(mut draft) = self.config.clone() else { self.error = t!("Настройки ещё не загружены").into(); return Task::none(); };
+                if let Err(error) = draft.set(key, &value) { self.error = error; return Task::none(); }
+                let request = self.request_id();
+                self.setting_mutation = Some(SettingMutation { id: request, draft });
+                self.jobs.invalidate(&[Kind::Mirrors]);
                 self.pending = true;
-                return blocking(
-                    move || match helper::call(&Request::ConfigSet { key: key.into(), value }) {
-                        Ok(_) => load_mirrors(),
-                        Err(e) => Message::Done(Err(e)),
-                    },
-                    |m| m,
-                );
+                return blocking(move || helper::call_as::<helper::SettingsReply>(&Request::ConfigSet { key: key.into(), value }), move |result| Message::Settings(request, result));
+            }
+            Message::Settings(request, result) => {
+                if self.setting_mutation.as_ref().map(|m| m.id) != Some(request) { return Task::none(); }
+                self.setting_mutation = None;
+                self.pending = false;
+                match result {
+                    Ok(reply) => {
+                        self.error = reply.runtime_error().unwrap_or_default();
+                        self.notice = match &reply.runtime { helper::SettingsRuntime::Pending { reason } => format!("{}: {reason}", t!("Настройка сохранена")), _ => String::new() };
+                        self.config = Some(reply.config);
+                        return self.reload_page();
+                    }
+                    Err(error) => self.error = error,
+                }
             }
             Message::Lang(i) => {
                 let code = if i == 0 { "auto".to_string() } else { i18n::ALL.get(i - 1).map(|l| l.code().to_string()).unwrap_or_else(|| "auto".into()) };
@@ -590,16 +836,28 @@ impl cosmic::Application for Window {
     fn view(&self) -> Element<'_, Message> {
         let sp = cosmic::theme::spacing();
         let body: Element<'_, Message> = if self.show_op { self.op_view() } else { self.page_view() };
-        let mut col = widget::column::with_capacity(3).spacing(sp.space_s);
+        let mut alerts = widget::column::with_capacity(4).spacing(sp.space_xxs);
         if !self.error.is_empty() {
-            col = col.push(ui::banner("dialog-warning-symbolic", self.error.clone(), Some((t!("Закрыть"), Message::DismissError))));
+            alerts = alerts.push(ui::banner("dialog-warning-symbolic", self.error.clone(), Some((t!("Закрыть"), Message::DismissError))));
         } else if !self.notice.is_empty() {
-            col = col.push(ui::banner("dialog-information-symbolic", self.notice.clone(), Some((t!("Закрыть"), Message::DismissError))));
+            alerts = alerts.push(ui::banner("dialog-information-symbolic", self.notice.clone(), Some((t!("Закрыть"), Message::DismissError))));
+        }
+        for (kind, error) in self.jobs.errors() {
+            alerts = alerts.push(ui::banner("dialog-warning-symbolic", format!("{}: {error} · {}", kind.label(), t!("Показаны предыдущие данные")), None));
         }
         if !helper::available() {
-            col = col.push(ui::banner("dialog-warning-symbolic", t!("Помощник upd не установлен — действия недоступны (sudo upd install)").into(), None));
+            alerts = alerts.push(ui::banner("dialog-warning-symbolic", t!("Помощник upd не установлен — действия недоступны (sudo upd install)").into(), None));
         }
-        col = col.push(body);
+        let kind = match self.page { Page::Updates => Kind::Summary, Page::Mirrors | Page::Settings => Kind::Mirrors,
+            Page::Vpn => Kind::Vpn, Page::Maintenance => Kind::Maintenance };
+        match self.jobs.phase(kind) {
+            Phase::Loading => alerts = alerts.push(text(t!("Загрузка…"))),
+            Phase::Error(error) => alerts = alerts.push(text(format!("{error} · {}", t!("Показаны предыдущие данные")))),
+            _ => {}
+        }
+        let col = widget::column::with_capacity(2).spacing(sp.space_s)
+            .push(widget::container(widget::scrollable(alerts).height(Length::Shrink)).max_height(128.0).width(Length::Fill))
+            .push(body);
         widget::container(col).padding([0, sp.space_m, sp.space_m, sp.space_m]).width(Length::Fill).height(Length::Fill).into()
     }
 }
@@ -610,7 +868,9 @@ impl Window {
     pub fn demo(summary: Summary, upd_state: UpdState, op: OpView, page: Page) -> Self {
         let (w, _) = <Window as cosmic::Application>::init(Core::default(), Flags::default());
         let mut w = w;
+        w.jobs = Jobs::default();
         w.summary = summary;
+        w.summary_loaded = true;
         w.upd_state = upd_state;
         w.op = op;
         w.page = page;
@@ -620,7 +880,17 @@ impl Window {
 
     #[cfg(test)]
     pub fn demo_view(&self, operation: bool) -> Element<'_, Message> {
-        if operation { self.op_view() } else { self.page_view() }
+        if operation { self.op_view() } else { <Self as Application>::view(self) }
+    }
+    #[cfg(test)]
+    pub fn demo_case(&mut self, case: &str) {
+        match case {
+            "loading" => self.jobs.demo_phase(Kind::Summary, Phase::Loading),
+            "denied" => self.error = "polkit: authorization denied; no settings were saved".into(),
+            "long-error" => self.error = "Сеть недоступна / connection refused: https://example.invalid/very-long-path/".repeat(20),
+            "stale" => self.summary.checked = upd::common::now().saturating_sub(90000),
+            _ => {}
+        }
     }
 
     #[cfg(test)]
@@ -663,37 +933,26 @@ impl Window {
     }
 
     fn open_page(&mut self, page: Page) -> Task<Message> {
+        if self.page != page { self.jobs.invalidate(&[Kind::Vpn, Kind::Mirrors, Kind::News, Kind::AurUpdates, Kind::AurSearch, Kind::Maintenance]); }
         self.page = page;
         self.confirm_delete = None;
         Task::batch([self.reload_page(), self.update_title()])
     }
 
+    fn request_id(&mut self) -> u64 { self.next_request = self.next_request.checked_add(1).expect("request counter exhausted"); self.next_request }
+    fn display_config(&self) -> Option<&Config> { self.setting_mutation.as_ref().map(|m| &m.draft).or(self.config.as_ref()) }
+    fn probe(&mut self, kind: Kind, key: &str, work: impl FnOnce() -> Result<Message, String> + Send + 'static) -> Task<Message> {
+        self.jobs.request(kind, key.to_owned(), work, Message::Probe)
+    }
     fn reload_page(&mut self) -> Task<Message> {
         match self.page {
-            Page::Updates => blocking(|| (), |_| load_summary()),
-            Page::Mirrors | Page::Settings => blocking(|| (), |_| load_mirrors()),
+            Page::Updates => self.probe(Kind::Summary, "", load_summary),
+            Page::Mirrors | Page::Settings => self.probe(Kind::Mirrors, "", load_mirrors),
             Page::Vpn => {
-                let active = self.summary.vpn.active || model::load_summary().vpn.active;
-                Task::batch([blocking(move || load_vpn(active), |m| m), blocking(|| (), |_| load_mirrors())])
+                let active = self.summary.vpn.active;
+                Task::batch([self.probe(Kind::Vpn, "vpn", move || load_vpn(active)), self.probe(Kind::Mirrors, "", load_mirrors)])
             }
-            Page::Maintenance => Task::batch([
-                blocking(
-                    || upd::backend::detect().map(|b| upd::gather_status(b.as_ref())).unwrap_or_default(),
-                    |s| Message::Status(Shared(Arc::new(s))),
-                ),
-                blocking(|| helper::call_as::<Vec<String>>(&Request::Query { what: "snapshots".into() }), Message::Snapshots),
-                blocking(|| helper::call_as::<Vec<String>>(&Request::Query { what: "history".into() }), Message::History),
-                blocking(
-                    || {
-                        helper::call(&Request::Query { what: "restart".into() }).map(|v| RestartInfo {
-                            services: serde_json::from_value(v["services"].clone()).unwrap_or_default(),
-                            critical: serde_json::from_value(v["critical"].clone()).unwrap_or_default(),
-                            apps: serde_json::from_value(v["apps"].clone()).unwrap_or_default(),
-                        })
-                    },
-                    Message::Restart,
-                ),
-            ]),
+            Page::Maintenance => self.probe(Kind::Maintenance, "maintenance", load_maintenance),
         }
     }
 
@@ -701,8 +960,13 @@ impl Window {
         !self.pending && !self.op.running() && !self.busy && helper::available()
     }
 
+    fn update_in_terminal(&self) -> bool { self.summary.features.aur && self.config.as_ref().is_none_or(|c| c.aur) }
     fn start_msg(&self, args: &[&str]) -> Option<Message> {
-        self.can_act().then(|| Message::Start(args.iter().map(|s| s.to_string()).collect()))
+        self.can_act().then(|| {
+            let arguments = args.iter().map(|s| s.to_string()).collect();
+            if args.first() == Some(&"aur") || args.first() == Some(&"update") && self.update_in_terminal() { Message::Terminal(arguments) }
+            else { Message::Start(arguments) }
+        })
     }
 
     fn page_view(&self) -> Element<'_, Message> {
@@ -722,6 +986,18 @@ impl Window {
         let sp = cosmic::theme::spacing();
         let o = &self.op;
         let mut col = widget::column::with_capacity(8).spacing(sp.space_s);
+        let phase = if self.start_pending { &op::Phase::Starting } else { &o.phase };
+        let state = match phase {
+            op::Phase::Starting => Some(t!("Ожидание авторизации и запуска…").into()),
+            op::Phase::Answering => Some(t!("Ответ отправляется…").into()),
+            op::Phase::Cancelling => Some(t!("Отмена отправляется…").into()),
+            op::Phase::CancelAccepted => Some(t!("Отмена принята; ожидается завершение").into()),
+            op::Phase::CancelRejected(error) => Some(t!("Отмена отклонена: {0}", error)),
+            op::Phase::Disconnected => Some(t!("Связь с помощником потеряна; переподключение…").into()),
+            _ => None,
+        };
+        if let Some(state) = state { col = col.push(txt(text::body(state))); }
+        if self.start_pending || matches!(o.phase, op::Phase::Starting) { return widget::container(col).height(Length::Fill).into(); }
         if o.command.is_empty() {
             col = col.push(txt(text::body(t!("Операций пока не было."))));
             return col.push(hrow(vec![widget::space::horizontal().into(), button::standard(t!("Закрыть")).on_press(Message::ShowOp(false)).into()])).into();
@@ -745,51 +1021,47 @@ impl Window {
         });
 
         // вопрос операции
+        let answer_enabled = self.answer_request.is_none() && self.cancel_request.is_none() && self.attached;
         if let Some((q, kind)) = &o.prompt {
             // варианты ответа — кнопками, поэтому «[Y/n]» из вопроса не показываем
             let question = match kind {
                 PromptKind::YesNo { .. } => q.trim_end().trim_end_matches(':').trim_end().trim_end_matches("[Y/n]").trim_end_matches("[y/N]").trim_end().to_string(),
                 _ => q.clone(),
             };
-            let mut card = widget::column::with_capacity(3).spacing(sp.space_xs).push(txt(text::heading(question)));
+            let question = widget::container(widget::scrollable(txt(text::heading(question)).wrapping(cosmic::iced::widget::text::Wrapping::WordOrGlyph)).height(Length::Shrink)).max_height(100.0).width(Length::Fill);
+            let mut card = widget::column::with_capacity(3).spacing(sp.space_xs).push(question);
             let controls: Vec<Element<'_, Message>> = match kind {
                 PromptKind::YesNo { default_yes } => {
                     let yes = if *default_yes { button::suggested(t!("Да")) } else { button::standard(t!("Да")) };
                     let no = if *default_yes { button::standard(t!("Нет")) } else { button::suggested(t!("Нет")) };
-                    vec![widget::space::horizontal().into(), no.on_press(Message::Answer("n".into())).into(), yes.on_press(Message::Answer("y".into())).into()]
+                    vec![widget::space::horizontal().into(), no.on_press_maybe(answer_enabled.then(|| Message::Answer("n".into()))).into(), yes.on_press_maybe(answer_enabled.then(|| Message::Answer("y".into()))).into()]
                 }
-                PromptKind::Secret => vec![
-                    widget::secure_input(t!("Пароль"), &o.answer, Some(Message::ToggleReveal), !o.reveal)
-                        .on_input(Message::AnswerInput)
-                        .on_submit(Message::Answer)
-                        .width(Length::Fill)
-                        .into(),
-                    button::suggested(t!("Отправить")).on_press(Message::Answer(o.answer.clone())).into(),
-                ],
-                PromptKind::Text => vec![
-                    widget::text_input(t!("Ответ (пусто — по умолчанию)"), &o.answer)
-                        .on_input(Message::AnswerInput)
-                        .on_submit(Message::Answer)
-                        .width(Length::Fill)
-                        .into(),
-                    button::suggested(t!("Отправить")).on_press(Message::Answer(o.answer.clone())).into(),
-                ],
+                PromptKind::Secret | PromptKind::Text => {
+                    let mut input = if matches!(kind, PromptKind::Secret) {
+                        widget::secure_input(t!("Пароль"), &o.answer, Some(Message::ToggleReveal), !o.reveal)
+                    } else { widget::text_input(t!("Ответ (пусто — по умолчанию)"), &o.answer) };
+                    if answer_enabled { input = input.on_input(Message::AnswerInput).on_submit(Message::Answer); }
+                    vec![input.width(Length::Fill).into(), button::suggested(t!("Отправить")).on_press_maybe(answer_enabled.then(|| Message::Answer(o.answer.clone()))).into()]
+                }
             };
             card = card.push(hrow(controls));
             col = col.push(widget::container(card).padding(sp.space_s).class(cosmic::theme::Container::Card).width(Length::Fill));
         }
 
         // живой вывод: последние строки, прокрутка к концу
-        let start = o.lines.len().saturating_sub(400);
-        let mut log = widget::column::with_capacity(o.lines.len() - start + 1).spacing(0);
-        for l in &o.lines[start..] {
+        if o.gap { col = col.push(txt(text::caption(t!("Ранняя часть журнала удалена по лимиту")))); }
+        if !o.tail.follow {
+            col = col.push(button::standard(t!("К новым строкам ({0})", o.tail.unread)).on_press(Message::FollowLog));
+        }
+        let mut log = widget::column::with_capacity(o.lines.len() + 1).spacing(0);
+        for l in &o.lines {
             log = log.push(text::monotext(l.as_str()).wrapping(cosmic::iced::widget::text::Wrapping::WordOrGlyph));
         }
         if !o.partial.is_empty() {
             log = log.push(text::monotext(o.partial.as_str()));
         }
         col = col.push(
-            widget::container(widget::scrollable(widget::container(log).padding(sp.space_xs).width(Length::Fill)).id(LOG_ID.clone()).height(Length::Fill))
+            widget::container(widget::scrollable(widget::container(log).padding(sp.space_xs).width(Length::Fill)).id(LOG_ID.clone()).on_scroll(|v| Message::LogScroll(v.content_bounds().height - v.bounds().height - v.absolute_offset().y <= 2.0)).height(Length::Fill))
                 .class(cosmic::theme::Container::Card)
                 .height(Length::Fill)
                 .width(Length::Fill),
@@ -799,20 +1071,15 @@ impl Window {
         match o.exit {
             None => {
                 footer.push(txt(text::caption(t!("Можно закрыть окно — операция продолжится; ход виден на панели."))).width(Length::Fill).into());
-                let label = if !self.confirm_cancel {
-                    t!("Отменить")
-                } else if o.cancel_sent {
-                    t!("Завершить принудительно")
-                } else {
-                    t!("Точно отменить?")
-                };
-                footer.push(button::destructive(label).on_press(Message::Cancel).into());
+                let label = if o.cancel_sent { t!("Завершить принудительно") }
+                    else if self.confirm_cancel { t!("Точно отменить?") } else { t!("Отменить") };
+                footer.push(button::destructive(label).on_press_maybe((self.cancel_request.is_none() && self.attached).then_some(Message::Cancel)).into());
             }
             Some(code) => {
                 let (icon, msg) = if code == 0 { ("emblem-ok-symbolic", t!("Готово").to_string()) } else { ("dialog-warning-symbolic", t!("Завершилось с ошибкой (код {0})", code)) };
                 footer.push(widget::icon::from_name(icon).size(20).into());
                 footer.push(txt(text::heading(msg)).width(Length::Fill).into());
-                footer.push(button::standard(t!("Скопировать журнал")).on_press(Message::CopyLog).into());
+                footer.push(button::standard(t!("Скопировать доступный журнал")).on_press(Message::CopyLog).into());
                 footer.push(button::suggested(t!("Закрыть")).on_press(Message::ShowOp(false)).into());
             }
         }
@@ -831,7 +1098,7 @@ impl Window {
         let mut col = widget::column::with_capacity(10).spacing(sp.space_m);
 
         let total = s.total();
-        let install = button::suggested(if total > 0 { t!("Установить {0}…", total) } else { t!("Обновить всё…").into() }).on_press_maybe(self.start_msg(&["update"]));
+        let install = button::suggested(if self.update_in_terminal() { t!("Обновить в терминале…").into() } else if total > 0 { t!("Установить {0}…", total) } else { t!("Обновить всё…").into() }).on_press_maybe(self.start_msg(&["update"]));
         let check = button::standard(t!("Проверить")).on_press_maybe(self.start_msg(&["check"]));
         let title = widget::column::with_capacity(2).push(txt(text::title3(head.title()))).push(txt(text::caption(summary::checked_line(s)))).width(Length::Fill);
         col = col.push(hrow(vec![title.into(), check.into(), install.into()]));
@@ -844,6 +1111,8 @@ impl Window {
         if let Some(note) = model::download_note(s) {
             col = col.push(txt(text::body(note)));
         }
+
+        if self.update_in_terminal() { col = col.push(txt(text::caption(t!("Сборка AUR и редакторы требуют терминала; обновление откроется там")))); }
 
         // новости Arch — перед списком пакетов: в них бывают ручные шаги
         if s.features.news {
@@ -921,7 +1190,7 @@ impl Window {
                             desc += &format!(" · {}", t!("устарел"));
                         }
                         desc += &format!("\n{}", p.desc);
-                        let install = button::text(t!("Установить…")).on_press_maybe(self.start_msg(&["aur", "install", &p.name]));
+                        let install = button::text(t!("Установить в терминале…")).on_press_maybe(self.start_msg(&["aur", "install", &p.name]));
                         sec = sec.add(settings::item::builder(p.name.clone()).description(desc).control(install));
                     }
                 }
@@ -1062,9 +1331,12 @@ impl Window {
             let title = if x.active { format!("● {}", x.name) } else { x.name.clone() };
             subs = subs.add(settings::item::builder(title).description(desc).control(widget::Row::with_children(controls).spacing(sp.space_xxs)));
         }
+        let mut url_input = widget::secure_input(t!("Адрес подписки (https://…)"), &self.sub_url, Some(Message::ToggleSubHidden), self.sub_hidden);
+        let mut name_input = widget::text_input(t!("Название (необязательно)"), &self.sub_name);
+        if self.submitted_sub.is_none() { url_input = url_input.on_input(Message::SubUrl); name_input = name_input.on_input(Message::SubName); }
         subs = subs.add(settings::item_row(vec![
-            widget::secure_input(t!("Адрес подписки (https://…)"), &self.sub_url, Some(Message::ToggleSubHidden), self.sub_hidden).on_input(Message::SubUrl).width(Length::FillPortion(3)).into(),
-            widget::text_input(t!("Название (необязательно)"), &self.sub_name).on_input(Message::SubName).width(Length::FillPortion(2)).into(),
+            url_input.width(Length::FillPortion(3)).into(),
+            name_input.width(Length::FillPortion(2)).into(),
             button::standard(t!("Добавить")).on_press_maybe(self.can_act().then_some(Message::AddSub)).into(),
         ]));
         if !st.subs.is_empty() {
@@ -1104,12 +1376,16 @@ impl Window {
             let routes = vec![t!("по правилам").to_string(), t!("всё через VPN").into(), t!("всё напрямую").into()];
             let can = self.can_act();
             let mut sec = settings::section().title(t!("Режим"));
-            sec = sec.add(settings::item::builder(t!("Режим")).control(widget::dropdown(modes, Some(if c.vpn_tun { 0 } else { 1 }), move |i| {
-                if can { Message::Start(vec!["vpn".into(), if i == 0 { "tun" } else { "proxy" }.into()]) } else { Message::Tick }
-            })));
-            sec = sec.add(settings::item::builder(t!("Маршрутизация")).control(widget::dropdown(routes, Some(c.vpn_mode.min(2) as usize), move |i| {
-                if can { Message::Start(vec!["vpn".into(), ["rule", "global", "direct"][i.min(2)].into()]) } else { Message::Tick }
-            })));
+            let mode = if c.vpn_tun { 0 } else { 1 };
+            let route = c.vpn_mode.min(2) as usize;
+            let mode_control: Element<'_, Message> = if can {
+                widget::dropdown(modes.clone(), Some(mode), |i| Message::Start(vec!["vpn".into(), if i == 0 { "tun" } else { "proxy" }.into()])).into()
+            } else { text(modes[mode].clone()).into() };
+            let route_control: Element<'_, Message> = if can {
+                widget::dropdown(routes.clone(), Some(route), |i| Message::Start(vec!["vpn".into(), ["rule", "global", "direct"][i.min(2)].into()])).into()
+            } else { text(routes[route].clone()).into() };
+            sec = sec.add(settings::item::builder(t!("Режим")).control(mode_control));
+            sec = sec.add(settings::item::builder(t!("Маршрутизация")).control(route_control));
             for (key, label) in [
                 ("vpn_autostart", t!("Запуск при загрузке")),
                 ("vpn_auto_select", t!("Автовыбор сервера (⚡ Авто)")),
@@ -1133,7 +1409,7 @@ impl Window {
         tools = tools.add(settings::item::builder(t!("Ядро mihomo")).description(format!("{core}{latest}")).control(button::text(t!("Обновить")).on_press_maybe(self.start_msg(&["vpn", "core", "update"]))));
         let geo = if st.geo_updated > 0 { t!("от {0}", fmt_ago(st.geo_updated)) } else { t!("не скачаны").into() };
         tools = tools.add(settings::item::builder(t!("Геофайлы")).description(geo).control(button::text(t!("Обновить")).on_press_maybe(self.start_msg(&["vpn", "geo"]))));
-        tools = tools.add(settings::item::builder(t!("Свои правила")).description(t!("Открывается редактор в терминале")).control(button::text(t!("Открыть…")).on_press(Message::Terminal(vec!["vpn", "rules"]))));
+        tools = tools.add(settings::item::builder(t!("Свои правила")).description(t!("Открывается редактор в терминале")).control(button::text(t!("Открыть…")).on_press(Message::Terminal(vec!["vpn".into(), "rules".into()]))));
         col = col.push(tools);
         col.into()
     }
@@ -1177,7 +1453,7 @@ impl Window {
                     cfgs = cfgs.add(settings::item_row(vec![text::body(f.clone()).into()]));
                 }
                 if s.features.merge {
-                    cfgs = cfgs.add(settings::item::builder(t!("Слить изменения")).description(t!("pacdiff откроется в терминале")).control(button::text(t!("Открыть…")).on_press(Message::Terminal(vec!["merge"]))));
+                    cfgs = cfgs.add(settings::item::builder(t!("Слить изменения")).description(t!("pacdiff откроется в терминале")).control(button::text(t!("Открыть…")).on_press(Message::Terminal(vec!["merge".into()]))));
                 }
             }
             None => {}
@@ -1233,7 +1509,7 @@ impl Window {
     // ---------- настройки ----------
 
     fn toggle_item<'a>(&'a self, key: &'static str, label: &'a str) -> ListButton<'a, Message> {
-        let on = self.config.as_ref().and_then(|c| c.get(key)).unwrap_or(0) != 0;
+        let on = self.display_config().and_then(|c| c.get(key)).unwrap_or(0) != 0;
         let enabled = !self.pending && helper::available();
         let mut item = settings::item::builder(label);
         if let Some(doc) = setting_doc(key).filter(|d| *d != label) {
@@ -1244,12 +1520,13 @@ impl Window {
 
     fn number_item(&self, key: &'static str) -> Element<'_, Message> {
         let (min, max, step) = number_range(key);
-        let v = self.config.as_ref().and_then(|c| c.get(key)).unwrap_or(min);
+        let v = self.display_config().and_then(|c| c.get(key)).unwrap_or(min);
         let label = setting_label(key);
         let mut item = settings::item::builder(label);
         if let Some(doc) = setting_doc(key).filter(|d| *d != label) {
             item = item.description(doc);
         }
+        let (min, max) = if self.pending || !helper::available() { (v, v) } else { (min, max) };
         item.control(widget::spin_button(v.to_string(), label, v, step, min, max, move |n| Message::Set(key, n.to_string()))).into()
     }
 
@@ -1258,11 +1535,14 @@ impl Window {
         let s = &self.summary;
         let mut col = widget::column::with_capacity(6).spacing(sp.space_m);
 
-        let lang = self.config.as_ref().map(|c| c.lang.clone()).unwrap_or_else(|| "auto".into());
+        let lang = self.display_config().map(|c| c.lang.clone()).unwrap_or_else(|| "auto".into());
         let sel = i18n::ALL.iter().position(|l| l.code() == lang).map(|i| i + 1).unwrap_or(0);
+        let language: Element<'_, Message> = if self.pending || !helper::available() {
+            text(lang_options().get(sel).cloned().unwrap_or_default()).into()
+        } else { widget::dropdown(lang_options(), Some(sel), Message::Lang).into() };
         let general = settings::section()
             .title(t!("Общие"))
-            .add(settings::item::builder(t!("Язык / Language")).control(widget::dropdown(lang_options(), Some(sel), Message::Lang)))
+            .add(settings::item::builder(t!("Язык / Language")).control(language))
             .add(settings::item::builder(t!("Уведомления")).description(t!("Новые обновления, новости Arch, перезагрузка, итог операций")).toggler(self.prefs.notifications, Message::Notifications));
         col = col.push(general);
 
@@ -1331,21 +1611,149 @@ fn setting_label(key: &str) -> &'static str {
     }
 }
 
-/// Допустимые значения числовых настроек (те же пределы, что при чтении файла настроек).
+/// Numeric controls use the shared config schema, including values above the former GUI-only limits.
 fn number_range(key: &str) -> (i64, i64, i64) {
-    match key {
-        "keep" => (1, 10, 1),
-        "timeout" => (2, 120, 1),
-        "extra_from_list" => (0, 64, 1),
-        "rescan_count" => (3, 64, 1),
-        "retries" => (1, 20, 1),
-        "mirror_max_age_h" | "max_lag_h" => (1, 720, 1),
-        "network_memory_days" => (0, 365, 1),
-        "parallel" | "parallel_vpn" => (1, 16, 1),
-        "min_free_gb" => (0, 500, 1),
-        "vpn_port" => (1024, 65535, 1),
-        "vpn_sub_update_h" | "vpn_core_check_h" => (1, 720, 1),
-        _ => (0, 1_000_000, 1),
+    let schema = upd::common::number_setting(key).expect("numeric control requires schema");
+    (schema.min, schema.max, schema.step)
+}
+
+#[cfg(test)]
+mod mutation_tests {
+    use super::*;
+    fn window() -> Window { Window::demo(Summary::default(), UpdState::default(), OpView::default(), Page::Settings) }
+    fn send(w: &mut Window, message: Message) { drop(<Window as Application>::update(w, message)); }
+    #[test]
+    fn polkit_refusal_restores_committed_value_and_rejects_stale_reply() {
+        let mut w = window();
+        let committed = w.config.as_ref().unwrap().keep;
+        send(&mut w, Message::Set("keep", "7".into()));
+        let request = w.setting_mutation.as_ref().unwrap().id;
+        assert_eq!(w.display_config().unwrap().keep, 7);
+        assert_eq!(w.config.as_ref().unwrap().keep, committed);
+        send(&mut w, Message::Set("keep", "8".into()));
+        assert_eq!(w.setting_mutation.as_ref().unwrap().id, request);
+        let mut unrelated = Config::defaults(vec![]); unrelated.keep = 9;
+        send(&mut w, Message::Mirrors(Box::default(), Some(Box::new(unrelated))));
+        assert!(w.pending);
+        assert_eq!(w.config.as_ref().unwrap().keep, committed);
+        send(&mut w, Message::Settings(request + 1, Err("stale".into())));
+        assert!(w.pending);
+        send(&mut w, Message::Settings(request, Err("polkit window closed".into())));
+        assert!(!w.pending);
+        assert_eq!(w.display_config().unwrap().keep, committed);
+        assert!(w.error.contains("polkit"));
+    }
+    #[test]
+    fn saved_apply_failure_displays_actual_saved_value() {
+        let mut w = window();
+        send(&mut w, Message::Set("vpn_port", "7891".into()));
+        let request = w.setting_mutation.as_ref().unwrap().id;
+        let mut saved = w.config.clone().unwrap(); saved.vpn_port = 7891;
+        send(&mut w, Message::Settings(request, Ok(helper::SettingsReply {
+            config: saved, revision: "fixture".into(), runtime: helper::SettingsRuntime::SavedButNotApplied {
+                reason: "runtime unavailable".into(), retry: "upd vpn apply".into(),
+            },
+        })));
+        assert_eq!(w.config.as_ref().unwrap().vpn_port, 7891);
+        assert!(!w.pending);
+        assert!(w.error.contains("runtime unavailable"));
+    }
+    #[test]
+    fn subscription_form_survives_busy_and_refusal_and_clears_only_matching_success() {
+        let mut w = window();
+        w.sub_url = "https://example.invalid/private-token".into(); w.sub_name = "fixture".into();
+        assert!(!format!("{:?}", Message::SubUrl(w.sub_url.clone())).contains("private-token"));
+        w.busy = true; send(&mut w, Message::AddSub);
+        assert!(w.pending_start.is_none()); assert!(!w.sub_url.is_empty());
+        w.busy = false; send(&mut w, Message::AddSub);
+        let first = w.pending_start.unwrap();
+        assert!(!w.sub_url.is_empty());
+        send(&mut w, Message::Started(first, Err("helper busy".into())));
+        assert!(!w.sub_url.is_empty()); assert_eq!(w.sub_name, "fixture");
+        send(&mut w, Message::AddSub);
+        let second = w.pending_start.unwrap();
+        send(&mut w, Message::Started(first, Ok(helper::OperationId("stale".into()))));
+        assert!(!w.sub_url.is_empty());
+        send(&mut w, Message::Started(second, Ok(helper::OperationId("accepted".into()))));
+        assert!(w.sub_url.is_empty()); assert!(w.sub_name.is_empty());
+    }
+    #[test]
+    fn gui_ranges_show_large_legal_values_without_clamping() {
+        for key in ["mirror_max_age_h", "vpn_sub_update_h", "vpn_core_check_h", "max_lag_h"] {
+            assert_eq!(number_range(key).1, upd::common::MAX_HOURS);
+        }
+        assert_eq!(number_range("min_free_gb").1, 1 << 20);
+        let mut w = window(); w.config.as_mut().unwrap().vpn_sub_update_h = 10000;
+        assert_eq!(w.display_config().unwrap().get("vpn_sub_update_h"), Some(10000));
     }
 }
 
+#[cfg(test)]
+mod operation_tests {
+    use super::*;
+    fn window() -> Window {
+        let mut w = Window::demo(Summary::default(), UpdState::default(), OpView::default(), Page::Updates);
+        w.operation_id = Some(helper::OperationId("fixture".into())); w.prompt_id = Some(helper::PromptId(1));
+        w.op.apply(helper::Event::Reset { command: "update".into(), started: 1 });
+        w.op.apply(helper::Event::Prompt { text: "Continue?".into(), kind: PromptKind::YesNo { default_yes: true } }); w
+    }
+    fn send(w: &mut Window, m: Message) { drop(<Window as Application>::update(w, m)); }
+    #[test]
+    fn double_answer_is_blocked_and_failure_can_be_retried() {
+        let mut w = window(); w.op.answer = "y".into(); send(&mut w, Message::Answer("y".into())); let id = w.answer_request.unwrap();
+        send(&mut w, Message::Answer("n".into())); assert_eq!(w.answer_request, Some(id)); assert_eq!(w.op.phase, op::Phase::Answering);
+        send(&mut w, Message::AnswerResult(id, helper::OperationId("fixture".into()), helper::PromptId(1), Err("failed".into())));
+        assert!(w.op.prompt.is_some()); assert_eq!(w.op.answer, "y"); assert!(w.answer_request.is_none());
+        send(&mut w, Message::Answer("y".into())); let retry = w.answer_request.unwrap(); assert_ne!(retry, id);
+        send(&mut w, Message::AnswerResult(retry, helper::OperationId("fixture".into()), helper::PromptId(1), Ok(())));
+        assert!(w.op.prompt.is_none()); assert!(w.op.answer.is_empty());
+    }
+    #[test]
+    fn cancel_refusal_and_disconnect_are_explicit() {
+        let mut w = window(); send(&mut w, Message::Cancel); send(&mut w, Message::Cancel); let id = w.cancel_request.unwrap();
+        send(&mut w, Message::CancelResult(id, helper::OperationId("fixture".into()), Err("rejected".into())));
+        assert!(!w.op.cancel_sent); assert!(matches!(w.op.phase, op::Phase::CancelRejected(_)));
+        let generation = w.op_gen; send(&mut w, Message::OpEvent(generation, Err("disconnected".into())));
+        assert_eq!(w.op.phase, op::Phase::Disconnected); assert!(w.op.prompt.is_some());
+        send(&mut w, Message::Answer("y".into())); assert!(w.answer_request.is_none());
+    }
+    #[test]
+    fn restarted_helper_and_delayed_callbacks_never_report_false_success() {
+        let mut w = window(); let old = w.operation_id.clone().unwrap();
+        let generation = w.op_gen;
+        send(&mut w, Message::OpEvent(generation, Ok(None)));
+        send(&mut w, Message::OpStatus(OpStatus::default()));
+        assert_eq!(w.op.phase, op::Phase::Disconnected); assert_eq!(w.op.exit, None);
+        assert_eq!(w.operation_id.as_ref(), Some(&old));
+        send(&mut w, Message::Reattach);
+        w.start_pending = true;
+        let new = helper::OperationId("operation-B".into());
+        let frame = |id, event| helper::OperationEvent { protocol_version: helper::PROTOCOL_VERSION, operation_id: id, prompt_id: None, event };
+        let generation = w.op_gen;
+        send(&mut w, Message::OpEvent(generation, Ok(Some(frame(new.clone(), helper::Event::Reset { command: "check".into(), started: 2 })))));
+        w.start_pending = false;
+        for _ in 0..100 {
+            send(&mut w, Message::OpEvent(generation, Ok(Some(frame(old.clone(), helper::Event::Exit { code: 0 })))));
+            send(&mut w, Message::OpEvent(generation.saturating_sub(1), Ok(Some(frame(new.clone(), helper::Event::Exit { code: 0 })))));
+            send(&mut w, Message::AnswerResult(99, old.clone(), helper::PromptId(1), Ok(())));
+            send(&mut w, Message::CancelResult(99, old.clone(), Ok(())));
+        }
+        assert_eq!(w.operation_id, Some(new)); assert_eq!(w.op.exit, None);
+        assert_eq!(w.op.command, "check"); assert_eq!(w.op.phase, op::Phase::Running);
+    }
+
+}
+
+#[cfg(test)]
+mod startup_tests {
+    use super::*;
+    #[test]
+    fn update_activation_waits_for_summary_before_choosing_terminal() {
+        let mut w = Window::demo(Summary::default(), UpdState::default(), OpView::default(), Page::Updates);
+        w.summary_loaded = false;
+        drop(<Window as Application>::update(&mut w, Message::Start(vec!["update".into()])));
+        assert!(w.queued_start.is_some()); assert!(w.pending_start.is_none());
+        drop(<Window as Application>::update(&mut w, Message::Summary(Box::default(), Box::default())));
+        assert!(w.queued_start.is_none()); assert!(w.pending_start.is_some());
+    }
+}

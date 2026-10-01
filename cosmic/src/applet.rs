@@ -2,6 +2,7 @@
 //! «сначала состояние, одно главное действие, предупреждения — только когда есть».
 
 use crate::model::{self, Prefs};
+use crate::jobs::{Jobs, Kind, Completion, Phase};
 use crate::ui::{self, hrow};
 use cosmic::app::{Core, Task};
 use cosmic::iced::window::Id;
@@ -15,6 +16,7 @@ use upd::summary::{self, Badge, Headline, OpStatus, Summary};
 use upd::{helper, t, vpn};
 
 pub struct Applet {
+    jobs: Jobs<Message>,
     core: Core,
     popup: Option<Id>,
     summary: Summary,
@@ -38,6 +40,8 @@ pub struct Applet {
 
 #[derive(Clone, Debug)]
 pub enum Message {
+    Probe(Completion<Message>),
+    Metadata(model::Metadata),
     Surface(cosmic::surface::Action),
     OpenPopup(Vector, Rectangle),
     PopupClosed(Id),
@@ -56,12 +60,10 @@ pub enum Message {
     Done(Result<(), String>),
 }
 
-fn blocking<T: Send + 'static>(f: impl FnOnce() -> T + Send + 'static, m: impl FnOnce(T) -> Message + Send + 'static) -> Task<Message> {
+fn blocking<T: Send + 'static>(f: impl FnOnce() -> Result<T, String> + Send + 'static, m: impl FnOnce(Result<T, String>) -> Message + Send + 'static) -> Task<Message> {
     cosmic::task::future(async move {
-        match tokio::task::spawn_blocking(f).await {
-            Ok(v) => m(v),
-            Err(e) => Message::Done(Err(e.to_string())),
-        }
+        let result = tokio::task::spawn_blocking(f).await.unwrap_or_else(|e| Err(e.to_string()));
+        m(result)
     })
 }
 
@@ -85,7 +87,8 @@ impl cosmic::Application for Applet {
         if let Some(f) = summary::applet_pid_file() {
             let _ = std::fs::write(f, std::process::id().to_string());
         }
-        let app = Applet {
+        let mut app = Applet {
+            jobs: Jobs::default(),
             core,
             popup: None,
             summary: Summary::default(),
@@ -102,7 +105,8 @@ impl cosmic::Application for Applet {
             watching: None,
             lang,
         };
-        (app, Task::batch([blocking(model::load_summary, |s| Message::Summary(Box::new(s))), blocking(|| model::load_op(true), Message::Op)]))
+        let tasks = Task::batch([app.probe(Kind::Summary, "", || model::load_summary().map(|s| Message::Summary(Box::new(s)))), app.probe(Kind::Operation, "", || model::load_op(true).map(Message::Op))]);
+        (app, tasks)
     }
 
     fn on_close_requested(&self, id: Id) -> Option<Message> {
@@ -118,6 +122,7 @@ impl cosmic::Application for Applet {
             Message::Surface(a) => return cosmic::task::message(cosmic::Action::Cosmic(cosmic::app::Action::Surface(a))),
             Message::OpenPopup(offset, bounds) => {
                 if let Some(id) = self.popup.take() {
+                    self.jobs.invalidate(&[Kind::Vpn]);
                     return cosmic::task::message(cosmic::Action::Cosmic(cosmic::app::Action::Surface(destroy_popup(id))));
                 }
                 self.confirm_reboot = false;
@@ -141,34 +146,43 @@ impl cosmic::Application for Applet {
                 );
                 let mut tasks = vec![
                     cosmic::task::message(cosmic::Action::Cosmic(cosmic::app::Action::Surface(open))),
-                    blocking(model::load_summary, |s| Message::Summary(Box::new(s))),
+                    self.probe(Kind::Summary, "", || model::load_summary().map(|s| Message::Summary(Box::new(s)))),
                 ];
                 if self.summary.vpn.active {
-                    tasks.push(blocking(|| model::vpn_snapshot().ok(), Message::Vpn));
+                    tasks.push(self.probe(Kind::Vpn, "popup", || model::vpn_snapshot().map(|s| Message::Vpn(Some(s)))));
                 }
                 return Task::batch(tasks);
             }
             Message::PopupClosed(id) => {
                 if self.popup == Some(id) {
                     self.popup = None;
+                    self.jobs.invalidate(&[Kind::Vpn]);
                 }
             }
-            Message::Tick => {
-                let lang = model::init_lang();
-                if lang != self.lang {
-                    self.lang = lang;
+            Message::Probe(completion) => {
+                let (accept, repeat) = self.jobs.complete(&completion, Message::Probe);
+                if accept {
+                    match completion.result {
+                        Ok(message) => return Task::batch([self.update(*message), repeat]),
+                        Err(_) => {},
+                    }
                 }
+                return repeat;
+            }
+            Message::Tick => return self.probe(Kind::Metadata, "", || Ok(Message::Metadata(model::metadata()))),
+            Message::Metadata(meta) => {
+                if !meta.launch_errors.is_empty() { self.error = meta.launch_errors.join("\n"); }
+                self.lang = meta.lang;
                 let mut tasks = vec![];
-                let stamp = model::state_stamp();
-                let stale = self.summary_at.is_none_or(|t| t.elapsed() > Duration::from_secs(120));
-                if stamp != self.stamp || stale {
-                    self.stamp = stamp;
+                let stale = self.summary_at.is_none_or(|t| t.elapsed() > Duration::from_secs(120)) || matches!(self.jobs.phase(Kind::Summary), Phase::Error(_));
+                if meta.stamp != self.stamp || stale {
+                    self.stamp = meta.stamp;
                     self.summary_at = Some(Instant::now());
-                    tasks.push(blocking(model::load_summary, |s| Message::Summary(Box::new(s))));
+                    tasks.push(self.probe(Kind::Summary, "", || model::load_summary().map(|s| Message::Summary(Box::new(s)))));
                 }
                 let follow = self.op.running || self.watching.is_some();
-                if follow || model::upd_busy() {
-                    tasks.push(blocking(move || model::load_op(follow), Message::Op));
+                if follow || meta.busy {
+                    tasks.push(self.probe(Kind::Operation, "", move || model::load_op(follow).map(Message::Op)));
                 }
                 return Task::batch(tasks);
             }
@@ -196,24 +210,24 @@ impl cosmic::Application for Applet {
                 let finished = self.op.running && !op.running;
                 self.op = op;
                 if finished {
-                    return blocking(model::load_summary, |s| Message::Summary(Box::new(s)));
+                    return self.probe(Kind::Summary, "", || model::load_summary().map(|s| Message::Summary(Box::new(s))));
                 }
             }
             Message::Vpn(v) => self.vpn = v,
             Message::Check => return self.run(&["check"]),
             Message::Install => {
-                model::open_window(Some("updates"), Some("update"));
+                if let Err(error) = model::open_window(Some("updates"), Some("update")) { self.error = error; return Task::none(); }
                 return self.close_popup();
             }
             Message::Open(page) => {
-                model::open_window(page, None);
+                if let Err(error) = model::open_window(page, None) { self.error = error; return Task::none(); }
                 return self.close_popup();
             }
             Message::VpnToggle(on) => return self.run(&["vpn", if on { "start" } else { "stop" }]),
             Message::ToggleServers => {
                 self.servers_open = !self.servers_open;
                 if self.servers_open {
-                    return blocking(|| model::vpn_snapshot().ok(), Message::Vpn);
+                    return self.probe(Kind::Vpn, "popup", || model::vpn_snapshot().map(|s| Message::Vpn(Some(s))));
                 }
             }
             Message::Select(group, name) => {
@@ -236,9 +250,9 @@ impl cosmic::Application for Applet {
                 match r {
                     Ok(()) => {
                         self.error.clear();
-                        let mut tasks = vec![blocking(|| model::load_op(true), Message::Op)];
+                        let mut tasks = vec![self.probe(Kind::Operation, "", || model::load_op(true).map(Message::Op))];
                         if self.summary.vpn.active || self.servers_open {
-                            tasks.push(blocking(|| model::vpn_snapshot().ok(), Message::Vpn));
+                            tasks.push(self.probe(Kind::Vpn, "popup", || model::vpn_snapshot().map(|s| Message::Vpn(Some(s)))));
                         }
                         return Task::batch(tasks);
                     }
@@ -298,10 +312,15 @@ impl cosmic::Application for Applet {
 }
 
 impl Applet {
+    fn probe(&mut self, kind: Kind, key: &str, work: impl FnOnce() -> Result<Message, String> + Send + 'static) -> Task<Message> {
+        self.jobs.request(kind, key.to_owned(), work, Message::Probe)
+    }
+
     /// Апплет с заданным состоянием — для снимков интерфейса в тестах.
     #[cfg(test)]
     pub fn demo(summary: Summary, op: OpStatus, vpn: Option<vpn::Snapshot>, servers_open: bool) -> Self {
         Applet {
+            jobs: Jobs::default(),
             core: Core::default(),
             popup: None,
             summary,
@@ -321,11 +340,23 @@ impl Applet {
     }
 
     #[cfg(test)]
+    pub fn demo_case(&mut self, case: &str) {
+        match case {
+            "loading" => self.jobs.demo_phase(Kind::Summary, Phase::Loading),
+            "denied" => self.error = "polkit: authorization denied".into(),
+            "long-error" => self.error = "Сеть недоступна / connection refused: https://example.invalid/long/".repeat(20),
+            "stale" => self.summary.checked = upd::common::now().saturating_sub(90000),
+            _ => {}
+        }
+    }
+
+    #[cfg(test)]
     pub fn demo_popup(&self) -> Element<'_, Message> {
         self.popup_view()
     }
 
     fn close_popup(&mut self) -> Task<Message> {
+        self.jobs.invalidate(&[Kind::Vpn]);
         match self.popup.take() {
             Some(id) => cosmic::task::message(cosmic::Action::Cosmic(cosmic::app::Action::Surface(destroy_popup(id)))),
             None => Task::none(),
@@ -338,7 +369,7 @@ impl Applet {
         self.error.clear();
         self.watching = Some(args.join(" "));
         let args: Vec<&'static str> = args.to_vec();
-        blocking(move || model::start(&args), Message::Done)
+        blocking(move || model::start(&args).map(|_| ()), Message::Done)
     }
 
     fn can_act(&self) -> bool {
@@ -351,6 +382,8 @@ impl Applet {
         let head = summary::headline(s, &self.op);
         let mut col = widget::column::with_capacity(12).padding([sp.space_xs, 0]);
 
+        if matches!(self.jobs.phase(Kind::Summary), Phase::Loading) { col = col.push(text(t!("Загрузка…"))); }
+
         // заголовок: итог и проверка
         let refresh = button::icon(widget::icon::from_name("view-refresh-symbolic"))
             .tooltip(t!("Проверить сейчас"))
@@ -361,6 +394,9 @@ impl Applet {
             .width(Length::Fill);
         col = col.push(applet::padded_control(hrow(vec![title.into(), refresh.into()]).align_y(Alignment::Center)));
 
+        for (kind, error) in self.jobs.errors() {
+            col = col.push(ui::banner("dialog-warning-symbolic", format!("{}: {error} · {}", kind.label(), t!("Показаны предыдущие данные")), None));
+        }
         if !helper::available() {
             col = col.push(ui::banner("dialog-warning-symbolic", t!("Помощник upd не установлен — действия недоступны (sudo upd install)").into(), None));
         }
@@ -495,7 +531,7 @@ impl Applet {
         col = col.push(applet::padded_control(divider::horizontal::default()));
         col = col.push(applet::menu_button(ui::txt(text::body(t!("Открыть upd…")))).on_press(Message::Open(None)));
         col = col.push(applet::menu_button(ui::txt(text::body(t!("Настройки…")))).on_press(Message::Open(Some("settings"))));
-        col.into()
+        widget::container(widget::scrollable(col).height(Length::Shrink)).max_height(480.0).width(Length::Fill).into()
     }
 
     // ---------- уведомления ----------
@@ -572,19 +608,17 @@ fn notify(title: String, body: String, actions: Vec<(&'static str, String)>) {
     if !upd::common::have("notify-send") {
         return;
     }
-    std::thread::spawn(move || {
-        let mut c = std::process::Command::new("notify-send");
-        c.args(["-a", "upd", "-i", model::APP_ID]);
-        for (k, label) in &actions {
-            c.arg(format!("--action={k}={label}"));
-        }
-        c.arg(&title).arg(&body);
-        let Ok(out) = c.stdin(std::process::Stdio::null()).output() else { return };
-        match String::from_utf8_lossy(&out.stdout).trim() {
-            "install" => model::open_window(Some("updates"), Some("update")),
-            "news" => model::open_window(Some("news"), None),
-            "log" => model::open_window(Some("operation"), None),
-            _ => {}
-        }
+    let mut c = std::process::Command::new("notify-send");
+    c.args(["-a", "upd", "-i", model::APP_ID]);
+    for (k, label) in &actions { c.arg(format!("--action={k}={label}")); }
+    c.arg(&title).arg(&body);
+    let result = crate::notifications::send(c, |choice| {
+        let result = match choice {
+            crate::notifications::Action::Install => model::open_window(Some("updates"), Some("update")),
+            crate::notifications::Action::News => model::open_window(Some("news"), None),
+            crate::notifications::Action::Log => model::open_window(Some("operation"), None),
+        };
+        if let Err(error) = result { crate::launch::record_error(error); }
     });
+    if let Err(error) = result { crate::launch::record_error(error.to_string()); }
 }

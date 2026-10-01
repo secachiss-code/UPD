@@ -78,7 +78,7 @@ fn run_as_user(quiet: bool, user: &str, args: &[&str]) -> Result<(), String> {
     command.args(&command_args);
     if quiet {
         command.stdin(Stdio::null());
-        let output = capture(&mut command, None)?;
+        let output = capture_interactive(&mut command, None)?;
         if output.status.success() {
             return Ok(());
         }
@@ -194,16 +194,29 @@ pub fn aur_helper() -> Option<&'static str> {
     ["paru", "yay"].into_iter().find(|h| have(h))
 }
 
-fn as_user(user: &str, cmd: &str, args: &[&str]) -> (String, Vec<String>) {
-    let mut a: Vec<String> = if have("runuser") { vec!["-u".into(), user.into(), "--".into()] } else { vec!["-u".into(), user.into()] };
-    a.push(cmd.into());
-    a.extend(args.iter().map(|s| s.to_string()));
-    (if have("runuser") { "runuser" } else { "sudo" }.into(), a)
+fn validate_aur_identity(current_uid: u32, user: &UserContext) -> Result<(), String> {
+    if user.uid == 0 { return Err(t!("AUR собирается от обычного пользователя: запусти upd без sudo или через sudo из своей сессии").into()); }
+    if current_uid != 0 && current_uid != user.uid { return Err(format!("cannot run AUR as UID {} from UID {current_uid}", user.uid)); }
+    Ok(())
+}
+fn as_user_for_uid(current_uid: u32, user: &UserContext, cmd: &str, args: &[&str]) -> Result<(String, Vec<String>), String> {
+    validate_aur_identity(current_uid, user)?;
+    if current_uid != 0 { return Ok((cmd.into(), args.iter().map(|s| s.to_string()).collect())); }
+    let runner = if have("runuser") { "runuser" } else if have("sudo") { "sudo" } else {
+        return Err("AUR user switch requires runuser or sudo".into());
+    };
+    let mut command = vec!["-u".into(), user.name.clone(), "--".into(), cmd.into()];
+    command.extend(args.iter().map(|s| s.to_string()));
+    Ok((runner.into(), command))
+}
+fn as_user(user: &str, cmd: &str, args: &[&str]) -> Result<(String, Vec<String>), String> {
+    as_user_for_uid(unsafe { libc::geteuid() }, &UserContext::from_name(user)?, cmd, args)
 }
 
 pub fn aur_updates(user: &str) -> Result<Vec<String>, String> {
+    validate_aur_identity(unsafe { libc::geteuid() }, &UserContext::from_name(user)?)?;
     let Some(h) = aur_helper() else { return Ok(vec![]) };
-    let (cmd, args) = as_user(user, h, &["-Qua"]);
+    let (cmd, args) = as_user(user, h, &["-Qua"])?;
     let a: Vec<&str> = args.iter().map(String::as_str).collect();
     // обрезанный список обновлений не выдаётся за полный: превышение предела — ошибка
     let o = capture(Command::new(&cmd).args(&a).env("LC_ALL", "C").stdin(Stdio::null()), Some(OUT_MAX))?;
@@ -233,7 +246,7 @@ pub fn aur_updates(user: &str) -> Result<Vec<String>, String> {
 
 pub fn aur_upgrade(user: &str) -> Result<(), String> {
     let h = aur_helper().ok_or(t!("нет paru/yay"))?;
-    let (cmd, args) = as_user(user, h, &["-Sua"]);
+    let (cmd, args) = as_user(user, h, &["-Sua"])?;
     let a: Vec<&str> = args.iter().map(String::as_str).collect();
     run(false, &[], &cmd, &a)
 }
@@ -341,6 +354,14 @@ pub fn aur_install(user: Option<&str>, pkgs: &[String]) -> Result<(), String> {
     if pkgs.is_empty() {
         return Err(t!("не указан пакет").into());
     }
+    let current_uid = unsafe { libc::geteuid() };
+    let target = match user {
+        Some(name) => UserContext::from_name(name)?,
+        None if current_uid != 0 => UserContext::from_uid(current_uid)?,
+        None => return Err(t!("AUR собирается от обычного пользователя: запусти upd без sudo или через sudo из своей сессии").into()),
+    };
+    // Validate identity before offering to install a helper or starting any build.
+    as_user_for_uid(current_uid, &target, "paru", &[])?;
     let h = match aur_helper() {
         Some(h) => h,
         None => install_aur_helper()?,
@@ -348,12 +369,7 @@ pub fn aur_install(user: Option<&str>, pkgs: &[String]) -> Result<(), String> {
     // --aur есть и у paru, и у yay: ставим именно из AUR, даже если в репозиториях есть одноимённый пакет
     let mut args = vec!["-S", "--aur"];
     args.extend(pkgs.iter().map(String::as_str));
-    if !is_root() {
-        return run(false, &[], h, &args);
-    }
-    // от root помощники AUR не собирают — нужен пользователь, запустивший upd через sudo
-    let user = user.ok_or(t!("AUR собирается от обычного пользователя: запусти upd без sudo или через sudo из своей сессии"))?;
-    let (cmd, a) = as_user(user, h, &args);
+    let (cmd, a) = as_user_for_uid(current_uid, &target, h, &args)?;
     let a: Vec<&str> = a.iter().map(String::as_str).collect();
     run(false, &[], &cmd, &a)
 }
@@ -365,7 +381,7 @@ pub fn has_fwupd() -> bool {
 }
 
 pub fn firmware_refresh() -> Result<(), String> {
-    let o = capture(Command::new("fwupdmgr").args(["refresh", "--assume-yes"]).stdin(Stdio::null()), Some(OUT_MAX))?;
+    let o = capture_interactive(Command::new("fwupdmgr").args(["refresh", "--assume-yes"]).stdin(Stdio::null()), Some(OUT_MAX))?;
     // код 2 — «нечего делать»: метаданные и так свежие
     match o.status.code() {
         Some(0 | 2) => Ok(()),
@@ -731,7 +747,7 @@ mod contract_tests {
         write_executable(&dir.join("paru"), "#!/bin/sh\nexit 1\n");
         write_executable(&dir.join("runuser"), "#!/bin/sh\nshift; shift; shift; exec \"$@\"\n");
         let _g = DirGuard::new(dir.clone());
-        assert!(crate::common::contract_fixtures::with_prepend_path(&dir, || aur_updates("testuser")).unwrap().is_empty());
+        assert!(crate::common::contract_fixtures::with_prepend_path(&dir, || aur_updates(&UserContext::from_uid({ let uid = unsafe { libc::geteuid() }; if uid == 0 { 65534 } else { uid } }).unwrap().name)).unwrap().is_empty());
     }
 
     #[test]
@@ -740,7 +756,7 @@ mod contract_tests {
         write_executable(&dir.join("paru"), "#!/bin/sh\necho 'error: failed to connect' >&2\nexit 1\n");
         write_executable(&dir.join("runuser"), "#!/bin/sh\nshift; shift; shift; exec \"$@\"\n");
         let _g = DirGuard::new(dir.clone());
-        let err = crate::common::contract_fixtures::with_prepend_path(&dir, || aur_updates("testuser")).unwrap_err();
+        let err = crate::common::contract_fixtures::with_prepend_path(&dir, || aur_updates(&UserContext::from_uid({ let uid = unsafe { libc::geteuid() }; if uid == 0 { 65534 } else { uid } }).unwrap().name)).unwrap_err();
         assert!(err.contains("failed to connect"), "{err}");
     }
 
@@ -750,7 +766,7 @@ mod contract_tests {
         write_executable(&dir.join("paru"), "#!/bin/sh\nexit 0\n");
         write_executable(&dir.join("runuser"), "#!/bin/sh\nshift; shift; shift; exec \"$@\"\n");
         let _g = DirGuard::new(dir.clone());
-        let updates = crate::common::contract_fixtures::with_prepend_path(&dir, || aur_updates("testuser")).unwrap();
+        let updates = crate::common::contract_fixtures::with_prepend_path(&dir, || aur_updates(&UserContext::from_uid({ let uid = unsafe { libc::geteuid() }; if uid == 0 { 65534 } else { uid } }).unwrap().name)).unwrap();
         assert!(updates.is_empty());
     }
 
@@ -760,7 +776,7 @@ mod contract_tests {
         write_executable(&dir.join("paru"), "#!/bin/sh\nexit 4\n");
         write_executable(&dir.join("runuser"), "#!/bin/sh\nshift; shift; shift; exec \"$@\"\n");
         let _g = DirGuard::new(dir.clone());
-        let err = crate::common::contract_fixtures::with_prepend_path(&dir, || aur_updates("testuser")).unwrap_err();
+        let err = crate::common::contract_fixtures::with_prepend_path(&dir, || aur_updates(&UserContext::from_uid({ let uid = unsafe { libc::geteuid() }; if uid == 0 { 65534 } else { uid } }).unwrap().name)).unwrap_err();
         assert!(err.contains('4'), "{err}");
     }
 
@@ -791,5 +807,42 @@ mod contract_tests {
         let result = crate::common::contract_fixtures::with_prepend_path(&dir, || flatpak_updates(None));
         assert!(result.error.is_empty());
         assert_eq!(result.updates, vec!["[system] org.example.App 1.0"]);
+    }
+}
+
+#[cfg(test)]
+mod aur_identity_tests {
+    use super::*;
+    use crate::common::contract_fixtures::{TempDirGuard, with_prepend_path};
+    use std::os::unix::fs::PermissionsExt;
+    fn executable(path: &Path, body: &str) {
+        std::fs::write(path, body).unwrap();
+        std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o755)).unwrap();
+    }
+    #[test]
+    fn current_user_runs_directly_and_keeps_arguments() {
+        let uid = unsafe { libc::geteuid() };
+        if uid == 0 { return; } // Root switching is exercised separately, never run an AUR build as root.
+        let user = UserContext::from_uid(uid).unwrap();
+        let dir = TempDirGuard::new("aur-current-uid").unwrap();
+        let marker = dir.path().join("switched");
+        let switch = format!("#!/bin/sh\ntouch '{}'\nexit 99\n", marker.display());
+        executable(&dir.path().join("runuser"), &switch);
+        executable(&dir.path().join("sudo"), &switch);
+        executable(&dir.path().join("paru"), "#!/bin/sh\n[ \"$#\" = 1 ] && [ \"$1\" = '-Qua' ] || exit 98\nprintf 'pkg 1 -> 2\\n'\n");
+        let result = with_prepend_path(dir.path(), || aur_updates(&user.name)).unwrap();
+        assert_eq!(result, ["pkg 1 -> 2"]);
+        assert!(!marker.exists());
+    }
+    #[test]
+    fn root_switch_has_separator_and_builds_cannot_target_root() {
+        let user = UserContext::from_uid(65534).unwrap();
+        let dir = TempDirGuard::new("aur-root-policy").unwrap();
+        executable(&dir.path().join("runuser"), "#!/bin/sh\nexit 99\n");
+        let (runner, args) = with_prepend_path(dir.path(), || as_user_for_uid(0, &user, "paru", &["-Sua"])).unwrap();
+        assert_eq!(runner, "runuser");
+        assert_eq!(args, ["-u", &user.name, "--", "paru", "-Sua"]);
+        assert!(as_user_for_uid(0, &UserContext::from_uid(0).unwrap(), "paru", &["-S", "pkg"]).is_err());
+        assert!(as_user_for_uid(1000, &user, "paru", &["-Qua"]).unwrap_err().contains("UID"));
     }
 }

@@ -5,10 +5,33 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::io::{BufRead, Read, Write};
 use std::net::Ipv6Addr;
-use std::os::unix::fs::PermissionsExt;
+use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SettingUnit { Count, Seconds, Hours, Days, Gibibytes, Port, Flag }
+#[derive(Clone, Copy, Debug)]
+pub struct NumberSetting { pub min: i64, pub max: i64, pub step: i64, pub unit: SettingUnit }
+/// Shared numeric ranges for config validation and every settings interface.
+pub fn number_setting(key: &str) -> Option<NumberSetting> {
+    use SettingUnit::*;
+    let (min, max, unit) = match key {
+        "keep" => (1, 10, Count), "timeout" => (2, MAX_TIMEOUT as i64, Seconds),
+        "extra_from_list" => (0, MAX_MIRRORS as i64, Count), "rescan_count" => (3, MAX_MIRRORS as i64, Count),
+        "retries" => (1, MAX_RETRIES as i64, Count),
+        "mirror_max_age_h" | "max_lag_h" | "vpn_sub_update_h" | "vpn_core_check_h" => (1, MAX_HOURS, Hours),
+        "network_memory_days" => (0, 365, Days),
+        "parallel" | "parallel_vpn" => (1, MAX_PARALLEL as i64, Count), "min_free_gb" => (0, 1 << 20, Gibibytes),
+        "vpn_port" => (1024, 65535, Port), "vpn_mode" => (0, 2, Count),
+        "prefetch" | "prefetch_on_battery" | "prefetch_on_metered" | "flatpak" | "aur" | "firmware" | "news" | "snapshot" |
+        "vpn_tun" | "vpn_autostart" | "vpn_direct_ru" | "vpn_direct_lan" | "vpn_auto_select" | "vpn_dns" | "vpn_ipv6" | "vpn_allow_lan" => (0, 1, Flag),
+        _ => return None,
+    };
+    Some(NumberSetting { min, max, step: 1, unit })
+}
 
 pub type Log<'a> = &'a dyn Fn(&str);
 
@@ -51,7 +74,7 @@ pub const MAX_MIRRORS: usize = 64;
 
 // ---------- конфиг ----------
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Config {
     pub keep: usize,
     pub timeout: u64,
@@ -87,6 +110,8 @@ pub struct Config {
     /// язык интерфейса: ru, en, de, it, zh, ar или auto (по локали)
     pub lang: String,
     pub mirrors: Vec<String>,
+    #[serde(skip)]
+    baseline: Option<Box<Config>>,
 }
 
 /// (ключ, описание) — порядок и тексты для записи файла настроек.
@@ -184,11 +209,13 @@ impl Config {
             vpn_core_check_h: 24,
             lang: "auto".into(),
             mirrors,
+            baseline: None,
         }
     }
 
     pub fn load(default_mirrors: Vec<String>) -> Result<Self, String> {
         let mut c = Config::defaults(default_mirrors);
+        c.baseline = Some(Box::new(c.clone()));
         let path = conf_path();
         let text = match fs::read_to_string(&path) {
             Ok(text) => text,
@@ -217,6 +244,8 @@ impl Config {
         }
         // mirror = … без предела превратил бы список кандидатов в сотни потоков и запросов
         c.mirrors.truncate(MAX_MIRRORS);
+        c.baseline = None;
+        c.baseline = Some(Box::new(c.clone()));
         Ok(c)
     }
 
@@ -279,7 +308,7 @@ impl Config {
         Config::keys().any(|x| x == k).then(|| self.value(k))
     }
 
-    /// Изменить одну настройку: число (0/1 для флагов) или язык. Значение сжимается в допустимый диапазон, как при чтении файла.
+    /// Изменить одну настройку: число (0/1 для флагов) или язык. Значения вне schema отвергаются.
     pub fn set(&mut self, k: &str, v: &str) -> Result<(), String> {
         let v = v.trim();
         if k == "lang" {
@@ -292,9 +321,13 @@ impl Config {
         if !Config::keys().any(|x| x == k) {
             return Err(t!("неизвестная настройка: {0}", k));
         }
-        if !self.set_number(k, v) {
-            return Err(t!("{0}: нужно целое число", k));
+        if let (Some(schema), Ok(n)) = (number_setting(k), v.parse::<i64>()) {
+            if n < schema.min || n > schema.max { return Err(format!("{k}: value outside its allowed range")); }
         }
+        let mut candidate = self.clone();
+        if !candidate.set_number(k, v) { return Err(t!("{0}: нужно целое число", k)); }
+        if v.parse::<i64>().ok() != Some(candidate.value(k)) { return Err(format!("{k}: value outside its allowed range")); }
+        *self = candidate;
         Ok(())
     }
 
@@ -339,7 +372,72 @@ impl Config {
         ["rule", "global", "direct"][self.vpn_mode.min(2) as usize]
     }
 
-    pub fn save(&self) -> std::io::Result<()> {
+    /// Merge changed fields into the latest version under a cross-process lock.
+    pub fn save(&mut self) -> std::io::Result<()> {
+        let _runtime = vpn_config_lock(true).map_err(std::io::Error::other)?;
+        let _config = config_lock(true).map_err(std::io::Error::other)?;
+        let mut latest = Config::load(self.mirrors.clone()).map_err(std::io::Error::other)?;
+        let previous = latest.clone();
+        if let Some(base) = &self.baseline {
+            for (key, _) in DOCS {
+                if self.value(key) != base.value(key) { latest.set_number(key, &self.value(key).to_string()); }
+            }
+            if self.lang != base.lang { latest.lang = self.lang.clone(); }
+            latest.mirrors.retain(|mirror| !base.mirrors.contains(mirror) || self.mirrors.contains(mirror));
+            for mirror in &self.mirrors {
+                if !base.mirrors.contains(mirror) && !latest.mirrors.contains(mirror) { latest.mirrors.push(mirror.clone()); }
+            }
+        } else { latest = self.clone(); }
+        latest.validate().map_err(std::io::Error::other)?;
+        latest.validate_changed_from(&previous).map_err(std::io::Error::other)?;
+        latest.save_locked()?;
+        latest.baseline = None;
+        latest.baseline = Some(Box::new(latest.clone()));
+        *self = latest;
+        Ok(())
+    }
+
+    pub fn update(default_mirrors: Vec<String>, change: impl FnOnce(&mut Config) -> Result<(), String>) -> Result<Config, String> {
+        let _runtime = vpn_config_lock(true)?;
+        let _config = config_lock(true)?;
+        let mut candidate = Config::load(default_mirrors)?;
+        let previous = candidate.clone();
+        change(&mut candidate)?;
+        candidate.validate()?;
+        candidate.validate_changed_from(&previous)?;
+        candidate.save_locked().map_err(|error| format!("not saved: {error}"))?;
+        candidate.baseline = None;
+        candidate.baseline = Some(Box::new(candidate.clone()));
+        Ok(candidate)
+    }
+
+    pub fn validate(&self) -> Result<(), String> {
+        let mut normalized = self.clone();
+        for (key, _) in DOCS {
+            normalized.set_number(key, &self.value(key).to_string());
+            if normalized.value(key) != self.value(key) { return Err(format!("{key}: value outside its allowed range")); }
+        }
+        crate::vpn::check_port(self)?;
+        if self.mirrors.len() > MAX_MIRRORS || self.mirrors.iter().any(|mirror| mirror.contains(['\r', '\n'])) {
+            return Err("invalid mirror list".into());
+        }
+        if self.lang != "auto" && crate::i18n::Lang::from_code(&self.lang).is_none() { return Err("invalid language".into()); }
+        Ok(())
+    }
+
+    fn validate_changed_from(&self, previous: &Config) -> Result<(), String> {
+        if DOCS.iter().any(|(key, _)| key.starts_with("vpn_") && self.value(key) != previous.value(key)) {
+            let subscriptions = crate::vpn::load_subs()?;
+            if !subscriptions.list.is_empty() { crate::vpn::build_config(self)?; }
+        }
+        Ok(())
+    }
+
+    pub fn revision(&self) -> String {
+        sha1_smol::Sha1::from(serde_json::to_vec(self).unwrap_or_default()).digest().to_string()
+    }
+
+    fn save_locked(&self) -> std::io::Result<()> {
         let mut s = String::from(t!("# upd — настройки. Правится вручную или через TUI (upd → Зеркала).\n"));
         s += &format!("\n# {}\nlang = {}\n", t!("Язык интерфейса: ru, en, de, it, zh, ar или auto (по локали системы)"), self.lang);
         for (k, doc) in DOCS {
@@ -487,15 +585,116 @@ pub fn save_json<T: Serialize>(name: &str, v: &T) -> std::io::Result<()> {
 }
 
 pub fn atomic_write(path: &Path, data: &[u8], mode: u32) -> std::io::Result<()> {
-    let dir = path.parent().unwrap_or(Path::new("."));
-    let tmp = dir.join(format!(".upd.{}.tmp", std::process::id()));
-    {
-        let mut f = fs::File::create(&tmp)?;
-        f.write_all(data)?;
-        f.sync_all()?;
+    atomic_write_with_hook(path, data, mode, || {})
+}
+
+/// Atomically replace `path` with a file owned by the caller and the exact requested mode.
+/// A destination symlink itself is replaced; its target is never followed. APT sources use
+/// their specialized writer because those files preserve the distribution's uid/gid and mode.
+fn atomic_write_with_hook(
+    path: &Path,
+    data: &[u8],
+    mode: u32,
+    after_create: impl FnOnce(),
+) -> std::io::Result<()> {
+    atomic_write_with_ops(
+        path,
+        data,
+        mode,
+        after_create,
+        |file, data| file.write_all(data),
+        |from, to| fs::rename(from, to),
+        sync_directory,
+        unique_temp_path(),
+    )
+}
+
+fn atomic_write_with_ops<F, W, R, S, N>(
+    path: &Path,
+    data: &[u8],
+    mode: u32,
+    after_create: F,
+    write_data: W,
+    rename_file: R,
+    sync_parent: S,
+    mut temp_path: N,
+) -> std::io::Result<()>
+where
+    F: FnOnce(),
+    W: FnOnce(&mut fs::File, &[u8]) -> std::io::Result<()>,
+    R: FnOnce(&Path, &Path) -> std::io::Result<()>,
+    S: FnOnce(&Path) -> std::io::Result<()>,
+    N: FnMut(&Path, usize) -> PathBuf,
+{
+    let dir = path.parent().filter(|p| !p.as_os_str().is_empty()).unwrap_or(Path::new("."));
+    let (tmp, mut file) = create_atomic_temp(dir, mode, &mut temp_path)?;
+    let mut cleanup = TempPathGuard { path: tmp.clone(), armed: true };
+    after_create();
+    write_data(&mut file, data).map_err(|e| staged_io("write temporary file", e))?;
+    file.sync_all().map_err(|e| staged_io("sync temporary file", e))?;
+    drop(file);
+
+    rename_file(&tmp, path).map_err(|e| staged_io("rename temporary file", e))?;
+    cleanup.armed = false;
+    sync_parent(dir).map_err(|e| staged_io("sync parent directory after rename", e))?;
+    Ok(())
+}
+
+fn create_atomic_temp(
+    dir: &Path,
+    mode: u32,
+    temp_path: &mut impl FnMut(&Path, usize) -> PathBuf,
+) -> std::io::Result<(PathBuf, fs::File)> {
+    for attempt in 0..128 {
+        let path = temp_path(dir, attempt);
+        let mut options = fs::OpenOptions::new();
+        options.write(true).create_new(true).mode(mode);
+        match options.open(&path) {
+            Ok(file) => {
+                if let Err(error) = file.set_permissions(fs::Permissions::from_mode(mode)) {
+                    drop(file);
+                    let _ = fs::remove_file(&path);
+                    return Err(staged_io("set temporary file mode", error));
+                }
+                return Ok((path, file));
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
+            Err(error) => return Err(staged_io("create temporary file", error)),
+        }
     }
-    fs::set_permissions(&tmp, fs::Permissions::from_mode(mode))?;
-    fs::rename(&tmp, path)
+    Err(staged_io(
+        "create temporary file",
+        std::io::Error::new(std::io::ErrorKind::AlreadyExists, "all unique names were occupied"),
+    ))
+}
+
+fn unique_temp_path() -> impl FnMut(&Path, usize) -> PathBuf {
+    const ATTEMPTS: u64 = 128;
+    static NEXT: AtomicU64 = AtomicU64::new(0);
+    let pid = std::process::id();
+    let first = NEXT.fetch_add(ATTEMPTS, Ordering::Relaxed);
+    move |dir, attempt| dir.join(format!(".upd.{pid}.{}.tmp", first.wrapping_add(attempt as u64)))
+}
+
+fn sync_directory(dir: &Path) -> std::io::Result<()> {
+    fs::File::open(dir)?.sync_all()
+}
+
+fn staged_io(stage: &str, error: std::io::Error) -> std::io::Error {
+    std::io::Error::new(error.kind(), format!("{stage}: {error}"))
+}
+
+struct TempPathGuard {
+    path: PathBuf,
+    armed: bool,
+}
+
+impl Drop for TempPathGuard {
+    fn drop(&mut self) {
+        if self.armed {
+            let _ = fs::remove_file(&self.path);
+        }
+    }
 }
 
 /// Блокировка: одна тяжёлая задача за раз. Освобождается при закрытии файла.
@@ -530,6 +729,22 @@ pub fn subscriptions_lock(block: bool) -> Result<Lock, String> {
     named_lock(".vpn-subs.lock", block)
 }
 
+/// Order: heavy operation (if held), VPN files, config, subscriptions. State mutex is never held here.
+pub fn vpn_config_lock(block: bool) -> Result<Lock, String> { named_lock(".vpn-config.lock", block) }
+
+pub fn config_lock(block: bool) -> Result<Lock, String> {
+    let path = PathBuf::from(conf_path());
+    let parent = path.parent().filter(|p| !p.as_os_str().is_empty()).unwrap_or(Path::new("."));
+    fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    let name = path.file_name().ok_or("invalid config path")?.to_string_lossy();
+    let file = fs::OpenOptions::new().create(true).truncate(false).read(true).write(true)
+        .open(parent.join(format!(".{name}.lock"))).map_err(|e| e.to_string())?;
+    use std::os::fd::AsRawFd;
+    let flags = libc::LOCK_EX | if block { 0 } else { libc::LOCK_NB };
+    if unsafe { libc::flock(file.as_raw_fd(), flags) } != 0 { return Err("config busy".into()); }
+    Ok(Lock(file))
+}
+
 // ---------- команды ----------
 
 pub fn have(bin: &str) -> bool {
@@ -543,63 +758,16 @@ pub const OUT_MAX: u64 = 16 << 20;
 /// Сколько последних байт stderr хранится для сообщения об ошибке.
 const ERR_TAIL: usize = 64 << 10;
 
-/// Читает поток целиком, но хранит только последние `keep` байт.
-fn read_tail(mut r: impl Read, keep: usize) -> Vec<u8> {
-    let mut tail = std::collections::VecDeque::with_capacity(keep.min(8192));
-    let mut buf = [0u8; 8192];
-    loop {
-        match r.read(&mut buf) {
-            Ok(0) | Err(_) => break,
-            Ok(n) => {
-                tail.extend(&buf[..n]);
-                while tail.len() > keep {
-                    tail.pop_front();
-                }
-            }
-        }
-    }
-    tail.into_iter().collect()
-}
-
-/// Запуск с ограничением памяти: stdout не больше `stdout_max` (None — stdout не нужен),
-/// от stderr хранится хвост. Превышение stdout — ошибка, процесс завершается: обрезанный вывод не разбирается как полный.
-pub fn capture(cmd: &mut Command, stdout_max: Option<u64>) -> Result<std::process::Output, String> {
-    let name = cmd.get_program().to_string_lossy().into_owned();
-    cmd.stdout(if stdout_max.is_some() { Stdio::piped() } else { Stdio::null() }).stderr(Stdio::piped());
-    let mut child = cmd.spawn().map_err(|e| format!("{name}: {e}"))?;
-    let err_pipe = child.stderr.take();
-    let err_reader = err_pipe.map(|e| std::thread::Builder::new().name("upd-stderr".into()).spawn(move || read_tail(e, ERR_TAIL)));
-    let mut stdout = vec![];
-    let mut overflow = false;
-    if let (Some(max), Some(pipe)) = (stdout_max, child.stdout.take()) {
-        if let Err(e) = pipe.take(max.saturating_add(1)).read_to_end(&mut stdout) {
-            let _ = child.kill();
-            let _ = child.wait();
-            return Err(format!("{name}: {e}"));
-        }
-        if stdout.len() as u64 > max {
-            overflow = true;
-            let _ = child.kill();
-        }
-    }
-    let status = child.wait().map_err(|e| format!("{name}: {e}"))?;
-    let stderr = match err_reader {
-        Some(Ok(h)) => h.join().unwrap_or_default(),
-        _ => vec![],
-    };
-    if overflow {
-        return Err(t!("{0}: вывод больше {1}, команда прервана", name, fmt_bytes(stdout_max.unwrap_or(0))));
-    }
-    Ok(std::process::Output { status, stdout, stderr })
-}
+mod probe;
+pub use probe::{capture, capture_interactive, capture_with_policy, CaptureError, CapturePolicy, with_probe_scope};
 
 /// Запуск с захватом stdout (не больше OUT_MAX); код выхода (-1, если не запустилось или вывод превысил предел).
 pub fn out(cmd: &str, args: &[&str]) -> (String, i32) {
-    out_limited(cmd, args, OUT_MAX).unwrap_or_else(|_| (String::new(), -1))
+    out_limited(cmd, args, OUT_MAX).unwrap_or_else(|e| { probe::record_probe_error(e); (String::new(), -1) })
 }
 
 /// Как out, но превышение предела и отказ запуска — ошибка с причиной.
-pub fn out_limited(cmd: &str, args: &[&str], max: u64) -> Result<(String, i32), String> {
+pub fn out_limited(cmd: &str, args: &[&str], max: u64) -> Result<(String, i32), CaptureError> {
     let o = capture(Command::new(cmd).args(args).env("LC_ALL", "C"), Some(max))?;
     Ok((String::from_utf8_lossy(&o.stdout).into_owned(), o.status.code().unwrap_or(-1)))
 }
@@ -613,7 +781,7 @@ pub fn run(quiet: bool, env: &[(&str, &str)], cmd: &str, args: &[&str]) -> Resul
     }
     if quiet {
         c.stdin(Stdio::null());
-        let o = capture(&mut c, None)?;
+        let o = capture_interactive(&mut c, None)?;
         if o.status.success() {
             return Ok(());
         }
@@ -675,6 +843,54 @@ pub fn host_of(u: &str) -> &str {
 /// Пользователь, от имени которого запущен sudo (для paru/flatpak --user).
 pub fn invoking_user() -> Option<String> {
     std::env::var("SUDO_USER").ok().or_else(|| std::env::var("DOAS_USER").ok()).filter(|u| !u.is_empty() && u != "root")
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct UserContext { pub uid: u32, pub name: String, pub runtime_dir: PathBuf }
+
+impl UserContext {
+    pub fn from_uid(uid: u32) -> Result<Self, String> {
+        let mut passwd: libc::passwd = unsafe { std::mem::zeroed() };
+        let mut buffer = vec![0 as libc::c_char; 64 << 10];
+        let mut result = std::ptr::null_mut();
+        let error = unsafe { libc::getpwuid_r(uid, &mut passwd, buffer.as_mut_ptr(), buffer.len(), &mut result) };
+        if error != 0 || result.is_null() { return Err(format!("cannot resolve user UID {uid} through NSS")); }
+        let name = unsafe { std::ffi::CStr::from_ptr(passwd.pw_name) }.to_string_lossy().into_owned();
+        Ok(Self { uid, name, runtime_dir: PathBuf::from(format!("/run/user/{uid}")) })
+    }
+
+    pub fn from_name(name: &str) -> Result<Self, String> {
+        let name = std::ffi::CString::new(name).map_err(|_| "invalid invoking user name".to_string())?;
+        let mut passwd: libc::passwd = unsafe { std::mem::zeroed() };
+        let mut buffer = vec![0 as libc::c_char; 64 << 10];
+        let mut result = std::ptr::null_mut();
+        let error = unsafe { libc::getpwnam_r(name.as_ptr(), &mut passwd, buffer.as_mut_ptr(), buffer.len(), &mut result) };
+        if error != 0 || result.is_null() { return Err("cannot resolve invoking user through NSS".into()); }
+        Self::from_uid(passwd.pw_uid)
+    }
+
+    pub fn command_env(&self) -> Vec<(String, String)> {
+        vec![("SUDO_USER".into(), self.name.clone()), ("SUDO_UID".into(), self.uid.to_string()),
+            ("XDG_RUNTIME_DIR".into(), self.runtime_dir.to_string_lossy().into_owned()),
+            ("DBUS_SESSION_BUS_ADDRESS".into(), format!("unix:path={}/bus", self.runtime_dir.display()))]
+    }
+}
+
+/// Interactive CLI identity only; background callers explicitly pass None to VPN apply.
+pub fn cli_user_context() -> Result<Option<UserContext>, String> {
+    let uid = unsafe { libc::geteuid() };
+    if uid != 0 { return UserContext::from_uid(uid).map(Some); }
+    if let Some(name) = invoking_user() {
+        let context = UserContext::from_name(&name)?;
+        if let Some(sudo_uid) = std::env::var("SUDO_UID").ok().and_then(|value| value.parse::<u32>().ok()) {
+            if sudo_uid != context.uid { return Err("invoking user name and UID disagree".into()); }
+        }
+        return Ok((context.uid != 0).then_some(context));
+    }
+    if let Some(uid) = std::env::var("PKEXEC_UID").ok().and_then(|value| value.parse::<u32>().ok()).filter(|uid| *uid != 0) {
+        return UserContext::from_uid(uid).map(Some);
+    }
+    Ok(None)
 }
 
 pub fn is_root() -> bool {
@@ -1247,7 +1463,12 @@ pub fn os_release() -> BTreeMap<String, String> {
 /// Изоляция тестов, меняющих окружение процесса; нужна и тестам бинарника, поэтому не под cfg(test).
 #[doc(hidden)]
 pub mod contract_fixtures {
+    use std::ffi::{OsStr, OsString};
+    use std::io;
     use std::path::Path;
+    use std::path::PathBuf;
+    use std::process::{Child, Command, ExitStatus};
+    use std::sync::atomic::{AtomicU64, Ordering};
     use std::sync::{Mutex, OnceLock};
 
     pub fn isolation_lock() -> std::sync::MutexGuard<'static, ()> {
@@ -1282,6 +1503,123 @@ pub mod contract_fixtures {
         let _g = isolation_lock();
         let _path = prepend_path(bin_dir);
         f()
+    }
+
+    /// Сохраняет только изменяемые переменные и восстанавливает их даже при panic.
+    #[derive(Default)]
+    pub struct EnvGuard {
+        old: Vec<(OsString, Option<OsString>)>,
+    }
+
+    impl EnvGuard {
+        pub fn new() -> Self {
+            Self::default()
+        }
+
+        fn remember(&mut self, key: &OsStr) {
+            if !self.old.iter().any(|(saved, _)| saved == key) {
+                self.old.push((key.to_os_string(), std::env::var_os(key)));
+            }
+        }
+
+        pub fn set(&mut self, key: impl AsRef<OsStr>, value: impl AsRef<OsStr>) {
+            let key = key.as_ref();
+            self.remember(key);
+            // Environment mutation is serialized by the shared isolation_lock in fixture tests.
+            unsafe { std::env::set_var(key, value.as_ref()) };
+        }
+
+        pub fn remove(&mut self, key: impl AsRef<OsStr>) {
+            let key = key.as_ref();
+            self.remember(key);
+            // Environment mutation is serialized by the shared isolation_lock in fixture tests.
+            unsafe { std::env::remove_var(key) };
+        }
+    }
+
+    impl Drop for EnvGuard {
+        fn drop(&mut self) {
+            for (key, value) in self.old.drain(..) {
+                // Environment mutation is serialized by the shared isolation_lock in fixture tests.
+                unsafe {
+                    if let Some(value) = value {
+                        std::env::set_var(key, value);
+                    } else {
+                        std::env::remove_var(key);
+                    }
+                }
+            }
+        }
+    }
+
+    /// Уникальный временный каталог, который удаляется и при раннем выходе или panic.
+    pub struct TempDirGuard(PathBuf);
+
+    impl TempDirGuard {
+        pub fn new(prefix: &str) -> io::Result<Self> {
+            static NEXT: AtomicU64 = AtomicU64::new(0);
+            let root = std::env::temp_dir();
+            for _ in 0..100 {
+                let n = NEXT.fetch_add(1, Ordering::Relaxed);
+                let path = root.join(format!("{prefix}-{}-{n}", std::process::id()));
+                match std::fs::create_dir(&path) {
+                    Ok(()) => return Ok(Self(path)),
+                    Err(e) if e.kind() == io::ErrorKind::AlreadyExists => continue,
+                    Err(e) => return Err(e),
+                }
+            }
+            Err(io::Error::new(io::ErrorKind::AlreadyExists, "could not allocate unique fixture directory"))
+        }
+
+        pub fn path(&self) -> &Path {
+            &self.0
+        }
+    }
+
+    impl Drop for TempDirGuard {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
+    /// Child test processes are killed if still running and always waited for on drop.
+    pub struct ChildGuard(Option<Child>);
+
+    impl ChildGuard {
+        pub fn spawn(command: &mut Command) -> io::Result<Self> {
+            command.spawn().map(|child| Self(Some(child)))
+        }
+
+        pub fn id(&self) -> u32 {
+            self.0.as_ref().expect("child already reaped").id()
+        }
+
+        pub fn try_wait(&mut self) -> io::Result<Option<ExitStatus>> {
+            self.0.as_mut().expect("child already reaped").try_wait()
+        }
+
+        pub fn terminate(&mut self) -> io::Result<ExitStatus> {
+            let mut child = self.0.take().expect("child already reaped");
+            if let Some(status) = child.try_wait()? {
+                return Ok(status);
+            }
+            match child.kill() {
+                Ok(()) => child.wait(),
+                Err(e) if e.kind() == io::ErrorKind::InvalidInput => child.wait(),
+                Err(e) => Err(e),
+            }
+        }
+    }
+
+    impl Drop for ChildGuard {
+        fn drop(&mut self) {
+            if let Some(mut child) = self.0.take() {
+                if !matches!(child.try_wait(), Ok(Some(_))) {
+                    let _ = child.kill();
+                }
+                let _ = child.wait();
+            }
+        }
     }
 }
 
@@ -1436,7 +1774,7 @@ mod contract_tests {
         let t0 = std::time::Instant::now();
         // бесконечный вывод: процесс останавливается на пределе, память не растёт
         let err = out_limited("sh", &["-c", "yes"], 1 << 20).unwrap_err();
-        assert!(err.contains("sh"), "{err}");
+        assert!(err.to_string().contains("sh"), "{err}");
         assert!(t0.elapsed() < std::time::Duration::from_secs(10));
         assert_eq!(out("sh", &["-c", "yes | head -c 100"]).0.len(), 100);
         let (s, code) = out_limited("sh", &["-c", "printf abc; exit 3"], 3).unwrap();
@@ -1451,23 +1789,244 @@ mod contract_tests {
     #[test]
     fn b08_config_upper_bounds() {
         let _iso = contract_fixtures::isolation_lock();
-        let base = std::env::temp_dir().join(format!("upd-conf-bounds-{}", std::process::id()));
-        fs::create_dir_all(&base).unwrap();
-        let conf = base.join("upd.conf");
+        let base = contract_fixtures::TempDirGuard::new("upd-conf-bounds").unwrap();
+        let conf = base.path().join("upd.conf");
         let mut text = String::from("parallel = 100000\nparallel_vpn = 99999999\nretries = 1000000000\ntimeout = 999999\nkeep = 500\nrescan_count = 100000\nextra_from_list = 100000\nmirror_max_age_h = 9223372036854775807\nvpn_sub_update_h = 9223372036854775807\nvpn_core_check_h = -5\nnetwork_memory_days = -3\nvpn_port = 1053\n");
         for i in 0..500 {
             text += &format!("mirror = https://m{i}.example/\n");
         }
         fs::write(&conf, text).unwrap();
-        unsafe { std::env::set_var("UPD_CONF", conf.to_str().unwrap()) };
+        let mut env = contract_fixtures::EnvGuard::new();
+        env.set("UPD_CONF", &conf);
         let c = Config::load(vec![]);
-        unsafe { std::env::remove_var("UPD_CONF") };
         let c = c.expect("экстремальные значения не ломают загрузку конфига");
         assert_eq!((c.parallel, c.parallel_vpn, c.retries, c.timeout, c.keep), (MAX_PARALLEL, MAX_PARALLEL, MAX_RETRIES, MAX_TIMEOUT, 10));
         assert_eq!((c.rescan_count, c.extra_from_list, c.mirrors.len()), (MAX_MIRRORS, MAX_MIRRORS, MAX_MIRRORS));
         assert_eq!((c.mirror_max_age_h, c.vpn_sub_update_h, c.vpn_core_check_h, c.network_memory_days), (MAX_HOURS, MAX_HOURS, 1, 0));
         assert_eq!(c.vpn_port, 1053, "порт проверяет сборка VPN, не загрузка конфига");
         assert!(hours_secs(c.mirror_max_age_h) > 0);
-        let _ = fs::remove_dir_all(&base);
+    }
+}
+
+#[cfg(test)]
+mod atomic_write_tests {
+    use super::*;
+    use std::os::unix::fs::{MetadataExt, symlink};
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::{Arc, Barrier};
+
+    fn audit_temp_path(dir: &Path, n: usize) -> PathBuf {
+        dir.join(format!(".upd-audit-{}-{n}.tmp", std::process::id()))
+    }
+
+    fn audit_temp_names() -> impl FnMut(&Path, usize) -> PathBuf {
+        |dir, n| audit_temp_path(dir, n)
+    }
+
+    fn assert_no_audit_temps(dir: &Path) {
+        let process_prefix = format!(".upd.{}.", std::process::id());
+        let fixture_prefix = format!(".upd-audit-{}-", std::process::id());
+        let names: Vec<_> = fs::read_dir(dir)
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+            .filter(|name| {
+                name.ends_with(".tmp") && (name.starts_with(&process_prefix) || name.starts_with(&fixture_prefix))
+            })
+            .collect();
+        assert!(names.is_empty(), "temporary files remain: {names:?}");
+    }
+
+    #[test]
+    fn atomic_write_16_concurrent_paths_keep_complete_content() {
+        const WORKERS: usize = 16;
+        let dir = contract_fixtures::TempDirGuard::new("upd-atomic-many-files").unwrap();
+        let barrier = Arc::new(Barrier::new(WORKERS));
+        let mut workers = Vec::with_capacity(WORKERS);
+        for n in 0..WORKERS {
+            let path = dir.path().join(format!("state-{n}"));
+            let data = vec![b'A' + n as u8; 64 * 1024];
+            let barrier = barrier.clone();
+            workers.push(std::thread::spawn(move || {
+                let result = atomic_write_with_hook(&path, &data, 0o600, || {
+                    barrier.wait();
+                });
+                (result.is_err(), std::fs::read(path).is_ok_and(|actual| actual == data))
+            }));
+        }
+        let results: Vec<_> = workers.into_iter().map(|worker| worker.join().unwrap()).collect();
+        assert!(results.iter().all(|(error, matches)| !error && *matches), "{results:?}");
+        assert_no_audit_temps(dir.path());
+    }
+
+    #[test]
+    fn atomic_write_concurrent_same_path_never_exposes_mixed_content() {
+        const WORKERS: usize = 16;
+        let dir = contract_fixtures::TempDirGuard::new("upd-atomic-one-file").unwrap();
+        let path = dir.path().join("state");
+        fs::write(&path, b"initial").unwrap();
+        let payloads: Vec<Vec<u8>> = (0..WORKERS).map(|n| vec![b'A' + n as u8; 64 * 1024]).collect();
+        let mut allowed = payloads.clone();
+        allowed.push(b"initial".to_vec());
+        let allowed = Arc::new(allowed);
+        let barrier = Arc::new(Barrier::new(WORKERS + 1));
+        let done = Arc::new(AtomicBool::new(false));
+
+        let reader_path = path.clone();
+        let reader_allowed = allowed.clone();
+        let reader_barrier = barrier.clone();
+        let reader_done = done.clone();
+        let reader = std::thread::spawn(move || {
+            reader_barrier.wait();
+            loop {
+                let bytes = fs::read(&reader_path).unwrap();
+                if !reader_allowed.contains(&bytes) {
+                    return false;
+                }
+                if reader_done.load(Ordering::Acquire) {
+                    return true;
+                }
+                std::thread::yield_now();
+            }
+        });
+
+        let mut writers = Vec::with_capacity(WORKERS);
+        for data in payloads {
+            let path = path.clone();
+            let barrier = barrier.clone();
+            writers.push(std::thread::spawn(move || {
+                atomic_write_with_hook(&path, &data, 0o600, || {
+                    barrier.wait();
+                })
+            }));
+        }
+        for writer in writers {
+            writer.join().unwrap().unwrap();
+        }
+        done.store(true, Ordering::Release);
+        assert!(reader.join().unwrap(), "reader observed a partial or mixed version");
+        assert!(allowed.contains(&fs::read(&path).unwrap()));
+        assert_no_audit_temps(dir.path());
+    }
+
+    #[test]
+    fn atomic_write_uses_exact_mode_and_replaces_symlink_entry() {
+        let dir = contract_fixtures::TempDirGuard::new("upd-atomic-mode").unwrap();
+        let target = dir.path().join("target");
+        let link = dir.path().join("state-link");
+        fs::write(&target, b"target content").unwrap();
+        symlink(&target, &link).unwrap();
+
+        atomic_write(&link, b"replacement", 0o600).unwrap();
+
+        assert_eq!(fs::read(&target).unwrap(), b"target content");
+        assert!(!fs::symlink_metadata(&link).unwrap().file_type().is_symlink());
+        assert_eq!(fs::read(&link).unwrap(), b"replacement");
+        let metadata = fs::metadata(&link).unwrap();
+        assert_eq!(metadata.permissions().mode() & 0o777, 0o600);
+        assert_eq!(metadata.uid(), unsafe { libc::geteuid() });
+        assert_eq!(metadata.gid(), unsafe { libc::getegid() });
+    }
+
+    #[test]
+    fn atomic_write_temp_symlink_collision_does_not_follow_target() {
+        let dir = contract_fixtures::TempDirGuard::new("upd-atomic-temp-link").unwrap();
+        let target = dir.path().join("sensitive");
+        let temp_link = dir.path().join(".temp-link");
+        let output = dir.path().join("output");
+        fs::write(&target, b"untouched").unwrap();
+        symlink(&target, &temp_link).unwrap();
+
+        atomic_write_with_ops(
+            &output,
+            b"new output",
+            0o600,
+            || {},
+            |file, data| file.write_all(data),
+            |from, to| fs::rename(from, to),
+            sync_directory,
+            |parent, attempt| {
+                if attempt == 0 { temp_link.clone() } else { parent.join(format!(".safe-{attempt}.tmp")) }
+            },
+        )
+        .unwrap();
+
+        assert_eq!(fs::read(&target).unwrap(), b"untouched");
+        assert!(fs::symlink_metadata(&temp_link).unwrap().file_type().is_symlink());
+        assert_eq!(fs::read(&output).unwrap(), b"new output");
+        assert!(!dir.path().join(".safe-1.tmp").exists());
+    }
+
+    #[test]
+    fn atomic_write_failure_before_rename_preserves_target_and_cleans_temp() {
+        let dir = contract_fixtures::TempDirGuard::new("upd-atomic-write-fail").unwrap();
+        let path = dir.path().join("state");
+        fs::write(&path, b"old content").unwrap();
+        let error = atomic_write_with_ops(
+            &path,
+            b"new content",
+            0o600,
+            || {},
+            |_, _| Err(std::io::Error::other("injected write failure")),
+            |from, to| fs::rename(from, to),
+            sync_directory,
+            audit_temp_names(),
+        )
+        .unwrap_err();
+        assert!(error.to_string().contains("write temporary file"), "{error}");
+        assert_eq!(fs::read(&path).unwrap(), b"old content");
+        assert_no_audit_temps(dir.path());
+    }
+
+    #[test]
+    fn atomic_write_rename_failure_preserves_target_and_cleans_temp() {
+        let dir = contract_fixtures::TempDirGuard::new("upd-atomic-rename-fail").unwrap();
+        let path = dir.path().join("state-dir");
+        fs::create_dir(&path).unwrap();
+        fs::write(path.join("marker"), b"old content").unwrap();
+        let error = atomic_write_with_hook(&path, b"new content", 0o600, || {}).unwrap_err();
+        assert!(error.to_string().contains("rename temporary file"), "{error}");
+        assert_eq!(fs::read(path.join("marker")).unwrap(), b"old content");
+        assert_no_audit_temps(dir.path());
+    }
+
+    #[test]
+    fn atomic_write_directory_sync_error_reports_commit_stage() {
+        let dir = contract_fixtures::TempDirGuard::new("upd-atomic-sync-fail").unwrap();
+        let path = dir.path().join("state");
+        fs::write(&path, b"old content").unwrap();
+        let error = atomic_write_with_ops(
+            &path,
+            b"new content",
+            0o600,
+            || {},
+            |file, data| file.write_all(data),
+            |from, to| fs::rename(from, to),
+            |_| Err(std::io::Error::other("injected directory sync failure")),
+            audit_temp_names(),
+        )
+        .unwrap_err();
+        assert!(error.to_string().contains("sync parent directory after rename"), "{error}");
+        assert_eq!(fs::read(&path).unwrap(), b"new content", "rename has committed despite the later sync failure");
+        assert_no_audit_temps(dir.path());
+    }
+}
+
+#[cfg(test)]
+mod setting_schema_tests {
+    use super::*;
+    #[test]
+    fn every_numeric_setting_accepts_schema_bounds_and_rejects_outside() {
+        for key in Config::keys().filter(|key| *key != "lang") {
+            let schema = number_setting(key).unwrap_or_else(|| panic!("missing schema for {key}"));
+            let mut config = Config::defaults(vec![]);
+            for value in [schema.min, schema.max] {
+                config.set(key, &value.to_string()).unwrap();
+                assert_eq!(config.get(key), Some(value), "{key}");
+            }
+            assert!(config.set(key, &(schema.min - 1).to_string()).is_err(), "{key}");
+            assert!(config.set(key, &(schema.max + 1).to_string()).is_err(), "{key}");
+            assert_eq!(schema.step, 1);
+        }
+        assert_eq!(number_setting("vpn_sub_update_h").unwrap().unit, SettingUnit::Hours);
     }
 }
