@@ -2001,6 +2001,15 @@ pub fn available() -> bool {
     std::path::Path::new(&socket_path()).exists()
 }
 
+/// Installer-only read: legacy helpers support Status but not the Hello preflight.
+/// No mutation is permitted through this compatibility path.
+pub fn running_for_install() -> Result<bool, String> {
+    let (_, reply) = connect_once(&Request::Status)?;
+    if !reply.ok { return Err(reply.error); }
+    reply.data.get("running").and_then(serde_json::Value::as_bool)
+        .ok_or_else(|| "helper status is missing its running flag".into())
+}
+
 fn check_reply_protocol(reply: &Reply) -> Result<(), String> {
     if reply.protocol_version == PROTOCOL_VERSION {
         Ok(())

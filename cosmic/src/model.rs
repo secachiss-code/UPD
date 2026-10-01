@@ -95,6 +95,18 @@ pub fn start(args: &[&str]) -> Result<helper::OperationId, String> {
 /// Окно upd: страница и, при необходимости, команда, которую окно запустит и покажет.
 pub fn open_window(page: Option<&str>, run: Option<&str>) -> Result<(), String> {
     let exe = std::env::current_exe().map_err(|e| e.to_string())?;
+    open_window_from(exe, page, run)
+}
+
+fn open_window_from(mut exe: PathBuf, page: Option<&str>, run: Option<&str>) -> Result<(), String> {
+    // Linux current_exe points at the unlinked inode after an atomic update.
+    // Launch the replacement at its installed path, preserving its directory.
+    if !exe.exists() {
+        if let Some(name) = exe.file_name().and_then(|name| name.to_str()).and_then(|name| name.strip_suffix(" (deleted)")) {
+            let replacement = exe.with_file_name(name);
+            if replacement.is_file() { exe = replacement; }
+        }
+    }
     let mut c = Command::new(exe);
     if let Some(p) = page {
         c.args(["--page", p]);
@@ -238,6 +250,20 @@ mod launcher_tests {
     use super::*;
     use upd::common::contract_fixtures::{TempDirGuard, with_prepend_path};
     use std::os::unix::fs::PermissionsExt;
+    #[test]
+    fn replaced_applet_launches_the_new_window_binary() {
+        let dir = TempDirGuard::new("cosmic-replaced-applet").unwrap();
+        let marker = dir.path().join("arguments");
+        let executable = dir.path().join("upd-cosmic");
+        std::fs::write(&executable, format!("#!/bin/sh\nprintf '%s\\n' \"$@\" > '{}'\n", marker.display())).unwrap();
+        std::fs::set_permissions(&executable, std::fs::Permissions::from_mode(0o755)).unwrap();
+        open_window_from(dir.path().join("upd-cosmic (deleted)"), Some("settings"), Some("check")).unwrap();
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
+        while !marker.exists() { assert!(std::time::Instant::now() < deadline); std::thread::sleep(std::time::Duration::from_millis(10)); }
+        assert_eq!(std::fs::read_to_string(marker).unwrap(), "--page\nsettings\n--run\ncheck\n");
+        std::fs::remove_file(executable).unwrap();
+        assert!(open_window_from(dir.path().join("upd-cosmic (deleted)"), None, None).is_err());
+    }
     #[test]
     fn web_scheme_validation_precedes_launcher_and_https_is_one_argument() {
         let dir = TempDirGuard::new("cosmic-web-launch").unwrap();

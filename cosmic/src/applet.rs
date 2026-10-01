@@ -181,8 +181,9 @@ impl cosmic::Application for Applet {
                     tasks.push(self.probe(Kind::Summary, "", || model::load_summary().map(|s| Message::Summary(Box::new(s)))));
                 }
                 let follow = self.op.running || self.watching.is_some();
-                if follow || meta.busy {
-                    tasks.push(self.probe(Kind::Operation, "", move || model::load_op(follow).map(Message::Op)));
+                let retry = matches!(self.jobs.phase(Kind::Operation), Phase::Error(_));
+                if follow || meta.busy || retry {
+                    tasks.push(self.probe(Kind::Operation, "", move || model::load_op(follow || retry).map(Message::Op)));
                 }
                 return Task::batch(tasks);
             }
@@ -588,6 +589,38 @@ impl Applet {
 
 fn notified_path() -> std::path::PathBuf {
     std::path::PathBuf::from(std::env::var("HOME").unwrap_or_default()).join(".cache/upd-notified.json")
+}
+
+#[cfg(test)]
+mod recovery_tests {
+    use super::*;
+    use cosmic::Application;
+    use cosmic::iced::futures::StreamExt;
+    #[test]
+    fn idle_applet_recovers_from_initial_helper_error() {
+        use upd::common::contract_fixtures::{isolation_lock, TempDirGuard, EnvGuard};
+        let _isolation = isolation_lock();
+        let dir = TempDirGuard::new("cosmic-idle-applet-retry").unwrap();
+        let mut env = EnvGuard::new(); env.set("UPD_HELPER_SOCK", dir.path().join("absent.sock"));
+        let mut app = Applet::demo(Summary::default(), OpStatus::default(), None, false);
+        app.summary_at = Some(Instant::now());
+        app.jobs.demo_phase(Kind::Operation, Phase::Error("old helper protocol".into()));
+        let stamp = app.stamp;
+        let task = <Applet as Application>::update(&mut app, Message::Metadata(model::Metadata {
+            busy: false, stamp, lang: upd::i18n::Lang::Ru, launch_errors: vec![],
+        }));
+        let runtime = tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
+        runtime.block_on(async {
+            let mut stream = cosmic::iced::runtime::task::into_stream(task).expect("idle helper retry must be scheduled");
+            while let Some(action) = stream.next().await {
+                if let cosmic::iced::runtime::Action::Output(cosmic::Action::App(message)) = action {
+                    drop(<Applet as Application>::update(&mut app, message));
+                }
+            }
+        });
+        assert!(matches!(app.jobs.phase(Kind::Operation), Phase::Ready));
+        assert!(!app.op.running);
+    }
 }
 
 /// Общий с `upd notify` учёт показанного: одно и то же не показывается дважды.

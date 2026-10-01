@@ -113,6 +113,11 @@ pub struct RestartInfo {
 type Loaded<T> = Option<Result<T, String>>;
 
 struct SettingMutation { id: u64, draft: Config }
+struct OperationReplay {
+    view: OpView,
+    prompt_id: Option<helper::PromptId>,
+    previous_prompt_id: Option<helper::PromptId>,
+}
 
 pub struct Window {
     jobs: Jobs<Message>,
@@ -137,7 +142,7 @@ pub struct Window {
     prompt_id: Option<helper::PromptId>,
     start_pending: bool,
     pending_event_id: Option<helper::OperationId>,
-    replaying_current_operation: bool,
+    replaying_current_operation: Option<OperationReplay>,
     attached: bool,
     show_op: bool,
     confirm_cancel: bool,
@@ -332,7 +337,7 @@ impl cosmic::Application for Window {
             prompt_id: None,
             start_pending: false,
             pending_event_id: None,
-            replaying_current_operation: false,
+            replaying_current_operation: None,
             attached: true,
             show_op: false,
             confirm_cancel: false,
@@ -433,7 +438,7 @@ impl cosmic::Application for Window {
                     self.summary_at = Some(std::time::Instant::now());
                     tasks.push(self.probe(Kind::Summary, "", load_summary));
                 }
-                if self.busy || self.op.running() {
+                if self.busy || self.op.running() || matches!(self.jobs.phase(Kind::Operation), Phase::Error(_)) {
                     tasks.push(self.probe(Kind::Operation, "", || model::load_op(true).map(Message::OpStatus)));
                 }
                 if self.page == Page::Vpn && !self.show_op {
@@ -466,21 +471,50 @@ impl cosmic::Application for Window {
                 if generation != self.op_gen {
                     return Task::none();
                 }
-                if self.replaying_current_operation {
+                if let Some(replay) = &mut self.replaying_current_operation {
                     if self.operation_id.as_ref() == Some(&frame.operation_id) {
                         if matches!(&frame.event, helper::Event::ReplayComplete) {
-                            self.replaying_current_operation = false;
+                            let mut replay = self.replaying_current_operation.take().unwrap();
+                            replay.view.tail = self.op.tail.clone();
+                            if !replay.view.tail.follow {
+                                let added = self.op.lines.back().and_then(|last| replay.view.lines.iter().rposition(|line| line == last))
+                                    .map_or(0, |last| replay.view.lines.len() - last - 1);
+                                replay.view.tail.unread = replay.view.tail.unread.saturating_add(added);
+                            }
+                            if replay.prompt_id.is_some() && replay.prompt_id == replay.previous_prompt_id {
+                                replay.view.answer = self.op.answer.clone();
+                                replay.view.reveal = self.op.reveal;
+                            } else { self.answer_request = None; }
+                            replay.view.cancel_sent = self.op.cancel_sent && replay.view.exit.is_none();
+                            self.prompt_id = replay.prompt_id;
+                            self.op = replay.view;
                             self.op.connected();
+                            if self.op.exit.is_some() {
+                                self.answer_request = None; self.cancel_request = None;
+                                return Task::batch([
+                                    self.probe(Kind::Summary, "", load_summary),
+                                    self.probe(Kind::Operation, "", || model::load_op(true).map(Message::OpStatus)),
+                                    self.reload_page(),
+                                ]);
+                            }
+                            if self.op.tail.follow { return cosmic::iced::widget::operation::snap_to_end(LOG_ID.clone()); }
+                        } else {
+                            match &frame.event {
+                                helper::Event::Prompt { .. } => replay.prompt_id = frame.prompt_id,
+                                helper::Event::Answered | helper::Event::Exit { .. } => replay.prompt_id = None,
+                                _ => {}
+                            }
+                            replay.view.apply(frame.event);
                         }
                         return Task::none();
                     }
-                    self.replaying_current_operation = false;
+                    self.replaying_current_operation = None;
                 }
                 let started = matches!(&frame.event, helper::Event::Reset { .. });
                 let same_operation = self.operation_id.as_ref() == Some(&frame.operation_id);
                 // Reset is authoritative for the helper's current operation. Other event types
                 // must match the current id so queued output from an older operation is ignored.
-                let accept = same_operation || started && (self.operation_id.is_none() || self.start_pending);
+                let accept = same_operation || started;
                 if !accept {
                     return Task::none();
                 }
@@ -489,9 +523,13 @@ impl cosmic::Application for Window {
                     return Task::none();
                 }
                 if started && same_operation && !self.start_pending && self.op_view_id.as_ref() == Some(&frame.operation_id) {
-                    // The helper replays the whole journal on reattach. Keep the current view and
-                    // scroll offset intact until its explicit replay boundary arrives.
-                    self.replaying_current_operation = true;
+                    // Build a fresh snapshot without duplicating lines or discarding changes
+                    // made while disconnected. Preserve the visible view until the boundary.
+                    let mut view = OpView::default();
+                    view.apply(frame.event);
+                    self.replaying_current_operation = Some(OperationReplay {
+                        view, prompt_id: None, previous_prompt_id: self.prompt_id,
+                    });
                     return Task::none();
                 }
                 if !same_operation {
@@ -550,6 +588,7 @@ impl cosmic::Application for Window {
                 }
                 // помощник закрыл соединение (завершился по простою или перезапущен) — переподключиться позже
                 self.attached = false;
+                self.replaying_current_operation = None;
                 if self.op.exit.is_none() { self.op.phase = op::Phase::Disconnected; }
                 return cosmic::task::future(async {
                     tokio::time::sleep(Duration::from_secs(3)).await;
@@ -562,6 +601,7 @@ impl cosmic::Application for Window {
                 }
                 self.error = error;
                 self.attached = false;
+                self.replaying_current_operation = None;
                 if self.op.exit.is_none() { self.op.phase = op::Phase::Disconnected; }
                 return cosmic::task::future(async {
                     tokio::time::sleep(Duration::from_secs(3)).await;
@@ -1698,6 +1738,51 @@ mod operation_tests {
         w.op.apply(helper::Event::Prompt { text: "Continue?".into(), kind: PromptKind::YesNo { default_yes: true } }); w
     }
     fn send(w: &mut Window, m: Message) { drop(<Window as Application>::update(w, m)); }
+    fn event(w: &mut Window, id: &helper::OperationId, prompt_id: Option<helper::PromptId>, event: helper::Event) {
+        send(w, Message::OpEvent(w.op_gen, Ok(Some(helper::OperationEvent {
+            protocol_version: helper::PROTOCOL_VERSION, operation_id: id.clone(), prompt_id, event,
+        }))));
+    }
+    #[test]
+    fn reattach_updates_missed_output_and_exit_without_duplicating_history() {
+        let mut w = window();
+        let id = w.operation_id.clone().unwrap(); w.op_view_id = Some(id.clone());
+        w.op.apply(helper::Event::Line { text: "before disconnect".into() }); w.op.scroll(false);
+        w.op.answer = "old answer".into();
+        event(&mut w, &id, None, helper::Event::Reset { command: "update".into(), started: 1 });
+        event(&mut w, &id, None, helper::Event::Line { text: "before disconnect".into() });
+        event(&mut w, &id, None, helper::Event::Line { text: "completed while disconnected".into() });
+        event(&mut w, &id, None, helper::Event::Exit { code: 7 });
+        assert_eq!(w.op.exit, None);
+        event(&mut w, &id, None, helper::Event::ReplayComplete);
+        assert_eq!(w.op.exit, Some(7)); assert_eq!(w.op.phase, op::Phase::Finished(7));
+        assert_eq!(w.op.lines.len(), 2); assert!(!w.op.tail.follow); assert_eq!(w.op.tail.unread, 1);
+        assert!(w.op.prompt.is_none()); assert!(w.op.answer.is_empty()); assert!(w.prompt_id.is_none());
+    }
+    #[test]
+    fn reattach_preserves_answer_only_for_the_same_prompt() {
+        let mut w = window();
+        let id = w.operation_id.clone().unwrap(); w.op_view_id = Some(id.clone());
+        w.op.answer = "draft".into(); w.op.reveal = true;
+        for (prompt, answer) in [(1, "draft"), (2, "")] {
+            event(&mut w, &id, None, helper::Event::Reset { command: "update".into(), started: 1 });
+            event(&mut w, &id, Some(helper::PromptId(prompt)), helper::Event::Prompt { text: "Question".into(), kind: PromptKind::Text });
+            event(&mut w, &id, None, helper::Event::ReplayComplete);
+            assert_eq!(w.prompt_id, Some(helper::PromptId(prompt))); assert_eq!(w.op.answer, answer);
+            assert_eq!(w.op.phase, op::Phase::Prompt);
+        }
+    }
+    #[test]
+    fn another_clients_operation_replaces_the_old_view() {
+        let mut w = window();
+        let old = w.operation_id.clone().unwrap();
+        w.op.apply(helper::Event::Exit { code: 0 });
+        let new = helper::OperationId("external-operation".into());
+        event(&mut w, &new, None, helper::Event::Reset { command: "check".into(), started: 2 });
+        event(&mut w, &old, None, helper::Event::Exit { code: 0 });
+        assert_eq!(w.operation_id, Some(new)); assert_eq!(w.op.command, "check");
+        assert_eq!(w.op.phase, op::Phase::Running); assert!(w.op.exit.is_none());
+    }
     #[test]
     fn double_answer_is_blocked_and_failure_can_be_retried() {
         let mut w = window(); w.op.answer = "y".into(); send(&mut w, Message::Answer("y".into())); let id = w.answer_request.unwrap();
@@ -1747,6 +1832,31 @@ mod operation_tests {
 #[cfg(test)]
 mod startup_tests {
     use super::*;
+    #[test]
+    fn idle_window_recovers_from_initial_helper_error() {
+        use cosmic::iced::futures::StreamExt;
+        use upd::common::contract_fixtures::{isolation_lock, TempDirGuard, EnvGuard};
+        let _isolation = isolation_lock();
+        let dir = TempDirGuard::new("cosmic-idle-helper-retry").unwrap();
+        let mut env = EnvGuard::new(); env.set("UPD_HELPER_SOCK", dir.path().join("absent.sock"));
+        let mut w = Window::demo(Summary::default(), UpdState::default(), OpView::default(), Page::Updates);
+        w.jobs.demo_phase(Kind::Operation, Phase::Error("old helper protocol".into()));
+        let stamp = w.stamp;
+        let task = <Window as Application>::update(&mut w, Message::Metadata(model::Metadata {
+            busy: false, stamp, lang: i18n::Lang::Ru, launch_errors: vec![],
+        }));
+        let runtime = tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
+        runtime.block_on(async {
+            let mut stream = cosmic::iced::runtime::task::into_stream(task).expect("idle helper retry must be scheduled");
+            while let Some(action) = stream.next().await {
+                if let cosmic::iced::runtime::Action::Output(cosmic::Action::App(message)) = action {
+                    drop(<Window as Application>::update(&mut w, message));
+                }
+            }
+        });
+        assert!(matches!(w.jobs.phase(Kind::Operation), Phase::Ready));
+        assert!(!w.op_status.running);
+    }
     #[test]
     fn update_activation_waits_for_summary_before_choosing_terminal() {
         let mut w = Window::demo(Summary::default(), UpdState::default(), OpView::default(), Page::Updates);

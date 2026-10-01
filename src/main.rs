@@ -1529,6 +1529,13 @@ fn enable_units(b: &dyn Backend, c: &Config, ok: &dyn Fn(String)) -> Result<(), 
     let mut args = vec!["enable", "--now"];
     args.extend(enable.iter().copied());
     run(false, &[], "systemctl", &args)?;
+    // Enabling an already active socket does not reload the helper executable.
+    // Stop the old protocol process after replacing the installed binaries.
+    if helper::available() && helper::running_for_install()? {
+        println!("{}", t!("Помощник выполняет операцию; после завершения перезапустите его: sudo systemctl restart upd-helper.service"));
+    } else {
+        run(true, &[], "systemctl", &["try-restart", "upd-helper.service"])?;
+    }
     let _ = run(true, &[], "systemctl", &["--global", "enable", "upd-notify.timer"]);
     // --global действует со следующего входа; тем, кто уже вошёл, перечитываем юниты и запускаем таймер сразу
     for user in logged_in_users() {
@@ -1740,6 +1747,60 @@ fn cmd_uninstall(b: &dyn Backend, pkg: bool) -> i32 {
 mod contract_tests {
     use super::*;
     use std::path::Path;
+
+    #[test]
+    fn install_reloads_helper_and_reports_restart_failure() {
+        use upd::common::contract_fixtures::{isolation_lock, TempDirGuard, EnvGuard};
+        let _isolation = isolation_lock();
+        let dir = TempDirGuard::new("upd-install-helper-reload").unwrap();
+        let log = dir.path().join("systemctl.log");
+        let mut env = EnvGuard::new();
+        env.set("PATH", dir.path());
+        env.set("UPD_VPN_ETC", dir.path());
+        env.set("UPD_HELPER_SOCK", dir.path().join("helper.sock"));
+        env.set("UPD_TEST_SYSTEMCTL_LOG", &log);
+        write_stub(dir.path(), "apt-get", "#!/bin/sh\nexit 0\n");
+        write_stub(dir.path(), "loginctl", "#!/bin/sh\nexit 0\n");
+        write_stub(dir.path(), "systemctl", "#!/bin/sh\necho \"$*\" >> \"$UPD_TEST_SYSTEMCTL_LOG\"\nexit 0\n");
+        let backend = backend::detect().unwrap();
+        enable_units(backend.as_ref(), &Config::defaults(vec![]), &|_| {}).unwrap();
+        let calls = fs::read_to_string(&log).unwrap();
+        let enable = calls.find("enable --now").unwrap();
+        let reload = calls.find("try-restart upd-helper.service").unwrap();
+        assert!(reload > enable, "{calls}");
+        // A package post-install can run inside the helper's current operation.
+        // A legacy Status reply must suffice to avoid restarting its parent.
+        let listener = std::os::unix::net::UnixListener::bind(dir.path().join("helper.sock")).unwrap();
+        listener.set_nonblocking(true).unwrap();
+        let server = std::thread::spawn(move || {
+            use std::io::{BufRead, Write};
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(3);
+            let mut stream = loop {
+                match listener.accept() {
+                    Ok((stream, _)) => break stream,
+                    Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                        assert!(std::time::Instant::now() < deadline, "installer must query operation status");
+                        std::thread::sleep(std::time::Duration::from_millis(5));
+                    }
+                    Err(error) => panic!("fixture accept failed: {error}"),
+                }
+            };
+            stream.set_read_timeout(Some(std::time::Duration::from_secs(2))).unwrap();
+            stream.set_write_timeout(Some(std::time::Duration::from_secs(2))).unwrap();
+            let mut request = String::new();
+            std::io::BufReader::new(stream.try_clone().unwrap()).read_line(&mut request).unwrap();
+            assert!(request.contains("\"op\":\"status\""));
+            stream.write_all(b"{\"ok\":true,\"data\":{\"running\":true}}\n").unwrap();
+        });
+        fs::write(&log, "").unwrap();
+        enable_units(backend.as_ref(), &Config::defaults(vec![]), &|_| {}).unwrap();
+        server.join().unwrap();
+        assert!(!fs::read_to_string(&log).unwrap().contains("try-restart upd-helper.service"));
+        fs::remove_file(dir.path().join("helper.sock")).unwrap();
+        write_stub(dir.path(), "systemctl", "#!/bin/sh\nif [ \"$1 $2\" = 'try-restart upd-helper.service' ]; then echo helper-restart-failed >&2; exit 1; fi\nexit 0\n");
+        let error = enable_units(backend.as_ref(), &Config::defaults(vec![]), &|_| {}).unwrap_err();
+        assert!(error.contains("helper-restart-failed"), "{error}");
+    }
 
     // --- INSTALL-01 ---
     #[test]

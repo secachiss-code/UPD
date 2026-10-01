@@ -342,7 +342,10 @@ fn audit_closed_attach_releases_helper_thread_and_fd() {
     let mut env = EnvGuard::new();
     env.set("UPD_HELPER_SOCK", &socket);
     let mut child = spawn_helper(&dir, &socket, None);
-    let before = proc_counts(child.id());
+    // Socket creation precedes backend detection, which briefly opens os-release.
+    // This fixture owns only stdin/stdout/stderr and the listener when idle.
+    let ready = wait_resource_baseline(child.id(), &(1, 4));
+    let before = (ready.threads, ready.fds);
 
     let (tx, rx) = mpsc::sync_channel(1);
     let worker = thread::spawn(move || {
