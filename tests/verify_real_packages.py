@@ -4,7 +4,7 @@ import hashlib, json, struct, subprocess
 from pathlib import Path
 root = Path(__file__).resolve().parents[1]
 manifest = dict((line.rstrip('\n').split('\t', 1) for line in (root / 'dist/package-manifest.tsv').read_text().splitlines()))
-expected = {name: hashlib.sha256(Path(manifest[key]).read_bytes()).hexdigest() for name, key in [('upd', 'cli'), ('upd-cosmic', 'gui')] if key in manifest}
+expected = {name: hashlib.sha256(Path(manifest[key]).read_bytes()).hexdigest() for name, key in [('cm', 'cli'), ('cm-cosmic', 'gui')] if key in manifest}
 
 def tar_list(path=None, data=None):
     return subprocess.check_output(['bsdtar', '-tf', str(path) if path else '-'], input=data).decode().splitlines()

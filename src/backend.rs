@@ -18,7 +18,7 @@ pub enum ProbeKind {
 
 pub trait Backend {
     fn name(&self) -> String;
-    /// upd сам выбирает и прописывает зеркала (иначе это делает дистрибутив)
+    /// cm сам выбирает и прописывает зеркала (иначе это делает дистрибутив)
     fn mirrors_managed(&self) -> bool;
     fn mirror_note(&self) -> String;
     /// Файл, который могут перезаписать чужие утилиты (rate-mirrors, garuda-update)
@@ -58,7 +58,7 @@ pub trait Backend {
     fn upgrade_handles_aur(&self) -> bool {
         false
     }
-    /// Спрашивает ли установщик подтверждение сам; если нет — спрашивает upd
+    /// Спрашивает ли установщик подтверждение сам; если нет — спрашивает cm
     fn upgrade_asks(&self) -> bool {
         true
     }
@@ -113,7 +113,7 @@ impl PrivateTempDir {
             let mut random = [0u8; 16];
             fs::File::open("/dev/urandom")?.read_exact(&mut random)?;
             let suffix: String = random.iter().map(|b| format!("{b:02x}")).collect();
-            let path = PathBuf::from(format!("/tmp/upd-mirrors-{suffix}"));
+            let path = PathBuf::from(format!("/tmp/cm-mirrors-{suffix}"));
             let mut builder = fs::DirBuilder::new();
             builder.mode(0o700);
             match builder.create(&path) {
@@ -144,26 +144,26 @@ fn hist_from(path: &str, n: usize, keep: impl Fn(&str) -> bool) -> Vec<String> {
 
 // ======================= pacman (Arch, Garuda, EndeavourOS, CachyOS…) =======================
 
-pub const PIN_BEGIN: &str = "## >>> upd: pinned mirrors (managed automatically, see upd) >>>";
+pub const PIN_BEGIN: &str = "## >>> cm: pinned mirrors (managed automatically, see cm) >>>";
 /// Начало блока до 0.2.5 — узнаём, при следующей записи блок получит новую метку
-const PIN_BEGIN_OLD: &str = "## >>> upd: закреплённые зеркала (управляется автоматически, см. upd) >>>";
-pub const PIN_END: &str = "## <<< upd <<<";
+const PIN_BEGIN_OLD: &str = "## >>> cm: закреплённые зеркала (управляется автоматически, см. cm) >>>";
+pub const PIN_END: &str = "## <<< cm <<<";
 
 pub struct Pacman {
     mirrorlist: String,
     distro: String,
     manjaro: bool,
-    /// Почему upd не трогает mirrorlist; None — зеркала Arch, управляем
+    /// Почему cm не трогает mirrorlist; None — зеркала Arch, управляем
     unmanaged: Option<String>,
 }
 
 impl Pacman {
     fn new(osr: &BTreeMap<String, String>) -> Self {
-        let mirrorlist = env_or("UPD_MIRRORLIST", "/etc/pacman.d/mirrorlist");
+        let mirrorlist = env_or("CM_MIRRORLIST", "/etc/pacman.d/mirrorlist");
         let field = |k: &str| osr.get(k).map(String::as_str).unwrap_or("");
         // Manjaro и его редакции/форки (BigLinux и т.п.): свои зеркала с $branch и pacman-mirrors
         let manjaro = field("ID").starts_with("manjaro") || field("ID_LIKE").split_whitespace().any(|s| s == "manjaro") || have("pacman-mirrors");
-        let conf = fs::read_to_string(env_or("UPD_PACMAN_CONF", "/etc/pacman.conf")).unwrap_or_default();
+        let conf = fs::read_to_string(env_or("CM_PACMAN_CONF", "/etc/pacman.conf")).unwrap_or_default();
         let unmanaged = if manjaro {
             Some(t!("в Manjaro зеркалами управляет pacman-mirrors (sudo pacman-mirrors --fasttrack)").to_string())
         } else if !conf.is_empty() && !repo_uses(&conf, "core", &mirrorlist) {
@@ -216,9 +216,9 @@ fn server_url(l: &str) -> Option<String> {
 fn split_pin(ls: &[String]) -> (Vec<String>, Vec<String>) {
     let (mut pinned, mut rest, mut inside) = (vec![], vec![], false);
     for l in ls {
-        if l == PIN_BEGIN || l == PIN_BEGIN_OLD {
+        if l == PIN_BEGIN || l == PIN_BEGIN_OLD || l == &PIN_BEGIN.replace("cm", "upd") || l == &PIN_BEGIN_OLD.replace("cm", "upd") {
             inside = true;
-        } else if l == PIN_END {
+        } else if l == PIN_END || l == "## <<< upd <<<" {
             inside = false;
         } else if inside {
             if let Some(u) = server_url(l) {
@@ -309,7 +309,7 @@ impl Backend for Pacman {
         if servers.len() < 5 {
             log(t!("  список зеркал с archlinux.org..."));
             servers = arch_status_mirrors()?;
-            file = vec![format!("# upd: list from archlinux.org/mirrors/status, {}", fmt_time(now()))];
+            file = vec![format!("# cm: list from archlinux.org/mirrors/status, {}", fmt_time(now()))];
             file.extend(servers.iter().map(|s| format!("Server = {s}")));
         }
         servers.truncate(n);
@@ -402,12 +402,12 @@ impl Backend for Pacman {
 
     fn upgrade(&self, aur: bool) -> Result<(), String> {
         if have("garuda-update") {
-            // зеркалами управляет upd — garuda-update не должен их перезаписывать
+            // зеркалами управляет cm — garuda-update не должен их перезаписывать
             let mut env = vec![("SKIP_MIRRORLIST", "1")];
             if aur {
-                env.push(("UPDATE_AUR", "1"));
+                env.push(("CMATE_AUR", "1"));
             }
-            // подтверждение уже спросил upd (ответ pacman «н» в русской раскладке отменял установку);
+            // подтверждение уже спросил cm (ответ pacman «н» в русской раскладке отменял установку);
             // конфликты пакетов auto-pacman из garuda-update разбирает сам
             return run(false, &env, "garuda-update", &["--noconfirm"]);
         }
@@ -426,7 +426,7 @@ impl Backend for Pacman {
             args.extend(&keyrings);
             run(false, &[], "pacman", &args)?;
         }
-        // подтверждение уже спросил upd; на конфликтах --noconfirm выбирает безопасное «нет» и прерывает установку
+        // подтверждение уже спросил cm; на конфликтах --noconfirm выбирает безопасное «нет» и прерывает установку
         run(false, &[], "pacman", &["-Su", "--noconfirm"]).map_err(|e| t!("{0} — если pacman спрашивал про конфликт пакетов, запусти вручную: sudo pacman -Syu", e))
     }
     fn upgrade_handles_aur(&self) -> bool {
@@ -524,9 +524,9 @@ fn arch_status_mirrors() -> Result<Vec<String>, String> {
 // ======================= apt (Debian, Ubuntu, Mint, Pop!_OS…) =======================
 //
 // Зеркала — через штатный механизм apt «mirror+file:»: источник указывает на файл со списком
-// зеркал, apt берёт первое и сам переходит к следующему при ошибке. upd переписывает только этот список.
+// зеркал, apt берёт первое и сам переходит к следующему при ошибке. cm переписывает только этот список.
 
-const APT_LIST: &str = "/etc/apt/upd-mirrors.list";
+const APT_LIST: &str = "/etc/apt/cm-mirrors.list";
 const APT_BACKUP: &str = "apt-backup.json";
 const APT_ORIGINAL_URI: &str = "apt-original-uri";
 
@@ -646,7 +646,7 @@ fn apt_transaction_path_allowed(path: &Path) -> bool {
 
 fn apt_temp_path_allowed(path: &Path) -> bool {
     path.parent() == Path::new(APT_LIST).parent()
-        && path.file_name().and_then(|name| name.to_str()).map(|name| name.starts_with(".upd-source-") && name.ends_with(".tmp")).unwrap_or(false)
+        && path.file_name().and_then(|name| name.to_str()).map(|name| name.starts_with(".cm-source-") && name.ends_with(".tmp")).unwrap_or(false)
 }
 
 fn snapshot_apt_file(path: &Path) -> Result<Option<AptSourceBackup>, String> {
@@ -775,7 +775,7 @@ fn prepare_apt_file(path: &Path, data: &[u8], mode: u32, uid: u32, gid: u32) -> 
     let mut created = None;
     for _ in 0..8 {
         let n = APT_SOURCE_TEMP_COUNTER.fetch_add(1, Ordering::Relaxed);
-        let tmp = dir.join(format!(".upd-source-{}-{n}.tmp", std::process::id()));
+        let tmp = dir.join(format!(".cm-source-{}-{n}.tmp", std::process::id()));
         match fs::OpenOptions::new().write(true).create_new(true).mode(0o600).open(&tmp) {
             Ok(file) => {
                 created = Some((tmp, file));
@@ -926,7 +926,7 @@ fn merge_apt_source_after_apply(path: &str, original: &AptSourceBackup, current:
                         return Err(t!("{0}: applied snapshot не совпадает с backup; backup сохранён для ручного merge", path));
                     };
                     if original_line.contains(&reference) {
-                        return Err(t!("{0}: исходный source уже ссылался на список upd; backup сохранён для ручного merge", path));
+                        return Err(t!("{0}: исходный source уже ссылался на список cm; backup сохранён для ручного merge", path));
                     }
                     merged.push_str(original_line);
                 } else {
@@ -934,7 +934,7 @@ fn merge_apt_source_after_apply(path: &str, original: &AptSourceBackup, current:
                 }
             } else {
                 if line.contains(&reference) {
-                    return Err(t!("{0}: source изменён после применения upd и всё ещё ссылается на его список зеркал; backup сохранён", path));
+                    return Err(t!("{0}: source изменён после применения cm и всё ещё ссылается на его список зеркал; backup сохранён", path));
                 }
                 merged.push_str(line);
             }
@@ -942,14 +942,14 @@ fn merge_apt_source_after_apply(path: &str, original: &AptSourceBackup, current:
         merged
     } else if current.content.contains(&reference) {
         if original.content.contains(&reference) {
-            return Err(t!("{0}: нельзя отличить исходную ссылку от подстановки upd; backup сохранён для ручного merge", path));
+            return Err(t!("{0}: нельзя отличить исходную ссылку от подстановки cm; backup сохранён для ручного merge", path));
         }
         current.content.replace(&reference, original_uri)
     } else {
         current.content.clone()
     };
     if restored.contains(&reference) {
-        return Err(t!("{0}: после восстановления остаётся ссылка на список зеркал upd; backup сохранён", path));
+        return Err(t!("{0}: после восстановления остаётся ссылка на список зеркал cm; backup сохранён", path));
     }
     Ok(AptSourceBackup { content: restored, mode: current.mode, uid: current.uid, gid: current.gid, applied: None })
 }
@@ -957,7 +957,7 @@ fn merge_apt_source_after_apply(path: &str, original: &AptSourceBackup, current:
 fn restore_apt_source(path: &str, original: &AptSourceBackup, original_uri: &str) -> Result<(), String> {
     let path_ref = Path::new(path);
     let Some(current) = snapshot_apt_file(path_ref)? else {
-        return Ok(()); // Администратор удалил source-файл после установки upd.
+        return Ok(()); // Администратор удалил source-файл после установки cm.
     };
     let restored = merge_apt_source_after_apply(path, original, current.clone(), original_uri)?;
     if restored == current {
@@ -1139,7 +1139,7 @@ impl Backend for Apt {
         if !o.is_empty() && !contains(&list, o) {
             list.push(o.to_string()); // исходное зеркало — последним запасным
         }
-        let body = format!("# upd: apt mirrors by descending speed (managed automatically)\n{}\n", list.join("\n"));
+        let body = format!("# cm: apt mirrors by descending speed (managed automatically)\n{}\n", list.join("\n"));
         let list_changed = !fs::read_to_string(APT_LIST).map(|current| current == body).unwrap_or(false);
         if !switching_to_mirror_file && !list_changed {
             return Ok(false);
@@ -1251,7 +1251,7 @@ impl Backend for Apt {
             let reference = format!("mirror+file:{APT_LIST}");
             for file in Self::source_files() {
                 match fs::read_to_string(&file) {
-                    Ok(content) if content.contains(&reference) => return Err(t!("{0}: источник всё ещё ссылается на список зеркал upd", file)),
+                    Ok(content) if content.contains(&reference) => return Err(t!("{0}: источник всё ещё ссылается на список зеркал cm", file)),
                     Ok(_) => {}
                     Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
                     Err(e) => return Err(t!("{0}: не удалось проверить источник APT: {1}", file, e)),
@@ -1519,7 +1519,7 @@ mod contract_tests {
         fn state_dir(path: &Path) -> Self {
             let _iso = crate::common::contract_fixtures::isolation_lock();
             let mut g = Self { _iso, saved: vec![], cleanup: vec![] };
-            g.set("UPD_STATE_DIR", path.to_str().unwrap());
+            g.set("CM_STATE_DIR", path.to_str().unwrap());
             g.cleanup.push(path.to_path_buf());
             g
         }
@@ -1576,7 +1576,7 @@ mod contract_tests {
     #[test]
     fn fs01_does_not_use_predictable_tmp_path() {
         let pid = std::process::id();
-        let bait = PathBuf::from(format!("/tmp/upd-mirrors.{pid}"));
+        let bait = PathBuf::from(format!("/tmp/cm-mirrors.{pid}"));
         fs::write(&bait, b"attacker").unwrap();
         let dir = PrivateTempDir::new().unwrap();
         assert_ne!(dir.0, bait);
@@ -1588,7 +1588,7 @@ mod contract_tests {
     // --- SEC-04A ---
     #[test]
     fn sec04a_apt_backup_is_private() {
-        let base = std::env::temp_dir().join(format!("upd-apt-backup-{}", std::process::id()));
+        let base = std::env::temp_dir().join(format!("cm-apt-backup-{}", std::process::id()));
         fs::create_dir_all(&base).unwrap();
         let _g = EnvGuard::state_dir(&base);
         let mut backup = BTreeMap::new();
@@ -1605,10 +1605,10 @@ mod contract_tests {
         assert_eq!(loaded.get("/etc/apt/sources.list").map(|b| b.content.as_str()), Some("deb http://secret:token@mirror.example/ubuntu jammy main"));
     }
 
-    // --- UPD-05 ---
+    // --- CM-05 ---
     #[test]
     fn upd05_zypper_failure_is_not_empty_list() {
-        let bin = std::env::temp_dir().join(format!("upd-zypper-bin-{}", std::process::id()));
+        let bin = std::env::temp_dir().join(format!("cm-zypper-bin-{}", std::process::id()));
         fs::create_dir_all(&bin).unwrap();
         write_executable(&bin.join("zypper"), "#!/bin/sh\nexit 9\n");
         let err = crate::common::contract_fixtures::with_prepend_path(&bin, || Rpm::zypper(&zypper_osr()).updates()).unwrap_err();
@@ -1617,7 +1617,7 @@ mod contract_tests {
 
     #[test]
     fn upd05_zypper_empty_stdout_is_ok() {
-        let bin = std::env::temp_dir().join(format!("upd-zypper-empty-{}", std::process::id()));
+        let bin = std::env::temp_dir().join(format!("cm-zypper-empty-{}", std::process::id()));
         fs::create_dir_all(&bin).unwrap();
         write_executable(&bin.join("zypper"), "#!/bin/sh\nexit 0\n");
         assert!(crate::common::contract_fixtures::with_prepend_path(&bin, || Rpm::zypper(&zypper_osr()).updates()).unwrap().is_empty());
@@ -1625,7 +1625,7 @@ mod contract_tests {
 
     #[test]
     fn upd05_zypper_parses_update_lines() {
-        let bin = std::env::temp_dir().join(format!("upd-zypper-parse-{}", std::process::id()));
+        let bin = std::env::temp_dir().join(format!("cm-zypper-parse-{}", std::process::id()));
         fs::create_dir_all(&bin).unwrap();
         write_executable(
             &bin.join("zypper"),
@@ -1638,7 +1638,7 @@ mod contract_tests {
     // --- SEC-04B ---
     #[test]
     fn sec04b_apt_original_uri_file_is_private() {
-        let base = std::env::temp_dir().join(format!("upd-apt-uri-{}", std::process::id()));
+        let base = std::env::temp_dir().join(format!("cm-apt-uri-{}", std::process::id()));
         fs::create_dir_all(&base).unwrap();
         let _g = EnvGuard::state_dir(&base);
         let uri = "http://secret:token@mirror.example/debian";
@@ -1649,10 +1649,10 @@ mod contract_tests {
         assert_eq!(load_apt_original_uri().unwrap(), uri);
     }
 
-    // --- UPD-07 ---
+    // --- CM-07 ---
     #[test]
     fn upd07_pacman_missing_exit_code_is_error() {
-        let base = std::env::temp_dir().join(format!("upd-pacman-miss-{}", std::process::id()));
+        let base = std::env::temp_dir().join(format!("cm-pacman-miss-{}", std::process::id()));
         let bin = base.join("bin");
         fs::create_dir_all(&bin).unwrap();
         fs::create_dir_all(base.join("syncdb").join("sync")).unwrap();
@@ -1668,7 +1668,7 @@ mod contract_tests {
     // --- SEC-04C ---
     #[test]
     fn sec04c_atomic_write_preserves_private_mode() {
-        let base = std::env::temp_dir().join(format!("upd-apt-mode-{}", std::process::id()));
+        let base = std::env::temp_dir().join(format!("cm-apt-mode-{}", std::process::id()));
         fs::create_dir_all(&base).unwrap();
         let path = base.join("sources.list");
         fs::write(&path, "deb http://example/debian stable main\n").unwrap();

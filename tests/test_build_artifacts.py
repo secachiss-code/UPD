@@ -11,7 +11,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 class BuildArtifacts(unittest.TestCase):
     def setUp(self):
-        self.temp = tempfile.TemporaryDirectory(prefix="upd build & fixture ")
+        self.temp = tempfile.TemporaryDirectory(prefix="cm build & fixture ")
         self.addCleanup(self.temp.cleanup)
         self.repo = Path(self.temp.name) / "repo with spaces"
         self.repo.mkdir()
@@ -21,10 +21,10 @@ class BuildArtifacts(unittest.TestCase):
         (self.repo / "cosmic").mkdir()
         (self.repo / "Cargo.toml").write_text('version = "1.2.3"\n')
         (self.repo / "dist").mkdir()
-        (self.repo / "dist/upd-cosmic-linux-amd64").write_text("stale GUI")
+        (self.repo / "dist/cm-cosmic-linux-amd64").write_text("stale GUI")
         self.bin = Path(self.temp.name) / "fake bin"
         self.bin.mkdir()
-        self.env = dict(os.environ, PATH=f"{self.bin}:{os.environ['PATH']}", UPD_NO_GUI="0", STUB_LIBS="1", STUB_FAIL="0", STUB_LOG=str(self.repo / "nfpm.jsonl"))
+        self.env = dict(os.environ, PATH=f"{self.bin}:{os.environ['PATH']}", CM_NO_GUI="0", STUB_LIBS="1", STUB_FAIL="0", STUB_LOG=str(self.repo / "nfpm.jsonl"))
         self.executable("pkg-config", '#!/bin/sh\n[ "$STUB_LIBS" = 1 ]\n')
         self.executable("cargo", '''#!/usr/bin/python3
 import os, pathlib, sys
@@ -35,12 +35,12 @@ gui = root.name == 'cosmic'
 if os.environ['STUB_FAIL'] == ('gui' if gui else 'cli'):
     print('intentional cargo build failure', file=sys.stderr); sys.exit(42)
 target = sys.argv[sys.argv.index('--target') + 1]
-out = root / 'target' / target / 'release' / ('upd-cosmic' if gui else 'upd')
+out = root / 'target' / target / 'release' / ('cm-cosmic' if gui else 'cm')
 out.parent.mkdir(parents=True, exist_ok=True)
 if gui:
-    body = '#!/bin/sh\\nprintf "upd-cosmic 9.8.7\\\\n"\\n'
+    body = '#!/bin/sh\\nprintf "cm-cosmic 9.8.7\\\\n"\\n'
 else:
-    body = '#!/bin/sh\\ncase "$1" in --version) printf "upd 9.8.7\\\\n" ;; gen-files) mkdir -p "$2/usr/lib/systemd" "$2/usr/share/upd" ;; *) exit 3 ;; esac\\n'
+    body = '#!/bin/sh\\ncase "$1" in --version) printf "cm 9.8.7\\\\n" ;; gen-files) mkdir -p "$2/usr/lib/systemd" "$2/usr/share/cm" ;; *) exit 3 ;; esac\\n'
 out.write_text(body); out.chmod(0o755)
 ''')
         self.executable("nfpm", '''#!/usr/bin/python3
@@ -67,21 +67,21 @@ p = pathlib.Path(args[args.index('-t') + 1]); p.mkdir(parents=True, exist_ok=Tru
         path = self.repo / "nfpm.jsonl"
         return [json.loads(line) for line in path.read_text().splitlines()] if path.exists() else []
     def test_disabled_gui_excludes_stale_binary(self):
-        result = self.package(UPD_NO_GUI="1")
+        result = self.package(CM_NO_GUI="1")
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual([e['name'] for e in self.entries()], ['upd'] * 3)
+        self.assertEqual([e['name'] for e in self.entries()], ['cm'] * 3)
         self.assertTrue(all(e['version'] == '9.8.7' for e in self.entries()))
-        self.assertFalse((self.repo / 'dist/upd-cosmic-linux-amd64').exists())
+        self.assertFalse((self.repo / 'dist/cm-cosmic-linux-amd64').exists())
     def test_missing_libs_exclude_stale_gui(self):
         result = self.package(STUB_LIBS="0")
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual([e['name'] for e in self.entries()], ['upd'] * 3)
+        self.assertEqual([e['name'] for e in self.entries()], ['cm'] * 3)
     def test_enabled_gui_uses_fresh_staging_and_build_version(self):
         result = self.package()
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual([e['name'] for e in self.entries()], ['upd', 'upd-cosmic'] * 3)
+        self.assertEqual([e['name'] for e in self.entries()], ['cm', 'cm-cosmic'] * 3)
         self.assertTrue(all(e['version'] == '9.8.7' for e in self.entries()))
-        self.assertTrue(all('/.build.' in e['config'] for e in self.entries() if e['name'] == 'upd-cosmic'))
+        self.assertTrue(all('/.build.' in e['config'] for e in self.entries() if e['name'] == 'cm-cosmic'))
     def test_failed_cli_or_gui_build_stops_packaging_and_preserves_log(self):
         for component in ['cli', 'gui']:
             with self.subTest(component=component):

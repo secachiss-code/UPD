@@ -15,12 +15,12 @@ pub fn agent(timeout: u64) -> ureq::Agent {
     ureq::AgentBuilder::new()
         .timeout_connect(Duration::from_secs(5))
         .timeout(Duration::from_secs(timeout))
-        .user_agent("upd (mirror probe)")
+        .user_agent("cm (mirror probe)")
         .build()
 }
 
 fn classify(msg: &str) -> String {
-    if std::env::var_os("UPD_DEBUG").is_some() {
+    if std::env::var_os("CM_DEBUG").is_some() {
         eprintln!("[debug] {msg}");
     }
     let m = msg.to_lowercase();
@@ -214,7 +214,7 @@ fn measure(jobs: Vec<Job>, parallel: usize, timeout: u64, deadline: Option<Insta
     let mut workers = 0;
     for _ in 0..parallel.clamp(1, MAX_PARALLEL).min(n.max(1)) {
         let (q, tx) = (queue.clone(), tx.clone());
-        let spawned = spawn_thread("upd-mirror", move || loop {
+        let spawned = spawn_thread("cm-mirror", move || loop {
             if deadline.map(|d| Instant::now() >= d).unwrap_or(false) {
                 break;
             }
@@ -869,7 +869,7 @@ mod contract_tests {
 
     #[test]
     fn space01b_uses_existing_secondary_cache_dir() {
-        let base = std::env::temp_dir().join(format!("upd-cache-{}", std::process::id()));
+        let base = std::env::temp_dir().join(format!("cm-cache-{}", std::process::id()));
         let missing = base.join("dnf");
         let existing = base.join("libdnf5");
         fs::create_dir_all(&existing).unwrap();
@@ -1022,7 +1022,7 @@ mod contract_tests {
         }
     }
 
-    // --- UPD-01 ---
+    // --- CM-01 ---
     #[test]
     fn upd01_gather_marks_update_list_failure() {
         let st = gather(&UpdatesFail, &Config::defaults(vec![]), &|_| {}, true, None);
@@ -1032,17 +1032,17 @@ mod contract_tests {
 
     #[test]
     fn space01c_statvfs_failure_surfaces_error() {
-        let err = free_space("/nonexistent-upd-statvfs-path").unwrap_err();
+        let err = free_space("/nonexistent-cm-statvfs-path").unwrap_err();
         assert!(!err.to_string().is_empty());
     }
 
     #[test]
     fn net04_pending_fingerprint_on_apply_error() {
-        let base = std::env::temp_dir().join(format!("upd-mirror-state-{}", std::process::id()));
+        let base = std::env::temp_dir().join(format!("cm-mirror-state-{}", std::process::id()));
         fs::create_dir_all(&base).unwrap();
         let _iso = crate::common::contract_fixtures::isolation_lock();
         unsafe {
-            std::env::set_var("UPD_STATE_DIR", base.to_str().unwrap());
+            std::env::set_var("CM_STATE_DIR", base.to_str().unwrap());
         }
         let st = MirrorState {
             best: vec!["https://mirror.example/$repo/os/$arch".into()],
@@ -1125,7 +1125,7 @@ mod contract_tests {
         assert!(saved.pending_apply);
         assert!(!saved.pending_fingerprint.is_empty());
         unsafe {
-            std::env::remove_var("UPD_STATE_DIR");
+            std::env::remove_var("CM_STATE_DIR");
         }
         let _ = fs::remove_dir_all(&base);
     }
@@ -1217,11 +1217,11 @@ mod contract_tests {
 
     #[test]
     fn space01a_unknown_size_skips_prefetch() {
-        let base = std::env::temp_dir().join(format!("upd-space-{}", std::process::id()));
+        let base = std::env::temp_dir().join(format!("cm-space-{}", std::process::id()));
         fs::create_dir_all(&base).unwrap();
         let _iso = crate::common::contract_fixtures::isolation_lock();
         unsafe {
-            std::env::set_var("UPD_STATE_DIR", base.to_str().unwrap());
+            std::env::set_var("CM_STATE_DIR", base.to_str().unwrap());
         }
         let spy = PrefetchSpy { called: std::sync::atomic::AtomicBool::new(false) };
         let mut st = UpdState { list: vec!["nano 1 -> 2".into()], download_size: None, ..Default::default() };
@@ -1233,7 +1233,7 @@ mod contract_tests {
         download(&spy, &Config::defaults(vec![]), &mut st, &|_| {}, true, false);
         assert!(spy.called.load(std::sync::atomic::Ordering::SeqCst));
         unsafe {
-            std::env::remove_var("UPD_STATE_DIR");
+            std::env::remove_var("CM_STATE_DIR");
         }
         let _ = fs::remove_dir_all(&base);
     }

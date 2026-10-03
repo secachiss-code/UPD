@@ -1,15 +1,15 @@
 [package]
-name = "upd"
-version = "0.2.7"
+name = "cm"
+version = "0.2.8"
 edition = "2024"
 license = "MIT"
 
 [lib]
-name = "upd"
+name = "cm"
 path = "src/lib.rs"
 
 [[bin]]
-name = "upd"
+name = "cm"
 path = "src/main.rs"
 
 [dependencies]

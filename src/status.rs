@@ -21,7 +21,7 @@ pub fn sub_info(i: &vpn::SubInfo) -> String {
 #[derive(Clone, Default)]
 pub struct Status {
     pub name: String,
-    pub upd: UpdState,
+    pub cm: UpdState,
     pub mir: MirrorState,
     pub net_label: String,
     pub pinned: Vec<String>,
@@ -48,7 +48,7 @@ pub fn gather_status(b: &dyn Backend) -> Status {
     let cache_dirs = b.cache_dirs();
     Status {
         name: b.name(),
-        upd: load_json("updates.json"),
+        cm: load_json("updates.json"),
         mir: load_mirror_state(),
         net_label: net.label.clone(),
         pinned: b.pinned(),
@@ -58,8 +58,8 @@ pub fn gather_status(b: &dyn Backend) -> Status {
         orphans: b.orphans().len(),
         cache: dir_size(&cache_dirs),
         failed: failed_units(),
-        auto_timer: unit_state("upd-auto.timer"),
-        net_timer: unit_state("upd-net.timer"),
+        auto_timer: unit_state("cm-auto.timer"),
+        net_timer: unit_state("cm-net.timer"),
         managed: b.mirrors_managed(),
         mirror_note: b.mirror_note(),
         restart: needs_restart(),
@@ -68,8 +68,8 @@ pub fn gather_status(b: &dyn Backend) -> Status {
         free: free_space(cache_dirs.first().copied().unwrap_or("/")).ok(),
         snapshots: match (b.auto_snapshots(), extras::snap_tool()) {
             (true, _) => t!("snap-pac (автоматически)").into(),
-            (_, extras::SnapTool::Snapper) => t!("snapper (делает upd)").into(),
-            (_, extras::SnapTool::Timeshift) => t!("timeshift (делает upd)").into(),
+            (_, extras::SnapTool::Snapper) => t!("snapper (делает cm)").into(),
+            (_, extras::SnapTool::Timeshift) => t!("timeshift (делает cm)").into(),
             _ => t!("нет").into(),
         },
         vpn: vpn_line(),
@@ -81,7 +81,7 @@ pub fn vpn_line() -> String {
     let st = vpn::load_state();
     let state = match unit_state(vpn::SERVICE).as_str() {
         "active" => t!("работает"),
-        "failed" => t!("ОШИБКА (journalctl -u upd-vpn)"),
+        "failed" => t!("ОШИБКА (journalctl -u cm-vpn)"),
         "" => t!("не установлен"),
         _ => t!("выключен"),
     };

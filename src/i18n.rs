@@ -402,15 +402,14 @@ mod tests {
             include_str!("summary.rs"),
             include_str!("tui.rs"),
             include_str!("tui/process.rs"),
+            include_str!("tui/host.rs"),
             include_str!("vpn.rs"),
             // графический интерфейс COSMIC — отдельный крейт, но переводы общие
             include_str!("../cosmic/src/applet.rs"),
             include_str!("../cosmic/src/main.rs"),
             include_str!("../cosmic/src/model.rs"),
             include_str!("../cosmic/src/jobs.rs"),
-            include_str!("../cosmic/src/op.rs"),
-            include_str!("../cosmic/src/ui.rs"),
-            include_str!("../cosmic/src/window.rs"),
+            include_str!("../cosmic/src/tui_launch.rs"),
         ];
         let mut keys = vec![];
         for src in files {

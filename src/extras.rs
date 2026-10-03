@@ -195,7 +195,7 @@ pub fn aur_helper() -> Option<&'static str> {
 }
 
 fn validate_aur_identity(current_uid: u32, user: &UserContext) -> Result<(), String> {
-    if user.uid == 0 { return Err(t!("AUR собирается от обычного пользователя: запусти upd без sudo или через sudo из своей сессии").into()); }
+    if user.uid == 0 { return Err(t!("AUR собирается от обычного пользователя: запусти cm без sudo или через sudo из своей сессии").into()); }
     if current_uid != 0 && current_uid != user.uid { return Err(format!("cannot run AUR as UID {} from UID {current_uid}", user.uid)); }
     Ok(())
 }
@@ -358,7 +358,7 @@ pub fn aur_install(user: Option<&str>, pkgs: &[String]) -> Result<(), String> {
     let target = match user {
         Some(name) => UserContext::from_name(name)?,
         None if current_uid != 0 => UserContext::from_uid(current_uid)?,
-        None => return Err(t!("AUR собирается от обычного пользователя: запусти upd без sudo или через sudo из своей сессии").into()),
+        None => return Err(t!("AUR собирается от обычного пользователя: запусти cm без sudo или через sudo из своей сессии").into()),
     };
     // Validate identity before offering to install a helper or starting any build.
     as_user_for_uid(current_uid, &target, "paru", &[])?;
@@ -481,9 +481,9 @@ pub fn snap_tool() -> SnapTool {
 }
 
 /// Описания снапшотов записываются по-английски: их показывают GRUB (grub-btrfs), snapper и btrfs-assistant,
-/// а шрифт GRUB может не иметь кириллицы, китайских и арабских букв. В списке upd они переводятся (snap_desc_label).
-pub const SNAP_PRE_DESC: &str = "upd: before update";
-pub const SNAP_POST_DESC: &str = "upd: after update";
+/// а шрифт GRUB может не иметь кириллицы, китайских и арабских букв. В списке cm они переводятся (snap_desc_label).
+pub const SNAP_PRE_DESC: &str = "cm: before update";
+pub const SNAP_POST_DESC: &str = "cm: after update";
 
 /// Снапшот перед обновлением. Возвращает номер (для snapper — чтобы связать с «после»).
 pub fn snap_pre() -> Result<Option<String>, String> {
@@ -510,8 +510,8 @@ pub fn snap_post(pre: &str) {
 /// Описание снапшота для показа: свои (и прежние русские) — на языке интерфейса, чужие — как есть.
 fn snap_desc_label(d: &str) -> String {
     match d {
-        SNAP_PRE_DESC | "upd: перед обновлением" => t!("upd: перед обновлением").into(),
-        SNAP_POST_DESC | "upd: после обновления" => t!("upd: после обновления").into(),
+        SNAP_PRE_DESC | "cm: перед обновлением" | "upd: before update" | "upd: перед обновлением" => t!("cm: перед обновлением").into(),
+        SNAP_POST_DESC | "cm: после обновления" | "upd: after update" | "upd: после обновления" => t!("cm: после обновления").into(),
         _ => d.into(),
     }
 }
@@ -547,7 +547,7 @@ pub fn snap_list(n: usize) -> Vec<String> {
                 .0
                 .lines()
                 .filter(|l| l.trim_start().chars().next().map(|c| c.is_ascii_digit()).unwrap_or(false))
-                .map(|l| l.replace(SNAP_PRE_DESC, t!("upd: перед обновлением")))
+                .map(|l| l.replace(SNAP_PRE_DESC, t!("cm: перед обновлением")))
                 .collect();
             r.reverse();
             r.truncate(n);
@@ -562,7 +562,7 @@ pub fn rollback_hint() -> Vec<String> {
     match snap_tool() {
         SnapTool::Snapper if grub_btrfs => vec![
             t!("Как откатиться:").into(),
-            t!("  1. Перезагрузись, в меню GRUB выбери «… snapshots» → снапшот «upd: before update».").into(),
+            t!("  1. Перезагрузись, в меню GRUB выбери «… snapshots» → снапшот «cm: before update».").into(),
             t!("  2. Если система в нём работает — сделай его постоянным:").into(),
             if have("btrfs-assistant") { "     btrfs-assistant → Snapper → Browse/Restore → Restore".into() } else { t!("     sudo snapper rollback <номер>").into() },
             t!("  3. Перезагрузись ещё раз.").into(),
@@ -630,12 +630,12 @@ mod contract_tests {
     }
 
     fn bin_fixture(name: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!("upd-{name}-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("cm-{name}-{}", std::process::id()));
         fs::create_dir_all(&dir).unwrap();
         dir
     }
 
-    // --- UPD-04A ---
+    // --- CM-04A ---
     #[test]
     fn upd04a_missing_optional_flatpak_is_skipped() {
         let _isolation = crate::common::contract_fixtures::isolation_lock();
@@ -689,7 +689,7 @@ mod contract_tests {
         assert!(!crate::common::contract_fixtures::with_prepend_path(&dir, || flatpak_updates(None)).error.is_empty());
     }
 
-    // --- UPD-04B ---
+    // --- CM-04B ---
     #[test]
     fn upd04b_fwupd_command_failure_is_error() {
         let dir = bin_fixture("fwupd-err");
@@ -740,7 +740,7 @@ mod contract_tests {
         assert!(!valid_pkg_name("Foo") && !valid_pkg_name("a b") && !valid_pkg_name("a;rm"));
     }
 
-    // --- UPD-04C ---
+    // --- CM-04C ---
     #[test]
     fn upd04c_aur_exit1_without_output_is_empty() {
         let dir = bin_fixture("aur-none");
@@ -780,7 +780,7 @@ mod contract_tests {
         assert!(err.contains('4'), "{err}");
     }
 
-    // --- UPD-06 ---
+    // --- CM-06 ---
     #[test]
     fn upd06_flatpak_checks_user_and_system_scopes() {
         let dir = bin_fixture("flatpak-both");
@@ -788,7 +788,7 @@ mod contract_tests {
             &dir.join("flatpak"),
             "#!/bin/sh\ncase \"$*\" in *--user*) echo 'org.example.User 2.0';; *) echo 'org.example.Sys 1.0';; esac\nexit 0\n",
         );
-        write_executable(&dir.join("getent"), "#!/bin/sh\necho 'updtest:x:1000:1000:upd:/tmp:/bin/sh'\n");
+        write_executable(&dir.join("getent"), "#!/bin/sh\necho 'updtest:x:1000:1000:cm:/tmp:/bin/sh'\n");
         write_executable(&dir.join("runuser"), "#!/bin/sh\nflatpak \"$@\"\n");
         let _g = DirGuard::new(dir.clone());
         let result = crate::common::contract_fixtures::with_prepend_path(&dir, || flatpak_updates(Some("updtest")));

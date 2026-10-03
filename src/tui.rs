@@ -2,11 +2,12 @@
 
 mod process;
 mod progress;
+mod host;
 
-use upd::backend::{self, Backend};
-use upd::common::*;
-use upd::mirrors::{apply_mirrors, candidates, load_mirror_state};
-use upd::{extras, gather_status, sub_info, vpn, Status};
+use cm::backend::{self, Backend};
+use cm::common::*;
+use cm::mirrors::{apply_mirrors, candidates, load_mirror_state};
+use cm::{extras, gather_status, sub_info, vpn, Status};
 use ratatui::crossterm::event::{self, Event, KeyCode, KeyEventKind, KeyModifiers};
 use ratatui::crossterm::terminal::{disable_raw_mode, enable_raw_mode};
 use ratatui::layout::{Constraint, Layout};
@@ -128,7 +129,7 @@ impl<T: Send + 'static> Job<T> {
             return Ok(false);
         }
         let (tx, rx) = mpsc::channel();
-        spawn_thread("upd-tui-job", move || {
+        spawn_thread("cm-tui-job", move || {
             let _ = tx.send(f());
         })?;
         self.rx = Some(rx);
@@ -203,7 +204,7 @@ fn vpn_opts(c: &Config, st: &vpn::VpnState, unit: &str) -> Result<Vec<Opt>, Stri
             "VPN",
             match unit {
                 "active" => t!("работает — выключить"),
-                "" => t!("служба не установлена — sudo upd install"),
+                "" => t!("служба не установлена — sudo cm install"),
                 "failed" => t!("ошибка запуска — включить снова"),
                 _ => t!("выключен — включить"),
             }
@@ -232,7 +233,7 @@ fn collect_vpn_page(mirrors: Vec<String>) -> VpnPage {
     let service = unit_state(vpn::SERVICE);
     let state = vpn::load_state();
     let cfg = Config::load(mirrors);
-    let warning = cfg.as_ref().ok().and_then(vpn::conflict);
+    let warning = cfg.as_ref().ok().and_then(vpn::conflict).or_else(|| vpn::last_failure().filter(|error| error.resolved.is_none()).map(|error| format!("{} · {} · «{}»: {}", fmt_time(error.time), error.stage, error.subscription, error.reason)));
     let (opts, opts_err) = match cfg.and_then(|c| vpn_opts(&c, &state, &service)) {
         Ok(opts) => (opts, String::new()),
         Err(e) => (vec![], e),
@@ -308,6 +309,7 @@ struct App<'a> {
     st_job: Job<Result<Status, String>>,
     /// когда собран показанный снимок состояния
     st_at: i64,
+    host: host::Monitor,
     st_err: String,
     scr: Screen,
     sel: usize,
@@ -384,6 +386,10 @@ fn lost_msg() -> String {
 }
 
 pub fn run(b: &dyn Backend) -> i32 {
+    let _session = match cm::summary::TuiSession::register() {
+        Ok(session) => Some(session),
+        Err(error) => { eprintln!("cm: TUI indicator: {error}"); None }
+    };
     let ui = HostUiData;
     let mut app = App::new(b, &ui, None, None);
     app.reload();
@@ -391,7 +397,7 @@ pub fn run(b: &dyn Backend) -> i32 {
     let r = app.main_loop(&mut term);
     ratatui::restore();
     if let Err(e) = r {
-        eprintln!("upd: {e}");
+        eprintln!("cm: {e}");
         return 1;
     }
     0
@@ -405,6 +411,7 @@ impl<'a> App<'a> {
             ui,
             st_at: if st.is_some() { now() } else { 0 },
             st,
+            host: host::Monitor::new(),
             st_job: Job::default(),
             st_err: String::new(),
             scr: Screen::Menu,
@@ -500,6 +507,7 @@ impl<'a> App<'a> {
 
     fn main_loop(&mut self, term: &mut DefaultTerminal) -> std::io::Result<()> {
         while !self.quit {
+            if self.scr == Screen::Menu { self.host.refresh(); }
             self.poll_status();
             self.poll_action();
             self.vpn_poll();
@@ -521,12 +529,20 @@ impl<'a> App<'a> {
             if event::poll(Duration::from_millis(200))? {
                 match event::read()? {
                     Event::Resize(w, h) => {
+                        term.clear()?;
                         if let Some(p) = &self.process {
                             let _ = p.resize(h.saturating_sub(7), w);
                         }
                     }
                     Event::Key(k) => {
                         if k.kind != KeyEventKind::Press {
+                            continue;
+                        }
+                        let size = term.size()?;
+                        if size.width < 40 || size.height < 12 {
+                            if matches!(k.code, KeyCode::Esc | KeyCode::Char('q')) || (k.code == KeyCode::Char('c') && k.modifiers.contains(KeyModifiers::CONTROL)) {
+                                self.quit = true;
+                            }
                             continue;
                         }
                         if self.scr == Screen::Process {
@@ -587,7 +603,7 @@ impl<'a> App<'a> {
 
     fn exec_external(&mut self, term: &mut DefaultTerminal, args: &[String]) -> std::io::Result<()> {
         ratatui::restore();
-        let exe = std::env::current_exe().unwrap_or_else(|_| "upd".into());
+        let exe = std::env::current_exe().unwrap_or_else(|_| "cm".into());
         let st = std::process::Command::new(exe).args(args).arg("--pause").status();
         *term = ratatui::init();
         term.clear()?;
@@ -861,7 +877,7 @@ impl<'a> App<'a> {
         }
     }
 
-    /// Обработка клавиши; Some(args) — запустить upd с этими аргументами.
+    /// Обработка клавиши; Some(args) — запустить cm с этими аргументами.
     fn key(&mut self, k: KeyCode) -> Args {
         if self.input.is_some() {
             self.key_input(k);
@@ -1099,13 +1115,14 @@ impl<'a> App<'a> {
     fn draw_aur(&mut self, f: &mut Frame, area: ratatui::layout::Rect) {
         let [info, table, desc] = Layout::vertical([Constraint::Length(1), Constraint::Min(3), Constraint::Length(3)]).areas(area);
         let head = if self.input.is_some() && self.input_key == "aur" {
-            self.input_line(t!("Поиск в AUR: "))
+            self.input_line(t!("Поиск в AUR: "), info.width)
         } else {
             let state = if self.aur.status.is_empty() { t!("нажми / или s, чтобы искать").to_string() } else { format!("«{}» · {}", self.aur.query, self.aur.status) };
             let color = if self.aur.failed { Style::new().fg(Color::Red) } else { dim() };
             Line::styled(state, color)
         };
         f.render_widget(Paragraph::new(head), info);
+        let wide = table.width >= 80;
         let rows: Vec<Row> = self
             .aur
             .list
@@ -1117,11 +1134,20 @@ impl<'a> App<'a> {
                     None => Span::raw(""),
                 };
                 let ver = if p.out_of_date { Span::styled(p.version.clone(), Style::new().fg(Color::Red)) } else { Span::raw(p.version.clone()) };
-                Row::new(vec![Cell::from(mark), Cell::from(p.name.clone()), Cell::from(ver), Cell::from(p.votes.to_string()), Cell::from(format!("{:.2}", p.popularity))])
+                if wide {
+                    Row::new(vec![Cell::from(mark), Cell::from(p.name.clone()), Cell::from(ver), Cell::from(p.votes.to_string()), Cell::from(format!("{:.2}", p.popularity))])
+                } else {
+                    Row::new(vec![Cell::from(mark), Cell::from(p.name.clone()), Cell::from(ver)])
+                }
             })
             .collect();
-        let t = Table::new(rows, [Constraint::Length(2), Constraint::Min(20), Constraint::Length(22), Constraint::Length(7), Constraint::Length(8)])
-            .header(Row::new(vec!["", t!("пакет"), t!("версия"), t!("голоса"), t!("попул.")]).style(dim()))
+        let (columns, headers) = if wide {
+            (vec![Constraint::Length(2), Constraint::Min(1), Constraint::Length(22), Constraint::Length(7), Constraint::Length(8)], vec!["", t!("пакет"), t!("версия"), t!("голоса"), t!("попул.")])
+        } else {
+            (vec![Constraint::Length(2), Constraint::Fill(3), Constraint::Fill(2)], vec!["", t!("пакет"), t!("версия")])
+        };
+        let t = Table::new(rows, columns)
+            .header(Row::new(headers).style(dim()))
             .row_highlight_style(Style::new().add_modifier(Modifier::REVERSED))
             .block(Block::bordered().border_type(BorderType::Rounded).border_style(dim()).title(" AUR "));
         f.render_stateful_widget(t, table, &mut self.aur.table);
@@ -1259,12 +1285,20 @@ impl<'a> App<'a> {
     }
 
     /// Поле ввода с подсказкой формата и ошибкой проверки рядом.
-    fn input_line(&self, label: &str) -> Line<'static> {
-        let buf = self.input.clone().unwrap_or_default();
-        let mut spans = vec![Span::raw(label.to_string()), Span::styled(format!("{buf}▏"), Style::new().fg(Color::Cyan)), Span::styled(format!("  {}", self.input_hint()), dim())];
-        if !self.input_err.is_empty() {
-            spans.push(Span::styled(format!("  ⚠ {}", self.input_err), Style::new().fg(Color::Red)));
+    fn input_line(&self, label: &str, width: u16) -> Line<'static> {
+        let buf = terminal_label(self.input.as_deref().unwrap_or_default());
+        let available = (width as usize).saturating_sub(Span::raw(label).width() + 1);
+        let hint = if self.input_err.is_empty() { self.input_hint() } else { format!("! {}", self.input_err) };
+        let hint_width = (available / 2).min(Span::raw(hint.as_str()).width() + 2);
+        let input_width = available.saturating_sub(hint_width);
+        let mut visible = String::new();
+        for ch in buf.chars().rev() {
+            let candidate = format!("{ch}{visible}");
+            if Span::raw(candidate.as_str()).width() > input_width { break; }
+            visible = candidate;
         }
+        let hint_style = if self.input_err.is_empty() { dim() } else { Style::new().fg(Color::Red) };
+        let spans = vec![Span::raw(label.to_string()), Span::styled(format!("{visible}▏"), Style::new().fg(Color::Cyan)), Span::styled(format!("  {}", terminal_label(&hint)), hint_style)];
         Line::from(spans)
     }
 
@@ -1393,9 +1427,17 @@ impl App<'_> {
     // ---------- отрисовка ----------
 
     fn draw(&mut self, f: &mut Frame) {
+        if f.area().width < 40 || f.area().height < 12 {
+            f.render_widget(Paragraph::new(vec![
+                Line::styled("cm", Style::new().fg(Color::Cyan)),
+                Line::raw(format!("{}x{} / min 40x12", f.area().width, f.area().height)),
+                Line::raw(format!("q / Esc: {}", t!("выход"))),
+            ]), f.area());
+            return;
+        }
         let [head, body, foot] = Layout::vertical([Constraint::Length(1), Constraint::Min(3), Constraint::Length(3)]).areas(f.area());
         f.render_widget(
-            Line::from(vec![" upd ".bold().black().on_cyan(), Span::raw(" "), Span::styled(t!("обновление системы · {}", self.b.name()), dim())]),
+            Line::from(vec![" CM ".bold().black().on_cyan(), Span::raw(" "), Span::styled(t!("обновление системы · {}", self.b.name()), dim())]),
             head,
         );
         let keys: Vec<(&str, &str)> = match (&self.scr, self.input.is_some()) {
@@ -1449,8 +1491,9 @@ impl App<'_> {
             kl.push(desc);
         }
         help.push(Line::from(kl));
+        help.resize(2, Line::default());
         let msg = if self.act.busy() && self.msg.is_empty() { format!("⏳ {}...", self.act_label) } else { self.msg.clone() };
-        help.push(Line::from(Span::styled(msg, Style::new().fg(Color::Yellow))));
+        help.push(Line::from(Span::styled(terminal_label(&msg), Style::new().fg(Color::Yellow))));
         f.render_widget(Paragraph::new(help), foot);
         match self.scr {
             Screen::Menu => self.draw_menu(f, body),
@@ -1550,11 +1593,6 @@ impl App<'_> {
     }
 
     fn draw_menu(&self, f: &mut Frame, area: ratatui::layout::Rect) {
-        let lines = match &self.st {
-            None if !self.st_err.is_empty() => vec![Line::styled(t!("⚠ состояние не собрано: {0}", self.st_err), Style::new().fg(Color::Red))],
-            None => vec![Line::styled(t!("загружаю состояние..."), dim())],
-            Some(s) => status_lines(s),
-        };
         let items = menu_items(self.b);
         let menu_rows = items.len() + items.iter().filter(|item| menu_group(**item).is_some()).count();
         let [top, bottom] = if area.width >= 110 && area.height >= 20 {
@@ -1563,8 +1601,9 @@ impl App<'_> {
             let top_height = area.height.saturating_sub(menu_rows as u16).clamp(5, 7).min(area.height.saturating_sub(3));
             Layout::vertical([Constraint::Length(top_height), Constraint::Min(3)]).areas(area)
         };
+        let lines = if top.height < 15 { self.host.compact_lines() } else { self.host.lines() };
         f.render_widget(
-            Paragraph::new(lines).wrap(Wrap { trim: false }).block(Block::bordered().border_type(BorderType::Rounded).border_style(dim()).title(format!("{} · i · {} ", t!(" Состояние ").trim_end(), self.status_age()))),
+            Paragraph::new(lines).wrap(Wrap { trim: false }).block(Block::bordered().border_type(BorderType::Rounded).border_style(dim()).title(format!(" {} · 1 {} · i: {} ", t!("Хост и ресурсы"), t!("с"), t!("Состояние")))),
             top,
         );
         let n_items = items.len();
@@ -1599,15 +1638,14 @@ impl App<'_> {
             f.render_widget(Paragraph::new(text).block(Block::bordered().title(t!(" Зеркала "))), area);
             return;
         };
-        let hints = v.st.hints.len() as u16;
-        let [info, table, hint_area] = Layout::vertical([Constraint::Length(2), Constraint::Min(3), Constraint::Length(if hints > 0 { hints * 2 + 1 } else { 0 })]).areas(area);
+        let [info, table, hint_area] = Layout::vertical([Constraint::Length(2), Constraint::Min(3), Constraint::Length(3)]).areas(area);
         let mut info_lines = vec![Line::from(vec![
             Span::styled(t!("сеть: "), dim()),
             Span::raw(v.net_label.clone()),
             Span::styled(t!(" · замер: {} · закреплять лучших: {}", fmt_ago(v.st.checked), v.keep), dim()),
         ])];
         if self.input.is_some() {
-            info_lines.push(self.input_line(t!("Новое зеркало: ")));
+            info_lines.push(self.input_line(t!("Новое зеркало: "), info.width));
         } else if !self.m_err.is_empty() {
             info_lines.push(Line::styled(t!("⚠ новый снимок не получен: {0}", self.m_err), Style::new().fg(Color::Red)));
         } else if v.st.pending_apply {
@@ -1648,8 +1686,8 @@ impl App<'_> {
             Table::new(rows, [Constraint::Length(2), Constraint::Length(13), Constraint::Min(10)]).header(Row::new(vec!["", t!("скорость"), t!("адрес")]).style(dim()))
         };
         f.render_stateful_widget(t.row_highlight_style(Style::new().add_modifier(Modifier::REVERSED)).block(block), table, &mut self.m_state);
-        if hints > 0 {
-            let l: Vec<Line> = v.st.hints.iter().map(|h| Line::styled(format!("💡 {h}"), Style::new().fg(Color::Yellow))).collect();
+        if !v.st.hints.is_empty() {
+            let l: Vec<Line> = v.st.hints.iter().map(|h| Line::styled(format!("> {}", terminal_label(h)), Style::new().fg(Color::Yellow))).collect();
             f.render_widget(Paragraph::new(l).wrap(Wrap { trim: true }), hint_area);
         }
     }
@@ -1694,6 +1732,11 @@ fn delay_span(d: Option<&u64>) -> Span<'static> {
 /// В TUI показываем код страны обычными символами, чтобы при перерисовке не оставались хвосты.
 fn tui_vpn_label(name: &str) -> String {
     let label = vpn::label(name);
+    terminal_label(&label)
+}
+
+/// Имена из подписок не должны управлять терминалом или зависеть от ширины emoji-шрифта.
+fn terminal_label(label: &str) -> String {
     let mut chars = label.chars().peekable();
     let mut out = String::with_capacity(label.len());
     while let Some(ch) = chars.next() {
@@ -1711,7 +1754,15 @@ fn tui_vpn_label(name: &str) -> String {
                 }
             }
         }
-        out.push(ch);
+        match ch {
+            '\u{200d}' | '\u{fe0e}' | '\u{fe0f}' | '\u{1f3fb}'..='\u{1f3ff}' => {},
+            '\u{202a}'..='\u{202e}' | '\u{2066}'..='\u{2069}' => {},
+            ch if ch.is_control() => out.push(' '),
+            '⚡' => out.push('*'),
+            '⏳' | '⌛' => out.push_str("[...]"),
+            '\u{1f000}'..='\u{1faff}' | '\u{2600}'..='\u{27bf}' => out.push('*'),
+            _ => out.push(ch),
+        }
     }
     out
 }
@@ -1744,10 +1795,21 @@ impl App<'_> {
     }
 
     fn set_vpn_page(&mut self, page: VpnPage) {
-        if !self.v.group_set {
+        let old_group = self.v.page.as_ref().and_then(|p| p.snap.groups.get(self.v.group));
+        let group_name = old_group.map(|g| g.name.clone());
+        let node_name = old_group.and_then(|g| self.v.nodes.selected().and_then(|i| g.all.get(i))).cloned();
+        let sub_id = self.v.page.as_ref().and_then(|p| self.v.subs.selected().and_then(|i| p.state.subs.get(i))).map(|s| s.id.clone());
+        if let Some(i) = group_name.and_then(|name| page.snap.groups.iter().position(|g| g.name == name)) {
+            self.v.group = i;
+        } else if !self.v.group_set {
             self.v.group = page.snap.groups.iter().position(|g| g.kind == "Selector").unwrap_or(0);
         }
         self.v.group = self.v.group.min(page.snap.groups.len().saturating_sub(1));
+        if let Some(i) = self.v.nodes.selected() {
+            let nodes = page.snap.groups.get(self.v.group).map(|g| g.all.as_slice()).unwrap_or(&[]);
+            let selected = node_name.and_then(|name| nodes.iter().position(|n| *n == name)).unwrap_or(i.min(nodes.len().saturating_sub(1)));
+            self.v.nodes.select(if nodes.is_empty() { None } else { Some(selected) });
+        }
         // подтверждённой записи больше нет — подтверждение снимается, а не переходит на соседнюю строку
         if let Some((id, name)) = &self.v.confirm {
             if !page.state.subs.iter().any(|s| &s.id == id) {
@@ -1757,7 +1819,8 @@ impl App<'_> {
         }
         // список подписок мог стать короче — выбор остаётся на существующей строке
         if let Some(i) = self.v.subs.selected() {
-            self.v.subs.select(Some(i.min(page.state.subs.len().saturating_sub(1))));
+            let selected = sub_id.and_then(|id| page.state.subs.iter().position(|s| s.id == id)).unwrap_or(i.min(page.state.subs.len().saturating_sub(1)));
+            self.v.subs.select(if page.state.subs.is_empty() { None } else { Some(selected) });
         }
         self.v.page = Some(page);
     }
@@ -1915,7 +1978,7 @@ impl App<'_> {
         match k {
             KeyCode::Up | KeyCode::Char('k') => self.v.subs.select(Some(sel.saturating_sub(1))),
             KeyCode::Down | KeyCode::Char('j') => self.v.subs.select(Some((sel + 1).min(subs.len().saturating_sub(1)))),
-            // адрес подписки — секрет: его спрашивает `upd vpn add` в терминале, а не TUI
+            // адрес подписки — секрет: его спрашивает `cm vpn add` в терминале, а не TUI
             KeyCode::Char('n') | KeyCode::Char('a') => return cmd(&["vpn", "add"]),
             KeyCode::Char('u') if !subs.is_empty() => return cmd(&["vpn", "update"]),
             // запись адресуется неизменным id: сдвиг строк между выбором и командой не меняет цель
@@ -1992,11 +2055,11 @@ impl App<'_> {
                                 return t!("не сохранено: {0}", e);
                             }
                             if !installed {
-                                return t!("сохранено; служба появится после sudo upd install").into();
+                                return t!("сохранено; служба появится после sudo cm install").into();
                             }
                             match vpn::autostart(on) {
                                 Ok(()) => t!("запуск при загрузке: {}", on_off(on)),
-                                Err(e) => format!("settings saved, but autostart not applied: {e}; retry: upd vpn restart"),
+                                Err(e) => format!("settings saved, but autostart not applied: {e}; retry: cm vpn restart"),
                             }
                         });
                     }
@@ -2041,7 +2104,7 @@ impl App<'_> {
             l1.push(Span::raw(format!(" · {} · {mode} · mihomo {}", if s.tun { "TUN" } else { t!("прокси") }, s.version)));
         } else {
             let st = page.service.as_str();
-            l1.push(Span::styled(if st == "failed" { t!("● ошибка запуска (journalctl -u upd-vpn)") } else { t!("○ выключен") }, Style::new().fg(if st == "failed" { Color::Red } else { Color::DarkGray })));
+            l1.push(Span::styled(if st == "failed" { t!("● ошибка запуска (journalctl -u cm-vpn)") } else { t!("○ выключен") }, Style::new().fg(if st == "failed" { Color::Red } else { Color::DarkGray })));
         }
         let st = &page.state;
         if let Some(a) = st.subs.iter().find(|x| x.active) {
@@ -2055,13 +2118,13 @@ impl App<'_> {
             Line::styled(t!("s — включить"), dim())
         };
         let l3 = if self.input.is_some() {
-            self.input_line(t!("Новое значение: "))
+            self.input_line(t!("Новое значение: "), info.width)
         } else if let Some((_, name)) = &self.v.confirm {
             Line::styled(t!("Удалить подписку «{0}»? y или Enter — удалить, n или Esc — отмена", tui_vpn_label(name)), Style::new().fg(Color::Yellow).add_modifier(Modifier::BOLD))
         } else if let Some(w) = &page.warning {
-            Line::styled(format!("⚠ {w}"), Style::new().fg(Color::Red))
+            Line::styled(format!("⚠ {}", terminal_label(w)), Style::new().fg(Color::Red))
         } else {
-            Line::raw("")
+            Line::styled(s.health_line(), dim())
         };
         f.render_widget(Paragraph::new(vec![Line::from(l1), l2, l3]), info);
         let mut tl = vec![];
@@ -2082,18 +2145,22 @@ impl App<'_> {
                     let why = if s.running {
                         t!("ядро работает, но не отдало групп серверов — проверь подписку").to_string()
                     } else if !s.error.is_empty() {
-                        t!("ядро не отвечает: {0}", s.error)
+                        t!("ядро не отвечает: {0}", terminal_label(&s.error))
                     } else if page.service == "active" {
                         t!("ядро запускается...").into()
                     } else if page.service.is_empty() {
-                        t!("служба не установлена — sudo upd install").into()
+                        t!("служба не установлена — sudo cm install").into()
                     } else {
                         t!("служба VPN выключена — s, чтобы включить").into()
                     };
                     f.render_widget(Paragraph::new(Line::styled(why, dim())).block(blk(t!(" Серверы ").into())), body);
                     return;
                 }
-                let [gl, nl] = Layout::horizontal([Constraint::Percentage(35), Constraint::Min(20)]).areas(body);
+                let [gl, nl] = if body.width >= 90 {
+                    Layout::horizontal([Constraint::Percentage(35), Constraint::Percentage(65)]).areas(body)
+                } else {
+                    Layout::vertical([Constraint::Length(3), Constraint::Min(3)]).areas(body)
+                };
                 let glines: Vec<Line> = s
                     .groups
                     .iter()
@@ -2132,7 +2199,8 @@ impl App<'_> {
                     "Fallback" => t!("первый живой"),
                     _ => t!("балансировка"),
                 };
-                let t = Table::new(rows, [Constraint::Length(2), Constraint::Min(20), Constraint::Length(24)]).row_highlight_style(hl).block(blk(format!(" {} · {kind} ", tui_vpn_label(&g.name))));
+                let detail_width = if nl.width >= 64 { 24 } else { 16 };
+                let t = Table::new(rows, [Constraint::Length(2), Constraint::Min(1), Constraint::Length(detail_width)]).row_highlight_style(hl).block(blk(format!(" {} · {kind} ", tui_vpn_label(&g.name))));
                 f.render_stateful_widget(t, nl, &mut self.v.nodes);
             }
             1 => {
@@ -2148,9 +2216,9 @@ impl App<'_> {
                         let info = info.trim_start_matches(" · ").to_string();
                         let mark = Cell::from(Span::styled(if x.active { "●" } else { "" }, Style::new().fg(Color::Cyan)));
                         let name = Cell::from(format!("{}. {}", i + 1, tui_vpn_label(&x.name)));
-                        let state = Cell::from(if x.error.is_empty() { Span::raw(info) } else { Span::styled(format!("⚠ {}", x.error), Style::new().fg(Color::Red)) });
+                        let state = Cell::from(if x.error.is_empty() { Span::raw(info) } else { Span::styled(format!("⚠ {}", terminal_label(&x.error)), Style::new().fg(Color::Red)) });
                         if wide {
-                            Row::new(vec![mark, name, Cell::from(Span::styled(x.host.clone(), dim())), Cell::from(x.nodes.to_string()), Cell::from(fmt_ago(x.updated)), state])
+                            Row::new(vec![mark, name, Cell::from(Span::styled(terminal_label(&x.host), dim())), Cell::from(x.nodes.to_string()), Cell::from(fmt_ago(x.updated)), state])
                         } else {
                             Row::new(vec![mark, name, state])
                         }
@@ -2168,7 +2236,7 @@ impl App<'_> {
                     if !x.error.is_empty() {
                         l += &format!(" · ⚠ {}", x.error);
                     }
-                    f.render_widget(Paragraph::new(l).wrap(Wrap { trim: true }).style(if x.error.is_empty() { dim() } else { Style::new().fg(Color::Red) }), detail);
+                    f.render_widget(Paragraph::new(terminal_label(&l)).wrap(Wrap { trim: true }).style(if x.error.is_empty() { dim() } else { Style::new().fg(Color::Red) }), detail);
                 }
             }
             _ => {
@@ -2176,7 +2244,7 @@ impl App<'_> {
                     f.render_widget(Paragraph::new(t!("не удалось открыть настройки VPN: {0}", page.opts_err)).block(blk(t!(" Настройки ").into())), body);
                 } else {
                     let rows: Vec<Row> = page.opts.iter().map(|o| Row::new(vec![Cell::from(o.label), Cell::from(o.value.clone())])).collect();
-                    let t = Table::new(rows, [Constraint::Length(30), Constraint::Min(20)]).row_highlight_style(hl).block(blk(t!(" Настройки ").into()));
+                    let t = Table::new(rows, [Constraint::Fill(2), Constraint::Fill(3)]).row_highlight_style(hl).block(blk(t!(" Настройки ").into()));
                     f.render_stateful_widget(t, body, &mut self.v.opts);
                 }
             }
@@ -2192,42 +2260,44 @@ fn status_lines(s: &Status) -> Vec<Line<'static>> {
     let ok = |t: String| Span::styled(t, Style::new().fg(Color::Green));
     let warn = |t: String| Span::styled(t, Style::new().fg(Color::Yellow));
     let bad = |t: String| Span::styled(t, Style::new().fg(Color::Red));
+    let label_width = [t!("Обновления"), t!("Новости Arch"), t!("Последнее"), t!("После обновл."), t!("Сеть"), t!("Зеркала"), t!("Снапшоты"), "VPN", t!("Обслуживание"), t!("Автоматика")]
+        .iter().map(|label| Span::raw(*label).width()).max().unwrap_or(12).max(12) + 2;
     let row = |k: &str, v: Vec<Span<'static>>| {
-        let mut l = vec![Span::styled(format!("{k:<14}"), dim())];
-        l.extend(v);
+        let mut l = vec![Span::styled(format!("{k}{}", " ".repeat(label_width.saturating_sub(Span::raw(k).width()))), dim())];
+        l.extend(v.into_iter().map(|s| Span::styled(terminal_label(&s.content), s.style)));
         Line::from(l)
     };
-    let u = &s.upd;
-    let mut upd = vec![];
+    let u = &s.cm;
+    let mut cm = vec![];
     let total = u.list.len() + u.flatpak.len();
     if total == 0 && u.flatpak_error.is_empty() {
-        upd.push(ok(t!("нет").into()));
+        cm.push(ok(t!("нет").into()));
     } else {
-        upd.push(warn(t!("пакетов {}", u.list.len())));
+        cm.push(warn(t!("пакетов {}", u.list.len())));
         if !u.flatpak.is_empty() {
-            upd.push(warn(format!(", Flatpak {}", u.flatpak.len())));
+            cm.push(warn(format!(", Flatpak {}", u.flatpak.len())));
         }
         if u.downloaded {
-            upd.push(ok(t!(" · скачаны").into()));
+            cm.push(ok(t!(" · скачаны").into()));
         }
     }
     if !u.flatpak_error.is_empty() {
-        upd.push(bad(t!(" · ошибка проверки Flatpak: {}", u.flatpak_error)));
+        cm.push(bad(t!(" · ошибка проверки Flatpak: {}", u.flatpak_error)));
     }
     if !u.firmware.is_empty() {
-        upd.push(warn(t!(" · прошивок {}", u.firmware.len())));
+        cm.push(warn(t!(" · прошивок {}", u.firmware.len())));
     }
     if !u.firmware_error.is_empty() {
-        upd.push(bad(t!(" · ошибка проверки прошивок: {}", u.firmware_error)));
+        cm.push(bad(t!(" · ошибка проверки прошивок: {}", u.firmware_error)));
     }
     if !u.error.is_empty() {
-        upd.push(bad(format!(" · {}", u.error)));
+        cm.push(bad(format!(" · {}", u.error)));
     }
     if !u.skipped.is_empty() {
-        upd.push(warn(format!(" · {}", u.skipped)));
+        cm.push(warn(format!(" · {}", u.skipped)));
     }
-    upd.push(Span::styled(t!(" · проверка {}", fmt_ago(u.checked)), dim()));
-    let mut out = vec![row(t!("Обновления"), upd)];
+    cm.push(Span::styled(t!(" · проверка {}", fmt_ago(u.checked)), dim()));
+    let mut out = vec![row(t!("Обновления"), cm)];
     if !u.news.is_empty() {
         out.push(row(t!("Новости Arch"), vec![bad(t!("{} непрочитанных — прочитай до обновления (пункт 3)", u.news.len()))]));
     }
@@ -2265,7 +2335,7 @@ fn status_lines(s: &Status) -> Vec<Line<'static>> {
     }
     out.push(row(t!("Снапшоты"), vec![Span::raw(s.snapshots.clone())]));
     if !s.vpn.is_empty() {
-        let v = if s.vpn.starts_with(t!("работает")) { ok(tui_vpn_label(&s.vpn)) } else if s.vpn.starts_with(t!("ОШИБКА (journalctl -u upd-vpn)")) { bad(tui_vpn_label(&s.vpn)) } else { Span::raw(tui_vpn_label(&s.vpn)) };
+        let v = if s.vpn.starts_with(t!("работает")) { ok(tui_vpn_label(&s.vpn)) } else if s.vpn.starts_with(t!("ОШИБКА (journalctl -u cm-vpn)")) { bad(tui_vpn_label(&s.vpn)) } else { Span::raw(tui_vpn_label(&s.vpn)) };
         out.push(row("VPN", vec![v, Span::styled(t!(" (пункт 5)"), dim())]));
     }
     let pend = if s.pending.is_empty() { Span::raw("0") } else { warn(s.pending.len().to_string()) };
@@ -2282,7 +2352,7 @@ fn status_lines(s: &Status) -> Vec<Line<'static>> {
     let st = |v: &str| if v == "active" { ok(unit_label(v)) } else { bad(unit_label(v)) };
     out.push(row(t!("Автоматика"), vec![Span::raw(t!("обновления ")), st(&s.auto_timer), Span::raw(t!(" · слежение за сетью ")), st(&s.net_timer)]));
     if s.auto_timer != "active" {
-        out.push(Line::styled(t!("              установи: sudo upd install"), dim()));
+        out.push(Line::styled(t!("              установи: sudo cm install"), dim()));
     }
     out
 }
@@ -2388,8 +2458,31 @@ mod tests {
     }
 
     #[test]
+    fn main_menu_shows_host_resources_and_keeps_status_on_i() {
+        let _isolation = cm::common::contract_fixtures::isolation_lock();
+        crate::i18n::set_thread(crate::i18n::Lang::Ru);
+        let b = FixtureBackend;
+        let ui = FixtureUiData;
+        let mut app = App::new(&b, &ui, Some(Status::default()), Some(VpnPage::default()));
+        for (width, height) in [(120, 32), (60, 24)] {
+            let mut terminal = Terminal::new(TestBackend::new(width, height)).unwrap();
+            terminal.draw(|f| app.draw(f)).unwrap();
+            let rendered = dump(&terminal);
+            assert!(rendered.contains("Хост и ресурсы"), "{rendered}");
+            assert!(rendered.contains("CPU") && rendered.contains("Память"), "{rendered}");
+            assert!(rendered.contains("Обновить всё"), "{rendered}");
+            if let Ok(directory) = std::env::var("CM_TUI_PREVIEW_DIR") {
+                std::fs::create_dir_all(&directory).unwrap();
+                std::fs::write(std::path::Path::new(&directory).join(format!("host-ru-{width}x{height}.txt")), rendered).unwrap();
+            }
+        }
+        app.key_menu(KeyCode::Char('i'));
+        assert!(app.scr == Screen::Status);
+    }
+
+    #[test]
     fn failed_process_opens_log_and_f2_can_hide_it() {
-        let _isolation = upd::common::contract_fixtures::isolation_lock();
+        let _isolation = cm::common::contract_fixtures::isolation_lock();
         let b = FixtureBackend;
         let ui = FixtureUiData;
         let mut app = App::new(&b, &ui, Some(Status::default()), Some(VpnPage::default()));
@@ -2414,7 +2507,7 @@ mod tests {
 
     #[test]
     fn process_progress_log_and_repeated_choices_work_in_small_terminal() {
-        let _isolation = upd::common::contract_fixtures::isolation_lock();
+        let _isolation = cm::common::contract_fixtures::isolation_lock();
         crate::i18n::set_thread(crate::i18n::Lang::Ru);
         let b = FixtureBackend;
         let ui = FixtureUiData;
@@ -2452,7 +2545,7 @@ mod tests {
                 assert!(screen.contains("AUR") && screen.contains("30%"), "{screen}");
                 assert!(screen.contains(&format!("✓ {}", t!("Да"))) && screen.contains(&format!("✕ {}", t!("Нет"))), "{screen}");
                 assert!(screen.contains("Continue?") && screen.contains("Ctrl+C"), "{screen}");
-                if let Some(dir) = std::env::var_os("UPD_TUI_SNAPSHOTS") {
+                if let Some(dir) = std::env::var_os("CM_TUI_SNAPSHOTS") {
                     let dir = std::path::PathBuf::from(dir); std::fs::create_dir_all(&dir).unwrap();
                     std::fs::write(dir.join(format!("aur-progress-{}-{width}x{height}.txt", lang.code())), screen).unwrap();
                 }
@@ -2586,6 +2679,98 @@ mod tests {
             .map(|id| vpn::SubPub { id: id.to_string(), name: format!("name-{id}"), host: "example.com".into(), error: if *id == "c" { "HTTP 403 — очень длинная причина ошибки подписки".into() } else { String::new() }, ..Default::default() })
             .collect();
         p
+    }
+
+    #[test]
+    fn vpn_refresh_keeps_selection_when_lists_are_reordered() {
+        let (b, ui) = (FixtureBackend, FixtureUiData);
+        let mut page = page_with_subs(&["a", "b", "c"]);
+        page.snap.groups = vec![
+            vpn::Group { name: "Other".into(), all: vec!["one".into()], ..Default::default() },
+            vpn::Group { name: "Chosen".into(), all: vec!["A".into(), "B".into()], ..Default::default() },
+        ];
+        let mut app = App::new(&b, &ui, None, Some(page.clone()));
+        app.v.group = 1;
+        app.v.group_set = true;
+        app.v.nodes.select(Some(1));
+        app.v.subs.select(Some(2));
+        page.snap.groups.reverse();
+        page.snap.groups[0].all.reverse();
+        page.state.subs.reverse();
+        app.set_vpn_page(page);
+        assert_eq!(app.v.group, 0);
+        assert_eq!(app.v.nodes.selected(), Some(0));
+        assert_eq!(app.v.subs.selected(), Some(0));
+    }
+
+    #[test]
+    fn terminal_labels_have_stable_symbols_and_no_control_sequences() {
+        assert_eq!(terminal_label("🇷🇺 Moscow ⚡ 🚀\u{fe0f}"), "[RU] Moscow * *");
+        assert_eq!(terminal_label("ab\ncd\u{200d}\u{202e}"), "ab cd");
+        assert!(!terminal_label("\x1b[2Jbad\rname").chars().any(char::is_control));
+        assert!(terminal_label("中文 e\u{301} العربية").contains("中文 e\u{301} العربية"));
+    }
+
+    #[test]
+    fn narrow_inputs_keep_end_of_value_and_caret_visible() {
+        let (b, ui) = (FixtureBackend, FixtureUiData);
+        let mut app = App::new(&b, &ui, None, None);
+        app.open_input("vpn_port", format!("{}tail", "1234567890".repeat(20)));
+        for width in [40, 60, 80] {
+            let line = app.input_line("Value: ", width);
+            let mut terminal = Terminal::new(TestBackend::new(width, 1)).unwrap();
+            terminal.draw(|f| f.render_widget(Paragraph::new(line), f.area())).unwrap();
+            assert!(dump(&terminal).contains("tail▏"), "{}", dump(&terminal));
+        }
+    }
+
+    #[test]
+    fn narrow_settings_and_aur_keep_values_visible_in_all_languages() {
+        let (b, ui) = (FixtureBackend, FixtureUiData);
+        for lang in crate::i18n::ALL {
+            crate::i18n::set_thread(lang);
+            let mut page = VpnPage::default();
+            page.opts = vec![Opt { key: "vpn_port", label: t!("Порт прокси"), value: "17890".into() }];
+            let mut app = App::new(&b, &ui, None, Some(page));
+            app.scr = Screen::Vpn;
+            app.v.tab = 2;
+            let mut terminal = Terminal::new(TestBackend::new(40, 12)).unwrap();
+            terminal.draw(|f| app.draw(f)).unwrap();
+            assert!(dump(&terminal).contains("17890"), "{}", dump(&terminal));
+            app.scr = Screen::Aur;
+            app.aur.list = vec![extras::AurPkg { name: "package-name".into(), version: "2.3.4".into(), ..Default::default() }];
+            terminal.draw(|f| app.draw(f)).unwrap();
+            assert!(dump(&terminal).contains("package-name") && dump(&terminal).contains("2.3.4"), "{}", dump(&terminal));
+        }
+        crate::i18n::set_thread(crate::i18n::Lang::Ru);
+    }
+
+    #[test]
+    fn tui_footer_and_vpn_borders_survive_resize_and_refresh() {
+        let (b, ui) = (FixtureBackend, FixtureUiData);
+        let mut page = page_with_subs(&["a", "c"]);
+        page.snap.running = true;
+        page.snap.groups = vec![vpn::Group { name: "🇷🇺 Group 🚀".into(), kind: "Selector".into(), now: "Server".into(), all: vec!["Server".into()], ..Default::default() }];
+        let mut app = App::new(&b, &ui, None, Some(page));
+        app.scr = Screen::Vpn;
+        app.v.nodes.select(Some(0));
+        let mut terminal = Terminal::new(TestBackend::new(120, 32)).unwrap();
+        for (width, height) in [(120, 32), (60, 18), (40, 12), (80, 24), (120, 32)] {
+            terminal.backend_mut().resize(width, height);
+            app.msg = "unique footer".into();
+            terminal.draw(|f| app.draw(f)).unwrap();
+            let screen = dump(&terminal);
+            assert_eq!(screen.lines().last(), Some("unique footer"), "{screen}");
+            assert!(screen.contains("Server") && screen.contains("[RU]"), "{screen}");
+            assert_eq!(terminal.backend().buffer()[(width - 1, height - 4)].symbol(), "╯", "{screen}");
+            app.v.tab = 2;
+            terminal.draw(|f| app.draw(f)).unwrap();
+            assert_eq!(dump(&terminal).lines().last(), Some("unique footer"));
+            app.v.tab = 0;
+        }
+        terminal.backend_mut().resize(30, 8);
+        terminal.draw(|f| app.draw(f)).unwrap();
+        assert!(dump(&terminal).contains("min 40x12"));
     }
 
     /// B22/U06: подтверждение держит id и имя, не сбрасывается посторонней клавишей и снимается, если записи не стало.
@@ -2731,7 +2916,7 @@ mod tests {
                 let screen = dump(&terminal);
                 assert!(screen.contains("name-c") && screen.contains("HTTP 403"), "{screen}");
                 assert!(screen.lines().rev().take(3).any(|line| line.contains(" q ")), "{screen}");
-                if let Some(dir) = std::env::var_os("UPD_TUI_SNAPSHOTS") {
+                if let Some(dir) = std::env::var_os("CM_TUI_SNAPSHOTS") {
                     let dir = std::path::PathBuf::from(dir); std::fs::create_dir_all(&dir).unwrap();
                     std::fs::write(dir.join(format!("vpn-{}-{width}x{height}.txt", lang.code())), &screen).unwrap();
                 }

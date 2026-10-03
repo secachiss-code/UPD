@@ -1,6 +1,6 @@
 """Run VPN preparation with only VPN home writable (requires bubblewrap).
 
-Usage: python3 tests/check_vpn_sandbox.py /absolute/path/to/upd
+Usage: python3 tests/check_vpn_sandbox.py /absolute/path/to/cm
 Uses a local profile and a fake core; does not start a VPN or use the network.
 """
 import json
@@ -12,12 +12,12 @@ import tempfile
 
 
 def check(binary):
-    with tempfile.TemporaryDirectory(prefix="upd-vpn-readonly-") as directory:
+    with tempfile.TemporaryDirectory(prefix="cm-vpn-readonly-") as directory:
         base = Path(directory)
         home, etc, state = base / "vpn", base / "etc", base / "state"
         for path in (home / "profiles", home / "bin", etc, state):
             path.mkdir(parents=True, exist_ok=True)
-        conf = base / "upd.conf"
+        conf = base / "cm.conf"
         conf.write_text("")
         (etc / "subs.json").write_text(json.dumps({"active": "fixture", "list": [{
             "id": "fixture", "name": "fixture", "url": "https://example.com/fixture", "kind": "clash",
@@ -31,8 +31,8 @@ def check(binary):
         core.write_text('#!/bin/sh\nif [ "$1" = "-v" ]; then echo "mihomo v1.19.0"; exit 0; fi\n'
                         '[ "$1" = "-t" ] && [ -s "$5" ]\n')
         core.chmod(0o700)
-        env = dict(os.environ, UPD_STATE_DIR=str(state), UPD_VPN_HOME=str(home),
-                   UPD_VPN_ETC=str(etc), UPD_CONF=str(conf))
+        env = dict(os.environ, CM_STATE_DIR=str(state), CM_VPN_HOME=str(home),
+                   CM_VPN_ETC=str(etc), CM_CONF=str(conf))
         result = subprocess.run([
             "bwrap", "--unshare-user", "--uid", "0", "--gid", "0", "--unshare-pid",
             "--unshare-net", "--ro-bind", "/", "/", "--bind", str(home), str(home),

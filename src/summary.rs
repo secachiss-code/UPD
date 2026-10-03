@@ -14,7 +14,7 @@ pub const STALE_AFTER: i64 = 24 * 3600;
 
 #[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq)]
 pub struct MirrorSummary {
-    /// зеркалами управляет upd (иначе — сам пакетный менеджер или дистрибутив)
+    /// зеркалами управляет cm (иначе — сам пакетный менеджер или дистрибутив)
     pub managed: bool,
     pub pinned: usize,
     pub checked: i64,
@@ -27,7 +27,7 @@ pub struct MirrorSummary {
 
 #[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq)]
 pub struct VpnSummary {
-    /// служба upd-vpn установлена
+    /// служба cm-vpn установлена
     pub installed: bool,
     pub active: bool,
     pub failed: bool,
@@ -35,6 +35,8 @@ pub struct VpnSummary {
     /// название активной подписки
     pub subscription: String,
     pub event: String,
+    #[serde(default)]
+    pub error: String,
 }
 
 /// Что доступно на этой системе: недоступное интерфейс скрывает.
@@ -92,7 +94,7 @@ impl Summary {
 #[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq)]
 pub struct OpStatus {
     pub running: bool,
-    /// команда upd: update, check, clean…
+    /// команда cm: update, check, clean…
     pub command: String,
     /// этап «[3/6] Загрузка» → (3, 6, «Загрузка»)
     pub stage: Option<(u32, u32, String)>,
@@ -129,7 +131,7 @@ pub fn badge(s: &Summary, op: &OpStatus) -> Badge {
         if op.waiting { return Badge::Waiting; }
         return Badge::Busy(op.stage.as_ref().map(|(n, m, _)| (*n, *m)));
     }
-    if !s.error.is_empty() {
+    if !s.error.is_empty() || !s.vpn.error.is_empty() {
         return Badge::Error;
     }
     if s.reboot {
@@ -217,7 +219,7 @@ pub fn op_title(command: &str) -> &'static str {
         "vpn" => "VPN",
         "aur" => "AUR",
         "news" => t!("Новости Arch"),
-        _ => "upd",
+        _ => "cm",
     }
 }
 
@@ -269,6 +271,7 @@ pub fn gather(b: &dyn Backend) -> Summary {
             failed: unit == "failed",
             has_subs: !v.subs.is_empty(),
             subscription: v.subs.iter().find(|s| s.active).map(|s| s.name.clone()).unwrap_or_default(),
+            error: v.last_failure.as_ref().filter(|e| e.resolved.is_none()).map(|e| e.reason.clone()).unwrap_or_default(),
             event: v.event,
         },
         features: Features {
@@ -285,9 +288,49 @@ pub fn gather(b: &dyn Backend) -> Summary {
     }
 }
 
-/// Файл с pid работающего апплета: пока он жив, `upd notify` не дублирует его уведомления.
+/// Блокировка живого TUI: после аварийного выхода ядро освобождает её само.
+/// Отдельный файл на процесс позволяет открыть несколько терминалов.
+pub struct TuiSession {
+    _file: std::fs::File,
+    path: std::path::PathBuf,
+}
+impl TuiSession {
+    pub fn register() -> std::io::Result<Self> {
+        use std::os::fd::AsRawFd;
+        use std::os::unix::fs::PermissionsExt;
+        let directory = std::path::PathBuf::from(state_dir()).join("tui");
+        std::fs::create_dir_all(&directory)?;
+        std::fs::set_permissions(&directory, std::fs::Permissions::from_mode(0o755))?;
+        let path = directory.join(format!("{}.lock", std::process::id()));
+        let file = std::fs::OpenOptions::new().create(true).truncate(false).read(true).write(true).open(&path)?;
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o644))?;
+        if unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) } != 0 {
+            return Err(std::io::Error::last_os_error());
+        }
+        Ok(Self { _file: file, path })
+    }
+}
+impl Drop for TuiSession {
+    fn drop(&mut self) { let _ = std::fs::remove_file(&self.path); }
+}
+
+pub fn tui_running() -> bool {
+    use std::os::fd::AsRawFd;
+    let directory = std::path::PathBuf::from(state_dir()).join("tui");
+    let Ok(entries) = std::fs::read_dir(directory) else { return false; };
+    entries.flatten().any(|entry| {
+        let Ok(file) = std::fs::File::open(entry.path()) else { return false; };
+        if unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_SH | libc::LOCK_NB) } == 0 {
+            false
+        } else {
+            std::io::Error::last_os_error().raw_os_error() == Some(libc::EWOULDBLOCK)
+        }
+    })
+}
+
+/// Файл с pid работающего апплета: пока он жив, `cm notify` не дублирует его уведомления.
 pub fn applet_pid_file() -> Option<std::path::PathBuf> {
-    std::env::var_os("XDG_RUNTIME_DIR").filter(|d| !d.is_empty()).map(|d| std::path::PathBuf::from(d).join("upd-applet.pid"))
+    std::env::var_os("XDG_RUNTIME_DIR").filter(|d| !d.is_empty()).map(|d| std::path::PathBuf::from(d).join("cm-applet.pid"))
 }
 
 pub fn applet_running() -> bool {
@@ -295,12 +338,26 @@ pub fn applet_running() -> bool {
         return false;
     };
     // pid мог достаться другому процессу: сверяем имя
-    std::fs::read_to_string(format!("/proc/{pid}/comm")).is_ok_and(|c| c.trim().starts_with("upd-cosmic"))
+    std::fs::read_to_string(format!("/proc/{pid}/comm")).is_ok_and(|c| c.trim().starts_with("cm-cosmic"))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn tui_indicator_tracks_live_session_and_ignores_stale_files() {
+        use crate::common::contract_fixtures::{isolation_lock, TempDirGuard, EnvGuard};
+        let _isolation = isolation_lock();
+        let dir = TempDirGuard::new("tui-indicator").unwrap();
+        let mut env = EnvGuard::new(); env.set("CM_STATE_DIR", dir.path());
+        assert!(!tui_running());
+        let session = TuiSession::register().unwrap();
+        assert!(tui_running());
+        std::fs::write(dir.path().join("tui/stale.lock"), "").unwrap();
+        drop(session);
+        assert!(!tui_running());
+    }
 
     fn fresh(n: usize) -> Summary {
         Summary { checked: 1000, taken: 1100, packages: (0..n).map(|i| format!("p{i}")).collect(), ..Default::default() }
@@ -342,8 +399,8 @@ mod tests {
     fn headline_states() {
         let check = OpStatus { running: true, command: "check".into(), ..Default::default() };
         assert_eq!(headline(&fresh(2), &check), Headline::Checking);
-        let upd = OpStatus { running: true, command: "update".into(), ..Default::default() };
-        assert!(matches!(headline(&fresh(2), &upd), Headline::Installing { .. }));
+        let cm = OpStatus { running: true, command: "update".into(), ..Default::default() };
+        assert!(matches!(headline(&fresh(2), &cm), Headline::Installing { .. }));
         assert_eq!(headline(&fresh(2), &OpStatus::default()), Headline::Updates(2));
         assert_eq!(headline(&fresh(0), &OpStatus::default()), Headline::UpToDate);
         let mut f = fresh(2);

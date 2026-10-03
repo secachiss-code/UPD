@@ -12,7 +12,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 use url::Url;
 
-pub const SERVICE: &str = "upd-vpn.service";
+pub const SERVICE: &str = "cm-vpn.service";
 pub const AUTO_GROUP: &str = "⚡ Auto";
 /// Имя группы до 0.2.5: на него могут ссылаться свои правила пользователя
 const AUTO_GROUP_OLD: &str = "⚡ Авто";
@@ -33,20 +33,21 @@ fn is_auto_group(s: &str) -> bool {
 }
 /// Порт своего DNS mihomo (listen 127.0.0.1:1053).
 pub const DNS_PORT: u16 = 1053;
-const TUN_DEV: &str = "upd-vpn";
+const TUN_DEV: &str = "cm-vpn";
 pub const TEST_URL: &str = "https://www.gstatic.com/generate_204";
 /// Панели подписок (Marzban, Remnawave, 3x-ui…) по User-Agent отдают конфиг для mihomo/FlClash
-const UA: &str = "FlClash/0.8 mihomo/1.19 (upd)";
+const UA: &str = "mihomo/1.19.32";
+const SUBSCRIPTION_AGENTS: [&str; 5] = [UA, "ClashMeta/1.19.32", "Clash-Verge/2.4.2", "FlClash/0.8.92", "v2rayNG/1.8.10"];
 const GEO_BASE: &str = "https://github.com/MetaCubeX/meta-rules-dat/releases/download/latest";
 /// (имя файла, которое ищет mihomo в своём каталоге; имя в релизе meta-rules-dat)
 const GEO: [(&str, &str); 4] = [("geoip.metadb", "geoip.metadb"), ("GeoSite.dat", "geosite.dat"), ("GeoIP.dat", "geoip.dat"), ("ASN.mmdb", "GeoLite2-ASN.mmdb")];
 static PROFILE_TEMP_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 pub fn etc() -> String {
-    env_or("UPD_VPN_ETC", "/etc/upd/vpn")
+    env_or("CM_VPN_ETC", if Path::new("/etc/cm/vpn").exists() || !Path::new("/etc/upd/vpn").exists() { "/etc/cm/vpn" } else { "/etc/upd/vpn" })
 }
 pub fn home() -> String {
-    env_or("UPD_VPN_HOME", &format!("{}/vpn", state_dir()))
+    env_or("CM_VPN_HOME", &format!("{}/vpn", state_dir()))
 }
 pub fn core_bin() -> String {
     format!("{}/bin/mihomo", home())
@@ -98,8 +99,11 @@ pub fn fmt_bytes_wide(n: u128) -> String {
 pub struct Sub {
     pub id: String,
     pub name: String,
-    /// адрес подписки — секрет: хранится только в /etc/upd/vpn (0600), наружу не выводится
+    /// адрес подписки — секрет: хранится только в /etc/cm/vpn (0600), наружу не выводится
     pub url: String,
+    /// Некоторым серверам нужен определённый User-Agent для выдачи формата mihomo.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub user_agent: String,
     #[serde(default)]
     pub updated: i64,
     #[serde(default)]
@@ -289,7 +293,11 @@ fn get(url: &str, timeout: u64, port: u16) -> Result<ureq::Response, String> {
 }
 
 fn get_with_redirects(url: &str, timeout: u64, port: u16, redirects: u32) -> Result<ureq::Response, String> {
-    let mut errs = match agent_with_redirects(timeout, None, redirects).get(url).call() {
+    get_with_redirects_user_agent(url, timeout, port, redirects, UA)
+}
+
+fn get_with_redirects_user_agent(url: &str, timeout: u64, port: u16, redirects: u32, user_agent: &str) -> Result<ureq::Response, String> {
+    let mut errs = match agent_with_redirects(timeout, None, redirects).get(url).set("User-Agent", user_agent).call() {
         Ok(r) => return Ok(r),
         Err(e) => vec![t!("напрямую: {}", safe_ureq_error(&e))],
     };
@@ -299,7 +307,7 @@ fn get_with_redirects(url: &str, timeout: u64, port: u16, redirects: u32) -> Res
     }
     via.extend(flclash_ports().into_iter().map(|p| (p, t!("через FlClash"))));
     for ((p, ipv6), what) in via {
-        match agent_with_redirects(timeout, Some((p, ipv6)), redirects).get(url).call() {
+        match agent_with_redirects(timeout, Some((p, ipv6)), redirects).get(url).set("User-Agent", user_agent).call() {
             Ok(r) => return Ok(r),
             Err(e) => errs.push(format!("{what} :{p}: {}", safe_ureq_error(&e))),
         }
@@ -318,11 +326,11 @@ fn subscription_url(raw: &str) -> Result<Url, String> {
     Ok(url)
 }
 
-fn get_subscription(raw: &str, timeout: u64, port: u16) -> Result<ureq::Response, String> {
+fn get_subscription(raw: &str, timeout: u64, port: u16, user_agent: &str) -> Result<ureq::Response, String> {
     const MAX_REDIRECTS: u32 = 5;
     let mut current = subscription_url(raw)?;
     for redirects in 0..=MAX_REDIRECTS {
-        let response = get_with_redirects(current.as_str(), timeout, port, 0)?;
+        let response = get_with_redirects_user_agent(current.as_str(), timeout, port, 0, user_agent)?;
         if !matches!(response.status(), 301 | 302 | 303 | 307 | 308) {
             if (300..400).contains(&response.status()) {
                 return Err(t!("HTTP {} вместо профиля подписки", response.status()));
@@ -391,7 +399,7 @@ fn proc_uid(pid_dir: &Path) -> Option<u32> {
     fs::read_to_string(pid_dir.join("status")).ok()?.lines().find_map(|l| l.strip_prefix("Uid:")?.split_whitespace().next()?.parse().ok())
 }
 
-/// Чьим прокси можно доверить адрес подписки: root и пользователь, запустивший upd.
+/// Чьим прокси можно доверить адрес подписки: root и пользователь, запустивший cm.
 fn trusted_uids() -> Vec<u32> {
     let mut uids = vec![0, unsafe { libc::getuid() }];
     for k in ["SUDO_UID", "PKEXEC_UID"] {
@@ -408,7 +416,7 @@ fn trusted_uids() -> Vec<u32> {
 }
 
 /// Локальные mixed-порты FlClashCore; bool указывает, что listener доступен по IPv6.
-/// Имя процесса задаёт он сам, поэтому слушатель принимается только от процесса root или пользователя upd.
+/// Имя процесса задаёт он сам, поэтому слушатель принимается только от процесса root или пользователя cm.
 fn flclash_ports() -> Vec<(u16, bool)> {
     let mut inodes = std::collections::HashSet::new();
     let trusted = trusted_uids();
@@ -485,18 +493,42 @@ fn parse_userinfo(h: &str) -> SubInfo {
     i
 }
 
+/// Only retry successful HTTP responses with unusable bodies. Transport/auth errors
+/// stop immediately; never send the private URL to a conversion service.
+fn negotiate_subscription<T>(preferred: &str, mut request: impl FnMut(&str) -> Result<(String, T), String>) -> Result<(String, (T, String, usize)), String> {
+    let mut agents = Vec::new();
+    if !preferred.is_empty() {
+        validate_user_agent(preferred)?;
+        agents.push(preferred);
+    }
+    for agent in SUBSCRIPTION_AGENTS {
+        if !agents.contains(&agent) { agents.push(agent); }
+    }
+    let mut errors = Vec::new();
+    for agent in agents {
+        let (body, metadata) = request(agent)?;
+        match classify_sub(&body) {
+            Ok((kind, nodes)) => return Ok((body, (metadata, kind, nodes))),
+            Err(error) => errors.push(format!("{agent}: {error}")),
+        }
+    }
+    Err(errors.join("; "))
+}
+
 /// Скачать подписку, понять формат, сохранить профиль. Меняет sub на месте.
 fn fetch_sub(sub: &mut Sub, c: &Config) -> Result<ProfileChange, String> {
     let previous_kind = sub.kind.clone();
-    let r = get_subscription(&sub.url, 30, c.vpn_port)?;
+    let (body, (accepted, kind, nodes)) = negotiate_subscription(&sub.user_agent, |user_agent| {
+        let r = get_subscription(&sub.url, 15, c.vpn_port, user_agent)?;
+        let mut candidate = sub.clone();
     if let Some(h) = r.header("subscription-userinfo") {
-        sub.info = Some(parse_userinfo(h));
+        candidate.info = Some(parse_userinfo(h));
     }
     if let Some(h) = r.header("profile-update-interval").and_then(|v| v.trim().parse::<i64>().ok()) {
-        sub.interval_h = h.clamp(1, MAX_HOURS);
+        candidate.interval_h = h.clamp(1, MAX_HOURS);
     }
-    sub.name = sanitize_profile_name(&sub.name);
-    if sub.name.is_empty() {
+    candidate.name = sanitize_profile_name(&candidate.name);
+    if candidate.name.is_empty() {
         const MAX_TITLE_HEADER: usize = 4096;
         const MAX_DISPOSITION_HEADER: usize = 8192;
         let title = r.header("profile-title").filter(|t| t.len() <= MAX_TITLE_HEADER).map(|t| match t.strip_prefix("base64:") {
@@ -509,10 +541,11 @@ fn fetch_sub(sub: &mut Sub, c: &Config) -> Result<ProfileChange, String> {
                 p.strip_prefix("filename*=UTF-8''").map(pct_decode).or_else(|| p.strip_prefix("filename=").map(|x| x.trim_matches('"').to_string()))
             })
         }).map(|name| sanitize_profile_name(&name)).filter(|name| !name.is_empty());
-        sub.name = title.or(file).unwrap_or_else(|| sanitize_profile_name(&host_of(&mask_url(&sub.url))));
+        candidate.name = title.or(file).unwrap_or_else(|| sanitize_profile_name(&host_of(&mask_url(&candidate.url))));
     }
-    let body = String::from_utf8_lossy(&read_limited(r, 32 << 20)?).into_owned();
-    let (kind, nodes) = classify_sub(&body)?;
+        let body = String::from_utf8_lossy(&read_limited(r, 32 << 20)?).into_owned();
+        Ok((body, candidate))
+    })?;
     private_dir(&format!("{}/profiles", home()))?;
     let target = PathBuf::from(profile_path(sub, &kind));
     let temp = stage_profile(&target, &body, &kind, nodes)?;
@@ -528,6 +561,7 @@ fn fetch_sub(sub: &mut Sub, c: &Config) -> Result<ProfileChange, String> {
             return Err(e);
         }
     };
+    *sub = accepted;
     sub.kind = kind;
     sub.nodes = nodes;
     sub.updated = now();
@@ -562,7 +596,7 @@ fn stage_profile(path: &Path, body: &str, kind: &str, nodes: usize) -> Result<Pa
     let dir = path.parent().ok_or_else(|| t!("{}: нет каталога профилей", path.display()))?;
     for _ in 0..8 {
         let n = PROFILE_TEMP_COUNTER.fetch_add(1, Ordering::Relaxed);
-        let temp = dir.join(format!(".upd-profile-{}-{n}.tmp", std::process::id()));
+        let temp = dir.join(format!(".cm-profile-{}-{n}.tmp", std::process::id()));
         let mut file = match fs::OpenOptions::new().write(true).create_new(true).mode(0o600).open(&temp) {
             Ok(file) => file,
             Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => continue,
@@ -597,7 +631,7 @@ fn install_profile(temp: &Path, target: &Path, old_extension: Option<PathBuf>) -
             // Hard link keeps the old bytes available for rollback without another data write.
             for _ in 0..8 {
                 let n = PROFILE_TEMP_COUNTER.fetch_add(1, Ordering::Relaxed);
-                let candidate = parent.join(format!(".upd-profile-backup-{}-{n}.tmp", std::process::id()));
+                let candidate = parent.join(format!(".cm-profile-backup-{}-{n}.tmp", std::process::id()));
                 match fs::hard_link(target, &candidate) {
                     Ok(()) => {
                         if let Err(e) = sync_profile_dir(target) {
@@ -664,12 +698,18 @@ fn finish_profile_change(change: ProfileChange, log: Log) {
 
 fn classify_sub(body: &str) -> Result<(String, usize), String> {
     if let Ok(Value::Mapping(m)) = parse_profile(body) {
+        check_subscription_placeholder(&m)?;
         let proxies = m.get("proxies").and_then(Value::as_sequence).map(|s| s.len()).unwrap_or(0);
         if proxies > 0 || m.contains_key("proxy-providers") {
             return Ok(("clash".into(), proxies));
         }
     }
-    let count = |t: &str| t.lines().filter(|l| l.contains("://")).count();
+    let count = |t: &str| t.lines().filter(|line| {
+        line.trim().split_once("://").is_some_and(|(scheme, address)| {
+            !address.is_empty() && scheme.starts_with(|c: char| c.is_ascii_alphabetic())
+                && scheme.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '+' | '-' | '.'))
+        })
+    }).count();
     let n = count(body);
     if n > 0 {
         return Ok(("uri".into(), n));
@@ -710,7 +750,7 @@ pub fn add_sub(url: &str, name: &str, c: &Config, log: Log) -> Result<(), String
     Ok(())
 }
 
-/// Какая подписка: номер из `upd vpn subs` (для разовой команды) или неизменный id (из TUI).
+/// Какая подписка: номер из `cm vpn subs` (для разовой команды) или неизменный id (из TUI).
 /// Номер и id разрешаются в запись только под блокировкой подписок.
 #[derive(Clone, Debug, PartialEq)]
 pub enum SubRef {
@@ -737,6 +777,23 @@ impl SubRef {
     }
 }
 
+fn validate_user_agent(value: &str) -> Result<(), String> {
+    if value.is_empty() || value.len() > 512 || !value.bytes().all(|b| (32..=126).contains(&b)) {
+        return Err(t!("неверный User-Agent: нужна строка ASCII до 512 байт без управляющих символов").into());
+    }
+    Ok(())
+}
+
+pub fn set_user_agent(reference: &SubRef, user_agent: &str) -> Result<(), String> {
+    validate_user_agent(user_agent)?;
+    let _vpn_files = vpn_config_lock(true)?;
+    let _subs_lock = subscriptions_lock(true)?;
+    let mut subs = load_subs()?;
+    let index = reference.resolve(&subs)?;
+    subs.list[index].user_agent = user_agent.to_owned();
+    save_subs(&subs)
+}
+
 pub fn delete_sub(r: &SubRef) -> Result<String, String> {
     let _vpn_files = vpn_config_lock(true)?;
     let _lock = subscriptions_lock(true)?;
@@ -753,14 +810,151 @@ pub fn delete_sub(r: &SubRef) -> Result<String, String> {
     Ok(s.name)
 }
 
-pub fn use_sub(r: &SubRef) -> Result<String, String> {
+/// Выбор фиксируется только после проверки и успешного применения конфига.
+pub fn use_sub(r: &SubRef, c: &Config) -> Result<String, String> {
+    let subs = load_subs()?;
+    let selected = &subs.list[r.resolve(&subs)?];
+    let invalid = fs::read_to_string(profile_path(selected, &selected.kind))
+        .map(|body| classify_sub(&body).is_err()).unwrap_or(true);
+    let reference = SubRef::Id(selected.id.clone());
+    if invalid { repair_profile(&reference, c)?; }
+    switch_subscription(&reference, c, service_active(), &mut || reload())
+}
+
+fn repair_profile(reference: &SubRef, c: &Config) -> Result<(), String> {
     let _vpn_files = vpn_config_lock(true)?;
     let _lock = subscriptions_lock(true)?;
     let mut subs = load_subs()?;
-    let s = subs.list[r.resolve(&subs)?].clone();
-    subs.active = s.id;
-    save_subs(&subs)?;
-    Ok(s.name)
+    let index = reference.resolve(&subs)?;
+    let change = fetch_sub(&mut subs.list[index], c)?;
+    if let Err(error) = save_subs(&subs) {
+        rollback_profile_change(&change)?;
+        return Err(error);
+    }
+    finish_profile_change(change, &|_| {});
+    Ok(())
+}
+
+fn switch_subscription(r: &SubRef, c: &Config, active: bool, reload_core: &mut impl FnMut() -> Result<(), String>) -> Result<String, String> {
+    switch_subscription_with(r, c, active, reload_core, &mut save_subs)
+}
+
+fn switch_subscription_with(r: &SubRef, c: &Config, active: bool, reload_core: &mut impl FnMut() -> Result<(), String>, commit: &mut impl FnMut(&Subs) -> Result<(), String>) -> Result<String, String> {
+    let _vpn_files = vpn_config_lock(true)?;
+    let latest = if Path::new(&conf_path()).exists() { Config::load(c.mirrors.clone())? } else { c.clone() };
+    let _lock = subscriptions_lock(true)?;
+    let mut subs = load_subs()?;
+    let previous_subs = subs.clone();
+    let selected = subs.list[r.resolve(&subs)?].clone();
+    let mut stage = "build";
+    let result = (|| {
+        subs.active = selected.id.clone();
+        let candidate = build_config_for(&latest, &subs)?;
+        stage = "validate";
+        validate_candidate(&candidate)?;
+        let previous = match fs::read(config_path()) {
+            Ok(bytes) => Some(bytes),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound && !active => None,
+            Err(e) => return Err(format!("{}: {e}", config_path())),
+        };
+        stage = "write";
+        let applied = write_private(&config_path(), candidate.as_bytes()).and_then(|_| {
+            stage = "apply";
+            if active { reload_core() } else { Ok(()) }
+        });
+        let saving = applied.is_ok();
+        if saving { stage = "save"; }
+        let committed = applied.and_then(|_| commit(&subs));
+        if let Err(error) = committed {
+            let mut rollback_errors = vec![];
+            let restored = match previous {
+                Some(bytes) => write_private(&config_path(), &bytes),
+                None => match fs::remove_file(config_path()) {
+                    Ok(()) => Ok(()),
+                    Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+                    Err(e) => Err(e.to_string()),
+                },
+            };
+            match restored {
+                Ok(()) if active => if let Err(error) = reload_core() { rollback_errors.push(error); },
+                Ok(()) => {},
+                Err(error) => rollback_errors.push(error),
+            }
+            if saving {
+                // Atomic rename can succeed before directory fsync fails.
+                if let Err(error) = commit(&previous_subs) { rollback_errors.push(error); }
+            }
+            return Err(if rollback_errors.is_empty() {
+                format!("{error}; previous VPN configuration restored")
+            } else { format!("{error}; VPN rollback failed: {}", rollback_errors.join("; ")) });
+        }
+        resolve_failure_locked();
+        Ok(selected.name.clone())
+    })();
+    if let Err(error) = &result { store_failure_locked(stage, Some(&selected), error); }
+    result
+}
+
+struct CandidateConfig(PathBuf);
+impl Drop for CandidateConfig {
+    fn drop(&mut self) { let _ = fs::remove_file(&self.0); }
+}
+fn validate_candidate(config: &str) -> Result<(), String> {
+    static SEQUENCE: AtomicU64 = AtomicU64::new(0);
+    private_dir(&home())?;
+    let path = Path::new(&home()).join(format!(".candidate-{}-{}.yaml", std::process::id(), SEQUENCE.fetch_add(1, Ordering::Relaxed)));
+    let candidate = CandidateConfig(path);
+    write_private(candidate.0.to_str().ok_or("invalid VPN path")?, config.as_bytes())?;
+    let mut policy = CapturePolicy::background(Some(64 << 10));
+    policy.stderr_max = 64 << 10;
+    let output = capture_with_policy(std::process::Command::new(core_bin()).args(["-t", "-d", &home(), "-f", candidate.0.to_str().ok_or("invalid VPN path")?]).env("LC_ALL", "C"), policy).map_err(|e| e.to_string())?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let mut reason = core_validation_reason(&stderr, &stdout).to_owned();
+        if let Ok(profile) = parse_profile(config) { redact_credentials(&profile, &mut reason); }
+        scrub_stored_error(&mut reason);
+        return Err(t!("mihomo не принял конфиг: {}", reason));
+    }
+    Ok(())
+}
+
+fn core_validation_reason<'a>(stderr: &'a str, stdout: &'a str) -> &'a str {
+    let meaningful = |line: &&str| {
+        let lower = line.to_ascii_lowercase();
+        !line.trim().is_empty() && !(lower.contains("configuration file") && lower.contains("test failed"))
+    };
+    let error = |line: &&str| meaningful(line) && {
+        let lower = line.to_ascii_lowercase();
+        lower.contains("error") || lower.contains("fatal")
+    };
+    stderr.lines().rev().find(error).or_else(|| stdout.lines().rev().find(error))
+        .or_else(|| stderr.lines().rev().find(meaningful)).or_else(|| stdout.lines().rev().find(meaningful))
+        .map(str::trim).unwrap_or("validation failed")
+}
+
+#[derive(Debug, Serialize)]
+pub struct ProfileCheck {
+    pub name: String,
+    pub active: bool,
+    pub error: Option<String>,
+}
+
+/// Проверка всех сохранённых профилей без изменения выбора, конфига и работающего ядра.
+pub fn doctor(c: &Config, reference: Option<&SubRef>) -> Result<Vec<ProfileCheck>, String> {
+    let _vpn_files = vpn_config_lock(true)?;
+    let _subs_lock = subscriptions_lock(true)?;
+    let subs = load_subs()?;
+    let selected = reference.map(|r| r.resolve(&subs)).transpose()?;
+    let mut checks = vec![];
+    for (i, sub) in subs.list.iter().enumerate() {
+        if selected.is_some_and(|n| n != i) { continue; }
+        let mut candidate = subs.clone();
+        candidate.active = sub.id.clone();
+        let result = build_config_for(c, &candidate).and_then(|config| validate_candidate(&config));
+        checks.push(ProfileCheck { name: sanitize_profile_name(&sub.name), active: subs.active == sub.id, error: result.err().map(|e| safe_diagnostic(&e, Some(sub))) });
+    }
+    Ok(checks)
 }
 
 /// Обновить подписки: все (force) или те, у которых подошёл срок. true — активная изменилась.
@@ -847,6 +1041,88 @@ pub struct VpnState {
     pub event: String,
     #[serde(default)]
     pub event_time: i64,
+    #[serde(default)]
+    pub last_failure: Option<LastFailure>,
+}
+
+/// Последняя ошибка остаётся доступна после выхода команды и перезапуска helper.
+#[derive(Serialize, Deserialize, Clone, Debug, Default)]
+pub struct LastFailure {
+    pub stage: String,
+    pub time: i64,
+    pub subscription: String,
+    pub reason: String,
+    #[serde(default)]
+    pub resolved: Option<i64>,
+}
+fn failure_path() -> PathBuf { Path::new(&home()).join("last-error.json") }
+pub fn last_failure() -> Option<LastFailure> {
+    fs::read(failure_path()).ok().and_then(|bytes| serde_json::from_slice(&bytes).ok())
+}
+fn safe_diagnostic(error: &str, sub: Option<&Sub>) -> String {
+    let mut safe = error.to_owned();
+    // Hide the entire URL-bearing error before replacing a known URL: appended
+    // query parameters and redirected addresses may contain different secrets.
+    if scrub_stored_error(&mut safe) { return safe; }
+    if let Some(sub) = sub {
+        if !sub.url.is_empty() { safe = safe.replace(&sub.url, "[subscription URL hidden]"); }
+        // mihomo can echo credentials from malformed node definitions.
+        if let Ok(body) = fs::read_to_string(profile_path(sub, &sub.kind)) {
+            match parse_profile(&body) {
+                Ok(profile) => redact_credentials(&profile, &mut safe),
+                Err(_) if sub.kind == "clash" => return "Profile parsing failed; see the command output".into(),
+                Err(_) => {},
+            }
+        }
+    }
+    scrub_stored_error(&mut safe);
+    safe.chars().filter(|c| !c.is_control() || *c == '\n').take(2000).collect()
+}
+fn redact_credentials(value: &Value, text: &mut String) {
+    match value {
+        Value::Mapping(map) => for (key, value) in map {
+            let key = key.as_str().unwrap_or("").to_ascii_lowercase();
+            if ["password", "uuid", "token", "private-key", "public-key", "short-id", "obfs-password", "age-secret-key", "auth", "auth-str", "header"].contains(&key.as_str()) {
+                redact_strings(value, text);
+            } else { redact_credentials(value, text); }
+        },
+        Value::Sequence(values) => for value in values { redact_credentials(value, text); },
+        _ => {},
+    }
+}
+fn redact_strings(value: &Value, text: &mut String) {
+    match value {
+        Value::String(secret) if !secret.is_empty() => *text = text.replace(secret, "[hidden]"),
+        Value::Mapping(map) => for (_, value) in map { redact_strings(value, text); },
+        Value::Sequence(values) => for value in values { redact_strings(value, text); },
+        _ => {},
+    }
+}
+fn store_failure_locked(stage: &str, sub: Option<&Sub>, reason: &str) {
+    let failure = LastFailure { stage: stage.into(), time: now(), subscription: sub.map(|s| s.name.clone()).unwrap_or_default(), reason: safe_diagnostic(reason, sub), resolved: None };
+    let mut state = load_state();
+    state.last_failure = Some(failure.clone());
+    let _ = save_json("vpn.json", &state);
+    if let Err(error) = serde_json::to_vec_pretty(&failure).map_err(|e| e.to_string()).and_then(|bytes| write_private(failure_path().to_str().unwrap_or(""), &bytes)) {
+        eprintln!("VPN: could not save diagnostic: {error}");
+    }
+}
+pub fn record_failure(stage: &str, error: &str) {
+    if let Ok(_lock) = vpn_config_lock(true) {
+        let subs = load_subs().unwrap_or_default();
+        store_failure_locked(stage, subs.list.iter().find(|s| s.id == subs.active), error);
+    }
+}
+fn resolve_failure_locked() {
+    if let Some(mut failure) = last_failure() {
+        failure.resolved = Some(now());
+        let mut state = load_state(); state.last_failure = Some(failure.clone());
+        let _ = save_json("vpn.json", &state);
+        if let Ok(bytes) = serde_json::to_vec_pretty(&failure) { let _ = write_private(failure_path().to_str().unwrap_or(""), &bytes); }
+    }
+}
+pub fn resolve_failure() {
+    if let Ok(_lock) = vpn_config_lock(true) { resolve_failure_locked(); }
 }
 
 pub fn load_state() -> VpnState {
@@ -899,7 +1175,7 @@ fn rules_path() -> String {
 pub fn rules_template() -> String {
     format!(
         "{}\n{}\n{}\n# DOMAIN-SUFFIX,mirror.yandex.ru,DIRECT\n# DOMAIN-KEYWORD,torrent,DIRECT\n# GEOSITE,youtube,{}\n# IP-CIDR,10.8.0.0/16,DIRECT,no-resolve\n",
-        t!("# upd VPN: свои правила — идут первыми, раньше правил подписки."),
+        t!("# cm VPN: свои правила — идут первыми, раньше правил подписки."),
         t!("# Формат mihomo: ТИП,значение,куда. Куда: DIRECT (напрямую), REJECT (блок) или имя группы/сервера."),
         t!("# Примеры:"),
         label(AUTO_GROUP)
@@ -907,7 +1183,7 @@ pub fn rules_template() -> String {
 }
 
 /// Нетронутый шаблон прежних версий: такой файл можно заменить шаблоном на текущем языке.
-const RULES_TEMPLATE_OLD: &str = "# upd VPN: свои правила — идут первыми, раньше правил подписки.\n\
+const RULES_TEMPLATE_OLD: &str = "# cm VPN: свои правила — идут первыми, раньше правил подписки.\n\
 # Формат mihomo: ТИП,значение,куда. Куда: DIRECT (напрямую), REJECT (блок) или имя группы/сервера.\n\
 # Примеры:\n\
 # DOMAIN-SUFFIX,mirror.yandex.ru,DIRECT\n\
@@ -1131,10 +1407,22 @@ fn parse_profile(body: &str) -> Result<Value, String> {
 }
 
 /// Что берётся из профиля подписки: узлы, группы, правила и сетевые provider-ы. Остальное (listeners, dns, hosts,
-/// sniffer, authentication, skip-auth-prefixes, external-controller-*, iptables, ebpf…) задаёт upd или не задаёт никто.
+/// sniffer, authentication, skip-auth-prefixes, external-controller-*, iptables, ebpf…) задаёт cm или не задаёт никто.
 const PROFILE_KEYS: [&str; 6] = ["proxies", "proxy-groups", "rules", "sub-rules", "proxy-providers", "rule-providers"];
+
+fn check_subscription_placeholder(m: &Mapping) -> Result<(), String> {
+    let nodes = m.get("proxies").and_then(Value::as_sequence);
+    if !m.get("proxy-providers").and_then(Value::as_mapping).is_some_and(|p| !p.is_empty())
+        && nodes.is_some_and(|nodes| !nodes.is_empty() && nodes.iter().all(|node| {
+            let name = node.get("name").and_then(Value::as_str).unwrap_or("").to_lowercase();
+            ["приложение не поддерживается", "unsupported client", "client not supported"].iter().any(|message| name.contains(message))
+        })) {
+        return Err(t!("сервер подписки вернул заглушку: приложение не поддерживается; проверьте User-Agent подписки").into());
+    }
+    Ok(())
+}
 /// Подкаталоги каталога VPN, куда provider-у можно писать кэш или откуда читать файл.
-const PROVIDER_DIRS: [&str; 5] = ["profiles", "providers", "proxies", "rules", "ruleset"];
+const PROVIDER_DIRS: [&str; 6] = ["profiles", "providers", "proxies", "rules", "ruleset", "rule-sets"];
 
 /// Путь provider-а: относительный, без «..», внутри одного из PROVIDER_DIRS.
 fn provider_path_ok(p: &str) -> bool {
@@ -1148,24 +1436,108 @@ fn provider_path_ok(p: &str) -> bool {
         && parts.all(|c| matches!(c, Component::Normal(_)))
 }
 
-fn check_providers(m: &Mapping, key: &str) -> Result<(), String> {
-    let Some(list) = m.get(key) else { return Ok(()) };
-    let list = list.as_mapping().ok_or_else(|| t!("{0} в профиле — не список", key))?;
+fn relative_provider_path(path: &str) -> Option<PathBuf> {
+    use std::path::Component;
+    if path.chars().any(char::is_control) || path.ends_with('/') { return None; }
+    let parts: Vec<_> = Path::new(path).components().filter(|p| !matches!(p, Component::CurDir)).collect();
+    if parts.is_empty() || !parts.iter().all(|p| matches!(p, Component::Normal(_))) { return None; }
+    Some(parts.into_iter().collect())
+}
+
+/// Каждый HTTP-provider получает свой кэш, независимо от исходного имени каталога.
+fn provider_cache_path(path: &str, key: &str, identity: &str) -> Option<String> {
+    let relative = relative_provider_path(path)?;
+    let identity = sha1_smol::Sha1::from(identity).digest().to_string();
+    Some(format!("./providers/{key}/{identity}/{}", relative.display()))
+}
+
+type ProviderRedirects = std::collections::BTreeMap<PathBuf, Option<String>>;
+fn check_providers(m: &mut Mapping, key: &str, redirects: &mut ProviderRedirects) -> Result<(), String> {
+    let Some(list) = m.get_mut(key) else { return Ok(()) };
+    let list = list.as_mapping_mut().ok_or_else(|| t!("{0} в профиле — не список", key))?;
     for (name, p) in list {
         let name = name.as_str().unwrap_or("?");
-        let kind = p.get("type").and_then(Value::as_str).unwrap_or("");
-        if !matches!(kind, "http" | "file" | "inline") {
+        let kind = p.get("type").and_then(Value::as_str).unwrap_or("").to_owned();
+        if !matches!(kind.as_str(), "http" | "file" | "inline") {
             return Err(t!("provider «{0}»: тип «{1}» не поддерживается", name, kind));
         }
-        match p.get("path") {
-            Some(path) => {
-                let path = path.as_str().unwrap_or("");
-                if !provider_path_ok(path) {
-                    return Err(t!("provider «{0}»: путь «{1}» вне каталога профиля", name, path));
+        let format = p.get("format").and_then(Value::as_str).filter(|s| !s.is_empty()).unwrap_or("yaml");
+        let behavior = p.get("behavior").and_then(Value::as_str).unwrap_or("");
+        if key == "rule-providers" && (!matches!(format, "yaml" | "text" | "mrs")
+            || !matches!(behavior, "domain" | "ipcidr" | "classical")
+            || (format == "mrs" && behavior == "classical" && kind != "inline")) {
+            return Err(t!("provider «{0}»: неверный формат или behavior", name));
+        }
+        if kind == "http" {
+            let url = p.get("url").and_then(Value::as_str).unwrap_or("");
+            if !Url::parse(url).ok().is_some_and(|u| matches!(u.scheme(), "http" | "https") && u.host_str().is_some()) {
+                return Err(t!("provider «{0}»: неверный URL источника", name));
+            }
+            let path = match p.get("path") {
+                Some(Value::String(path)) if !path.is_empty() => path.as_str(),
+                Some(Value::String(_)) | None => if format == "mrs" { "provider.mrs" } else { "provider.yaml" },
+                Some(_) => return Err(t!("provider «{0}»: путь «{1}» вне каталога профиля", name, "")),
+            };
+            let headers = p.get("header").map(|h| serde_yaml::to_string(h).unwrap_or_default()).unwrap_or_default();
+            let identity = format!("{url}\0{name}\0{format}\0{behavior}\0{headers}");
+            let cache = provider_cache_path(path, key, &identity)
+                .ok_or_else(|| t!("provider «{0}»: путь «{1}» вне каталога профиля", name, path))?;
+            if let Some(original) = p.get("path").and_then(Value::as_str).and_then(relative_provider_path) {
+                redirects.entry(original).and_modify(|old| { if old.as_ref() != Some(&cache) { *old = None; } }).or_insert(Some(cache.clone()));
+            }
+            p.as_mapping_mut().unwrap().insert(k("path"), k(&cache));
+        }
+        // Inline-provider использует payload; path ядру не нужен.
+        if kind == "inline" { p.as_mapping_mut().unwrap().remove("path"); }
+    }
+    Ok(())
+}
+
+fn check_file_providers(m: &mut Mapping, key: &str, redirects: &ProviderRedirects) -> Result<(), String> {
+    let Some(list) = m.get_mut(key).and_then(Value::as_mapping_mut) else { return Ok(()) };
+    for (name, p) in list {
+        if p.get("type").and_then(Value::as_str) != Some("file") { continue; }
+        let name = name.as_str().unwrap_or("?");
+        let path = p.get("path").ok_or_else(|| t!("provider «{0}»: у файлового provider нет пути", name))?.as_str().unwrap_or("");
+        let relative = relative_provider_path(path).ok_or_else(|| t!("provider «{0}»: путь «{1}» вне каталога профиля", name, path))?;
+        if let Some(cache) = redirects.get(&relative) {
+            let cache = cache.as_ref().ok_or_else(|| t!("provider «{0}»: неоднозначный общий путь кэша", name))?;
+            *p.get_mut("path").unwrap() = k(cache);
+            continue;
+        }
+        if !provider_path_ok(path) { return Err(t!("provider «{0}»: путь «{1}» вне каталога профиля", name, path)); }
+        let absolute = Path::new(&home()).join(&relative);
+        if !absolute.is_file() { return Err(t!("provider «{0}»: локальный файл не найден: {1}", name, path)); }
+        let real = fs::canonicalize(&absolute).map_err(|e| e.to_string())?;
+        let root = fs::canonicalize(home()).map_err(|e| e.to_string())?;
+        if !real.starts_with(root) { return Err(t!("provider «{0}»: путь «{1}» вне каталога профиля", name, path)); }
+    }
+    Ok(())
+}
+
+fn check_provider_references(m: &Mapping) -> Result<(), String> {
+    let rules = m.get("rule-providers").and_then(Value::as_mapping);
+    let proxies = m.get("proxy-providers").and_then(Value::as_mapping);
+    let check_rules = |lines: &Value| -> Result<(), String> {
+        for line in lines.as_sequence().into_iter().flatten().filter_map(Value::as_str) {
+            let mut fields = line.split(',').map(str::trim);
+            if fields.next() == Some("RULE-SET") {
+                if let Some(name) = fields.next() {
+                    if !rules.is_some_and(|r| r.contains_key(name)) {
+                        return Err(t!("правило ссылается на отсутствующий provider «{0}»", name));
+                    }
                 }
             }
-            None if kind == "file" => return Err(t!("provider «{0}»: у файлового provider нет пути", name)),
-            None => {}
+        }
+        Ok(())
+    };
+    if let Some(rules) = m.get("rules") { check_rules(rules)?; }
+    for (_, rules) in m.get("sub-rules").and_then(Value::as_mapping).into_iter().flatten() { check_rules(rules)?; }
+    for group in m.get("proxy-groups").and_then(Value::as_sequence).into_iter().flatten() {
+        for provider in group.get("use").and_then(Value::as_sequence).into_iter().flatten().filter_map(Value::as_str) {
+            if !proxies.is_some_and(|p| p.contains_key(provider)) {
+                return Err(t!("группа «{0}» ссылается на отсутствующий provider «{1}»", group.get("name").and_then(Value::as_str).unwrap_or("?"), provider));
+            }
         }
     }
     Ok(())
@@ -1173,14 +1545,19 @@ fn check_providers(m: &Mapping, key: &str) -> Result<(), String> {
 
 /// Разрешённая часть профиля подписки.
 fn profile_part(src: &Mapping) -> Result<Mapping, String> {
+    check_subscription_placeholder(src)?;
     let mut m = Mapping::new();
     for key in PROFILE_KEYS {
         if let Some(v) = src.get(key) {
             m.insert(k(key), v.clone());
         }
     }
-    check_providers(&m, "proxy-providers")?;
-    check_providers(&m, "rule-providers")?;
+    let mut redirects = ProviderRedirects::new();
+    check_providers(&mut m, "proxy-providers", &mut redirects)?;
+    check_providers(&mut m, "rule-providers", &mut redirects)?;
+    check_file_providers(&mut m, "proxy-providers", &redirects)?;
+    check_file_providers(&mut m, "rule-providers", &redirects)?;
+    check_provider_references(&m)?;
     Ok(m)
 }
 
@@ -1195,11 +1572,14 @@ pub fn check_port(c: &Config) -> Result<(), String> {
     Ok(())
 }
 
-/// Собирает итоговый конфиг: профиль подписки + настройки upd (порты, TUN, DNS, геофайлы, правила, авто-выбор).
+/// Собирает итоговый конфиг: профиль подписки + настройки cm (порты, TUN, DNS, геофайлы, правила, авто-выбор).
 pub fn build_config(c: &Config) -> Result<String, String> {
+    build_config_for(c, &load_subs()?)
+}
+
+fn build_config_for(c: &Config, subs: &Subs) -> Result<String, String> {
     check_port(c)?;
-    let subs = load_subs()?;
-    let sub = subs.list.iter().find(|s| s.id == subs.active).ok_or(t!("нет подписки: добавь её (upd → VPN → Подписки → n)"))?;
+    let sub = subs.list.iter().find(|s| s.id == subs.active).ok_or(t!("нет подписки: добавь её (cm → VPN → Подписки → n)"))?;
     let body = fs::read_to_string(profile_path(sub, &sub.kind)).map_err(|_| t!("профиль подписки не скачан — обнови подписку").to_string())?;
 
     let mut m: Mapping = if sub.kind == "clash" {
@@ -1226,7 +1606,7 @@ pub fn build_config(c: &Config) -> Result<String, String> {
         m
     };
 
-    // --- то, что задаёт upd поверх подписки ---
+    // --- то, что задаёт cm поверх подписки ---
     m.insert(k("mixed-port"), Value::from(c.vpn_port));
     m.insert(k("allow-lan"), Value::Bool(c.vpn_allow_lan));
     m.insert(k("bind-address"), k(if c.vpn_allow_lan { "*" } else { "127.0.0.1" }));
@@ -1241,7 +1621,7 @@ pub fn build_config(c: &Config) -> Result<String, String> {
     m.insert(k("profile"), yaml_map(vec![("store-selected", Value::Bool(true)), ("store-fake-ip", Value::Bool(true))]));
     // геофайлы — тот же источник, что у FlClash
     m.insert(k("geodata-mode"), Value::Bool(false));
-    // геофайлы обновляет только upd (geo_update с проверкой формата), не само ядро
+    // геофайлы обновляет только cm (geo_update с проверкой формата), не само ядро
     m.insert(k("geo-auto-update"), Value::Bool(false));
     m.insert(
         k("geox-url"),
@@ -1456,6 +1836,10 @@ fn parse_http_response(raw: &[u8]) -> Result<(u16, Vec<u8>), String> {
 
 /// Запрос к API mihomo через Unix-сокет. Сокет и процесс на нём проверяются до отправки запроса.
 pub fn api(method: &str, path: &str, body: Option<serde_json::Value>) -> Result<serde_json::Value, String> {
+    api_with_timeout(method, path, body, Duration::from_secs(12))
+}
+
+fn api_with_timeout(method: &str, path: &str, body: Option<serde_json::Value>, request_timeout: Duration) -> Result<serde_json::Value, String> {
     use std::io::Write;
     let sock = api_socket();
     check_api_socket(&sock)?;
@@ -1463,7 +1847,7 @@ pub fn api(method: &str, path: &str, body: Option<serde_json::Value>) -> Result<
     if peer_uid(&s) != Some(service_uid()) {
         return Err(t!("{0}: на сокете API не процесс службы", sock.display()));
     }
-    let timeout = Some(Duration::from_secs(12));
+    let timeout = Some(request_timeout);
     let _ = s.set_read_timeout(timeout);
     let _ = s.set_write_timeout(timeout);
     let body = body.map(|b| b.to_string()).unwrap_or_default();
@@ -1542,6 +1926,18 @@ pub struct Snapshot {
 }
 
 impl Snapshot {
+    /// Состояние API отдельно от последнего замера выбранного сервера.
+    pub fn health_line(&self) -> String {
+        if !self.running { return t!("API VPN не готов").into(); }
+        let chain = self.chain();
+        let Some(selected) = chain.last() else { return t!("API готов · сервер не выбран").into(); };
+        match self.delay.get(selected) {
+            Some(0) => t!("API готов · последний замер сервера завершился ошибкой").into(),
+            Some(delay) => t!("API готов · последний замер сервера: {0} мс", delay),
+            None => t!("API готов · доступность сервера ещё не проверена").into(),
+        }
+    }
+
     /// Цепочка от главной группы до реального сервера: Proxy → ⚡ Auto → 🇩🇪 DE-1
     pub fn chain(&self) -> Vec<String> {
         let mut out = vec![];
@@ -1617,13 +2013,31 @@ fn reset_failed() {
 }
 
 pub fn start(c: &Config) -> Result<(), String> {
-    if let Some(w) = conflict(c) {
-        return Err(w);
+    let result = (|| {
+        if let Some(w) = conflict(c) { return Err(w); }
+        reset_failed();
+        run(true, &[], "systemctl", &["start", SERVICE]).map_err(|e| format!("{e}\n{}", journal_tail()))?;
+        wait_ready(Duration::from_secs(10))?;
+        let _ = autostart(c.vpn_autostart);
+        Ok(())
+    })();
+    match &result { Ok(()) => resolve_failure(), Err(error) => record_failure("start", error) }
+    result
+}
+
+/// API readiness does not assert that a remote proxy server is reachable.
+fn wait_ready(timeout: Duration) -> Result<(), String> {
+    wait_ready_with(timeout, || api_with_timeout("GET", "/version", None, Duration::from_millis(500)).map(|_| ()))
+}
+fn wait_ready_with(timeout: Duration, mut probe: impl FnMut() -> Result<(), String>) -> Result<(), String> {
+    let deadline = std::time::Instant::now() + timeout;
+    loop {
+        match probe() {
+            Ok(()) => return Ok(()),
+            Err(error) if std::time::Instant::now() >= deadline => return Err(format!("VPN service started, but API is not ready: {error}")),
+            Err(_) => std::thread::sleep(Duration::from_millis(100).min(deadline.saturating_duration_since(std::time::Instant::now()))),
+        }
     }
-    reset_failed();
-    run(true, &[], "systemctl", &["start", SERVICE]).map_err(|e| format!("{e}\n{}", journal_tail()))?;
-    let _ = autostart(c.vpn_autostart);
-    Ok(())
 }
 
 pub fn stop() -> Result<(), String> {
@@ -1631,11 +2045,14 @@ pub fn stop() -> Result<(), String> {
 }
 
 pub fn restart(c: &Config) -> Result<(), String> {
-    if let Some(w) = conflict(c) {
-        return Err(w);
-    }
-    reset_failed();
-    run(true, &[], "systemctl", &["restart", SERVICE]).map_err(|e| format!("{e}\n{}", journal_tail()))
+    let result = (|| {
+        if let Some(w) = conflict(c) { return Err(w); }
+        reset_failed();
+        run(true, &[], "systemctl", &["restart", SERVICE]).map_err(|e| format!("{e}\n{}", journal_tail()))?;
+        wait_ready(Duration::from_secs(10))
+    })();
+    match &result { Ok(()) => resolve_failure(), Err(error) => record_failure("restart", error) }
+    result
 }
 
 pub fn core_restart_failure(error: &str) -> String {
@@ -1785,7 +2202,7 @@ pub fn apply(c: &Config, user: Option<&UserContext>, log: Log) -> Result<(), Str
     let c = &latest;
     if !service_active() {
         log(t!("конфиг собран; VPN не запущен"));
-        sysproxy(c, user).map_err(|error| format!("VPN configuration saved, but user proxy failed: {error}; retry: upd vpn restart"))?;
+        sysproxy(c, user).map_err(|error| format!("VPN configuration saved, but user proxy failed: {error}; retry: cm vpn restart"))?;
         return Ok(());
     }
     if changed {
@@ -1801,7 +2218,7 @@ pub fn apply(c: &Config, user: Option<&UserContext>, log: Log) -> Result<(), Str
     } else {
         log(t!("конфиг не изменился"));
     }
-    sysproxy(c, user).map_err(|error| format!("VPN core applied, but user proxy failed: {error}; retry: upd vpn restart"))?;
+    sysproxy(c, user).map_err(|error| format!("VPN core applied, but user proxy failed: {error}; retry: cm vpn restart"))?;
     Ok(())
 }
 
@@ -1811,7 +2228,9 @@ pub fn apply_saved(c: &Config, user: Option<&UserContext>, log: Log) -> Result<(
         log("settings saved; VPN pending until a subscription is added");
         return Ok(());
     }
-    apply(c, user, log).map_err(|error| format!("settings saved, but not applied: {error}; retry: upd vpn restart"))
+    let result = apply(c, user, log).map_err(|error| format!("settings saved, but not applied: {error}; retry: cm vpn restart"));
+    match &result { Ok(()) => resolve_failure(), Err(error) => record_failure("settings", error) }
+    result
 }
 
 pub fn apply_saved_mode(c: &Config, user: Option<&UserContext>, log: Log) -> Result<(), String> {
@@ -1820,7 +2239,7 @@ pub fn apply_saved_mode(c: &Config, user: Option<&UserContext>, log: Log) -> Res
     let latest = if Path::new(&conf_path()).exists() { Config::load(c.mirrors.clone())? } else { c.clone() };
     write_config_locked(&latest).and_then(|_| if running() { set_mode(latest.vpn_mode_name()) } else { Ok(()) })
         .and_then(|_| sysproxy(&latest, user).map(|_| ()))
-        .map_err(|error| format!("settings saved, but not applied: {error}; retry: upd vpn restart"))
+        .map_err(|error| format!("settings saved, but not applied: {error}; retry: cm vpn restart"))
 }
 
 /// Режим «только прокси»: включить системный прокси GNOME пользователю; в TUN — выключить.
@@ -2305,25 +2724,31 @@ pub fn fetch_missing(c: &Config, log: Log) -> Result<(), String> {
 }
 
 /// Вызывается службой перед стартом ядра (ExecStartPre): только проверка конфликта, сборка конфига и `mihomo -t`.
-/// Загрузки здесь нет — медленная сеть не должна упираться в TimeoutStartSec; недостающее качает `upd vpn start`.
+/// Загрузки здесь нет — медленная сеть не должна упираться в TimeoutStartSec; недостающее качает `cm vpn start`.
 pub fn prepare(c: &Config, log: Log) -> Result<(), String> {
+    let result = prepare_inner(c, log);
+    if let Err(error) = &result { record_failure("prepare", error); }
+    result
+}
+
+fn prepare_inner(c: &Config, log: Log) -> Result<(), String> {
     check_port(c)?;
     if let Some(w) = conflict(c) {
         return Err(w);
     }
     if core_version().is_none() {
-        return Err(t!("ядра mihomo нет — выполни: sudo upd vpn core update").into());
+        return Err(t!("ядра mihomo нет — выполни: sudo cm vpn core update").into());
     }
-    write_config(c)?;
-    let (msg, code) = out(&core_bin(), &["-t", "-d", &home(), "-f", &config_path()]);
-    if code != 0 {
-        return Err(t!("mihomo не принял конфиг: {}", last_line(&msg).unwrap_or("")));
-    }
+    let _vpn_files = vpn_config_lock(true)?;
+    let latest = if Path::new(&conf_path()).exists() { Config::load(c.mirrors.clone())? } else { c.clone() };
+    let candidate = build_config(&latest)?;
+    validate_candidate(&candidate)?;
+    write_private(&config_path(), candidate.as_bytes())?;
     log(t!("конфиг проверен"));
     Ok(())
 }
 
-/// Фоновое обслуживание (из upd auto): подписки по сроку, ядро по сигналу FlClash.
+/// Фоновое обслуживание (из cm auto): подписки по сроку, ядро по сигналу FlClash.
 pub fn maintain(c: &Config, log: Log) {
     let changed = {
         let _vpn_files = match vpn_config_lock(true) { Ok(lock) => lock, Err(error) => { log(&error); return; } };
@@ -2394,14 +2819,14 @@ mod contract_tests {
     impl EnvGuard {
         fn vpn_dirs() -> Self {
             let _iso = crate::common::contract_fixtures::isolation_lock();
-            let base = std::env::temp_dir().join(format!("upd-vpn-test-{}-{}", std::process::id(), now()));
+            let base = std::env::temp_dir().join(format!("cm-vpn-test-{}-{}", std::process::id(), now()));
             let etc = base.join("etc");
             let home = base.join("home");
             let state = base.join("state");
             fs::create_dir_all(&etc).unwrap();
             fs::create_dir_all(&home).unwrap();
             fs::create_dir_all(&state).unwrap();
-            let mut g = Self::set_vars(_iso, [("UPD_VPN_ETC", etc.to_str().unwrap()), ("UPD_VPN_HOME", home.to_str().unwrap()), ("UPD_STATE_DIR", state.to_str().unwrap())]);
+            let mut g = Self::set_vars(_iso, [("CM_VPN_ETC", etc.to_str().unwrap()), ("CM_VPN_HOME", home.to_str().unwrap()), ("CM_STATE_DIR", state.to_str().unwrap())]);
             g.cleanup = base;
             g
         }
@@ -2661,7 +3086,7 @@ mod contract_tests {
 
     #[test]
     fn geo01_truncated_download_keeps_previous_file() {
-        let base = std::env::temp_dir().join(format!("upd-geo-{}", std::process::id()));
+        let base = std::env::temp_dir().join(format!("cm-geo-{}", std::process::id()));
         fs::create_dir_all(&base).unwrap();
         let path = base.join("GeoIP.dat");
         fs::write(&path, b"KEEP-PREVIOUS").unwrap();
@@ -2749,6 +3174,125 @@ mod contract_tests {
         write_private(&format!("{}/subs.json", etc()), json.to_string().as_bytes()).unwrap();
     }
 
+    fn switch_fixture(core_script: &str) {
+        two_subs();
+        fs::create_dir_all(format!("{}/profiles", home())).unwrap();
+        fs::create_dir_all(format!("{}/bin", home())).unwrap();
+        for id in ["a1", "b2", "c3"] {
+            fs::write(format!("{}/profiles/{id}.yaml", home()), clash_profile("")).unwrap();
+        }
+        fs::write(core_bin(), format!("#!/bin/sh\n{core_script}\n")).unwrap();
+        fs::set_permissions(core_bin(), fs::Permissions::from_mode(0o700)).unwrap();
+        write_private(&config_path(), b"previous configuration").unwrap();
+    }
+    #[test]
+    fn subscription_validation_failure_preserves_choice_and_config() {
+        let _g = EnvGuard::vpn_dirs();
+        switch_fixture("echo 'bad group'; exit 1");
+        let result = switch_subscription(&SubRef::Id("b2".into()), &Config::defaults(vec![]), true, &mut || panic!("invalid configuration must never reach running core"));
+        assert!(result.unwrap_err().contains("bad group"));
+        assert_eq!(load_subs().unwrap().active, "a1");
+        assert_eq!(fs::read_to_string(config_path()).unwrap(), "previous configuration");
+        let failure = last_failure().unwrap();
+        assert_eq!(failure.stage, "validate");
+        assert_eq!(failure.subscription, "two");
+        assert!(failure.resolved.is_none());
+        assert!(fs::read_dir(home()).unwrap().flatten().all(|e| !e.file_name().to_string_lossy().starts_with(".candidate-")));
+    }
+    #[test]
+    fn failed_reload_restores_disk_and_running_core() {
+        let _g = EnvGuard::vpn_dirs();
+        switch_fixture("exit 0");
+        let mut calls = 0;
+        let result = switch_subscription(&SubRef::Id("b2".into()), &Config::defaults(vec![]), true, &mut || {
+            calls += 1;
+            if calls == 1 {
+                assert_ne!(fs::read_to_string(config_path()).unwrap(), "previous configuration");
+                assert_eq!(load_subs().unwrap().active, "a1", "selection is not committed before reload");
+                Err("reload rejected".into())
+            } else {
+                assert_eq!(fs::read_to_string(config_path()).unwrap(), "previous configuration");
+                Ok(())
+            }
+        });
+        assert!(result.unwrap_err().contains("restored"));
+        assert_eq!(calls, 2);
+        assert_eq!(load_subs().unwrap().active, "a1");
+        assert_eq!(last_failure().unwrap().stage, "apply");
+    }
+    #[test]
+    fn rollback_failure_is_explicit_and_success_resolves_saved_error() {
+        let _g = EnvGuard::vpn_dirs();
+        switch_fixture("exit 0");
+        let result = switch_subscription(&SubRef::Id("b2".into()), &Config::defaults(vec![]), true, &mut || Err("core rejected".into()));
+        assert!(result.unwrap_err().contains("rollback failed"));
+        assert_eq!(load_subs().unwrap().active, "a1");
+        assert_eq!(switch_subscription(&SubRef::Id("b2".into()), &Config::defaults(vec![]), true, &mut || Ok(())).unwrap(), "two");
+        assert_eq!(load_subs().unwrap().active, "b2");
+        assert_eq!(load_state().subs.iter().find(|s| s.active).unwrap().id, "b2");
+        assert!(last_failure().unwrap().resolved.is_some());
+    }
+    #[test]
+    fn failed_commit_after_rename_restores_subscription_and_runtime() {
+        let _g = EnvGuard::vpn_dirs();
+        switch_fixture("exit 0");
+        let mut commits = 0;
+        let mut reloads = 0;
+        let result = switch_subscription_with(&SubRef::Id("b2".into()), &Config::defaults(vec![]), true,
+            &mut || { reloads += 1; Ok(()) },
+            &mut |subs| {
+                commits += 1;
+                save_subs(subs)?;
+                if commits == 1 { Err("directory sync failed after rename".into()) } else { Ok(()) }
+            });
+        assert!(result.unwrap_err().contains("restored"));
+        assert_eq!(commits, 2);
+        assert_eq!(reloads, 2);
+        assert_eq!(load_subs().unwrap().active, "a1");
+        assert_eq!(fs::read_to_string(config_path()).unwrap(), "previous configuration");
+        assert_eq!(load_state().subs.iter().find(|s| s.active).unwrap().id, "a1");
+        assert_eq!(last_failure().unwrap().stage, "save");
+    }
+    #[test]
+    fn persisted_diagnostic_redacts_profile_credentials_and_subscription_urls() {
+        let _g = EnvGuard::vpn_dirs();
+        switch_fixture("exit 0");
+        let sub = load_subs().unwrap().list[1].clone();
+        fs::write(profile_path(&sub, "clash"), clash_profile(&format!("payload: {{uuid: {SECRET}}}\n"))).unwrap();
+        store_failure_locked("validate", Some(&sub), &format!("invalid uuid {SECRET}"));
+        let failure = last_failure().unwrap();
+        assert_no_secret(&failure.reason);
+        store_failure_locked("validate", Some(&sub), &format!("GET {}?token={SECRET} failed", sub.url));
+        assert_no_secret(&last_failure().unwrap().reason);
+        store_failure_locked("validate", Some(&sub), &format!("GET {}?token=QUERY_ONLY_CREDENTIAL failed", sub.url));
+        assert!(!last_failure().unwrap().reason.contains("QUERY_ONLY_CREDENTIAL"));
+        use std::os::unix::fs::MetadataExt;
+        assert_eq!(fs::metadata(failure_path()).unwrap().mode() & 0o777, 0o600);
+    }
+    #[test]
+    fn readiness_retries_and_has_a_deadline() {
+        let mut calls = 0;
+        wait_ready_with(Duration::from_secs(1), || { calls += 1; if calls < 3 { Err("starting".into()) } else { Ok(()) } }).unwrap();
+        assert_eq!(calls, 3);
+        let before = std::time::Instant::now();
+        let error = wait_ready_with(Duration::from_millis(150), || Err("not listening".into())).unwrap_err();
+        assert!(error.contains("API is not ready"));
+        assert!(before.elapsed() < Duration::from_secs(1));
+    }
+    #[test]
+    fn api_readiness_does_not_claim_remote_server_connectivity() {
+        let _isolation = crate::common::contract_fixtures::isolation_lock();
+        crate::i18n::set(crate::i18n::Lang::Ru);
+        let mut snapshot = Snapshot { running: true, groups: vec![Group { name: "Proxy".into(), kind: "Selector".into(), now: "n1".into(), ..Default::default() }], ..Default::default() };
+        assert!(snapshot.health_line().contains("ещё не проверена"));
+        snapshot.delay.insert("n1".into(), 0);
+        assert!(snapshot.health_line().contains("ошибкой"));
+        snapshot.delay.insert("n1".into(), 42);
+        assert!(snapshot.health_line().contains("42 мс"));
+        snapshot.running = false;
+        assert!(snapshot.health_line().contains("не готов"));
+    }
+
     fn two_subs() {
         write_subs(serde_json::json!({
             "active": "a1",
@@ -2772,9 +3316,9 @@ mod contract_tests {
         assert_eq!(left.list.iter().map(|s| s.id.as_str()).collect::<Vec<_>>(), vec!["b2"]);
         // записи уже нет — ничего не удаляется и не активируется
         assert!(delete_sub(&SubRef::Id("c3".into())).is_err());
-        assert!(use_sub(&SubRef::Id("a1".into())).is_err());
+        assert!(use_sub(&SubRef::Id("a1".into()), &Config::defaults(vec![])).is_err());
         assert_eq!(load_subs().unwrap().list.len(), 1);
-        assert_eq!(use_sub(&SubRef::Id("b2".into())).unwrap(), "two");
+        assert_eq!(load_subs().unwrap().active, "b2");
         assert_eq!(load_state().subs[0].id, "b2", "id публикуется для TUI");
         assert_eq!(SubRef::parse("id:b2"), Some(SubRef::Id("b2".into())));
         assert_eq!(SubRef::parse("2"), Some(SubRef::Index(1)));
@@ -2853,7 +3397,7 @@ mod contract_tests {
     fn b01_provider_paths_are_confined() {
         let _g = EnvGuard::vpn_dirs();
         let c = Config::defaults(vec![]);
-        for bad in ["/etc/shadow", "../secret", "bin/mihomo", "config.yaml", "providers/../../etc/x", "profiles"] {
+        for bad in ["/etc/shadow", "../secret", "bin/mihomo", "config.yaml", "providers/../../etc/x", "profiles", "rule-sets", "rule-sets/../../etc/x", "/rule-sets/x.mrs"] {
             let p = format!("proxy-providers:\n  x: {{type: file, path: '{bad}'}}\n");
             assert!(build_with(&clash_profile(&p), &c).is_err(), "{bad}");
         }
@@ -2862,6 +3406,234 @@ mod contract_tests {
         let ok = "proxy-providers:\n  x: {type: http, url: 'https://e.com/p', path: ./providers/x.yaml}\nrule-providers:\n  r: {type: http, url: 'https://e.com/r', behavior: domain}\n";
         let m = build_with(&clash_profile(ok), &c).unwrap();
         assert!(m.contains_key("proxy-providers") && m.contains_key("rule-providers"));
+    }
+
+    #[test]
+    fn rule_sets_provider_is_isolated_without_changing_format() {
+        let _g = EnvGuard::vpn_dirs();
+        let c = Config::defaults(vec![]);
+        let profile = clash_profile("rule-providers:\n  telegram_domains: {type: http, url: 'https://example.com/telegram_domains.mrs', behavior: domain, format: mrs, path: ./rule-sets/telegram_domains.mrs}\n");
+        let m = build_with(&profile, &c).unwrap();
+        let provider = &m["rule-providers"]["telegram_domains"];
+        assert!(provider["path"].as_str().unwrap().starts_with("./providers/rule-providers/"));
+        assert!(provider["path"].as_str().unwrap().ends_with("/rule-sets/telegram_domains.mrs"));
+        assert_eq!(provider["format"].as_str(), Some("mrs"));
+    }
+
+    #[test]
+    fn custom_http_provider_directories_are_relocated_to_cache() {
+        let _g = EnvGuard::vpn_dirs();
+        let c = Config::defaults(vec![]);
+        for path in ["./oisd/big.mrs", "./custom/nested/telegram.mrs", "cache.yaml", "bin/mihomo"] {
+            let profile = clash_profile(&format!("rule-providers:\n  oisd_big: {{type: http, url: 'https://example.com/big.mrs', behavior: domain, format: mrs, path: '{path}'}}\n"));
+            let m = build_with(&profile, &c).unwrap();
+            let provider = &m["rule-providers"]["oisd_big"];
+            let cache = provider["path"].as_str().unwrap();
+            assert!(cache.starts_with("./providers/rule-providers/") && provider_path_ok(cache), "{cache}");
+            assert!(cache.ends_with(path.trim_start_matches("./")), "{cache}");
+            assert_eq!(provider["format"].as_str(), Some("mrs"));
+            assert_eq!(provider["url"].as_str(), Some("https://example.com/big.mrs"));
+            assert_eq!(build_with(&profile, &c).unwrap(), m, "кэш стабилен при повторной сборке");
+        }
+        assert_ne!(provider_cache_path("./oisd/big.mrs", "rule-providers", "https://a.example/big"), provider_cache_path("./oisd/big.mrs", "rule-providers", "https://b.example/big"));
+        for path in ["/etc/shadow", "../secret", "oisd/../../config.yaml", "./", "", "oisd/bad\nfile"] {
+            assert!(provider_cache_path(path, "rule-providers", "https://example.com/big").is_none(), "{path}");
+        }
+        for path in ["/etc/shadow", "../secret", "oisd/../../config.yaml"] {
+            let profile = clash_profile(&format!("rule-providers:\n  r: {{type: http, url: 'https://example.com/big', path: '{path}'}}\n"));
+            assert!(build_with(&profile, &c).is_err(), "{path}");
+        }
+    }
+
+    #[test]
+    fn http_cache_isolated_for_existing_paths_headers_and_names() {
+        let _g = EnvGuard::vpn_dirs();
+        let c = Config::defaults(vec![]);
+        let path = |name: &str, url: &str, token: &str| {
+            let profile = clash_profile(&format!("rule-providers:\n  {name}: {{type: http, url: '{url}', behavior: domain, path: ./rules/shared.yaml, header: {{Authorization: ['{token}']}}}}\n"));
+            build_with(&profile, &c).unwrap()["rule-providers"][name]["path"].as_str().unwrap().to_string()
+        };
+        let original = path("a", "https://a.example/rules", "first");
+        assert_ne!(original, path("a", "https://b.example/rules", "first"));
+        assert_ne!(original, path("b", "https://a.example/rules", "first"));
+        assert_ne!(original, path("a", "https://a.example/rules", "second"));
+        assert!(!original.contains("first"));
+    }
+
+    #[test]
+    fn file_provider_links_follow_cache_and_ambiguous_links_fail() {
+        let _g = EnvGuard::vpn_dirs();
+        let c = Config::defaults(vec![]);
+        let profile = "rule-providers:\n  remote: {type: http, url: 'https://example.com/a', behavior: domain, path: ./custom/a.yaml}\n  local: {type: file, behavior: domain, path: custom/a.yaml}\n";
+        let m = build_with(&clash_profile(profile), &c).unwrap();
+        assert_eq!(m["rule-providers"]["remote"]["path"], m["rule-providers"]["local"]["path"]);
+        let ambiguous = format!("{profile}  other: {{type: http, url: 'https://other.example/a', behavior: domain, path: custom/a.yaml}}\n");
+        assert!(build_with(&clash_profile(&ambiguous), &c).unwrap_err().contains("неоднозначный"));
+    }
+
+    #[test]
+    fn local_provider_file_errors_and_symlinks_are_checked() {
+        let _g = EnvGuard::vpn_dirs();
+        let c = Config::defaults(vec![]);
+        let profile = clash_profile("rule-providers:\n  local: {type: file, behavior: domain, path: ./rules/local.yaml}\n");
+        assert!(build_with(&profile, &c).unwrap_err().contains("файл не найден"));
+        fs::create_dir_all(format!("{}/rules", home())).unwrap();
+        fs::write(format!("{}/rules/local.yaml", home()), "payload: [example.com]\n").unwrap();
+        assert!(build_with(&profile, &c).is_ok());
+        fs::remove_file(format!("{}/rules/local.yaml", home())).unwrap();
+        std::os::unix::fs::symlink("/etc/hosts", format!("{}/rules/local.yaml", home())).unwrap();
+        assert!(build_with(&profile, &c).unwrap_err().contains("вне каталога"));
+    }
+
+    #[test]
+    fn provider_types_formats_and_references_are_checked() {
+        let _g = EnvGuard::vpn_dirs();
+        let c = Config::defaults(vec![]);
+        for (provider, message) in [
+            ("{type: http, behavior: domain}", "URL"),
+            ("{type: http, url: 'file:///etc/hosts', behavior: domain}", "URL"),
+            ("{type: http, url: 'https://example.com/r', behavior: classical, format: mrs}", "behavior"),
+            ("{type: http, url: 'https://example.com/r', behavior: domain, format: wrong}", "формат"),
+        ] {
+            let profile = clash_profile(&format!("rule-providers:\n  invalid: {provider}\n"));
+            assert!(build_with(&profile, &c).unwrap_err().contains(message));
+        }
+        let inline = clash_profile("rule-providers:\n  inline: {type: inline, behavior: domain, path: /unused, payload: [example.com]}\n");
+        assert!(!build_with(&inline, &c).unwrap()["rule-providers"]["inline"].as_mapping().unwrap().contains_key("path"));
+        assert!(build_with(&clash_profile("sub-rules:\n  local: ['RULE-SET,missing,Proxy']\n"), &c).is_err());
+        assert!(build_with(&clash_profile("proxy-groups:\n  - {name: Group, type: select, use: [missing]}\n"), &c).unwrap_err().contains("missing"));
+    }
+
+    #[test]
+    fn doctor_reports_each_profile_without_changing_selection_or_config() {
+        let _g = EnvGuard::vpn_dirs();
+        switch_fixture("echo 'core rejected fixture' >&2; exit 1");
+        let previous = fs::read_to_string(config_path()).unwrap();
+        let checks = doctor(&Config::defaults(vec![]), None).unwrap();
+        assert_eq!(checks.len(), load_subs().unwrap().list.len());
+        assert!(checks.iter().all(|c| c.error.as_deref().unwrap().contains("core rejected")), "{checks:?}");
+        assert_eq!(load_subs().unwrap().active, "a1");
+        assert_eq!(fs::read_to_string(config_path()).unwrap(), previous);
+        assert_eq!(doctor(&Config::defaults(vec![]), Some(&SubRef::Id("b2".into()))).unwrap().len(), 1);
+        assert!(fs::read_dir(home()).unwrap().flatten().all(|e| !e.file_name().to_string_lossy().starts_with(".candidate-")));
+    }
+
+    #[test]
+    fn prepare_validation_failure_keeps_previous_config() {
+        let _g = EnvGuard::vpn_dirs();
+        switch_fixture("if [ \"$1\" = '-v' ]; then echo 'mihomo v1.19.0'; exit 0; fi; echo 'bad rule provider' >&2; exit 1");
+        let mut c = Config::defaults(vec![]);
+        c.vpn_tun = false;
+        c.vpn_port = 47_123;
+        c.vpn_dns = false;
+        let error = prepare(&c, &|_| {}).unwrap_err();
+        assert!(error.contains("bad rule provider"), "{error}");
+        assert_eq!(fs::read_to_string(config_path()).unwrap(), "previous configuration");
+    }
+
+    #[test]
+    fn diagnostic_hides_provider_headers_and_age_secrets() {
+        let profile = serde_yaml::from_str::<Value>("proxy-providers:\n  a: {type: http, age-secret-key: 'AGE-SECRET-123', header: {Authorization: ['Bearer abcsecret'], X-Token: ['headersecret']}}\n").unwrap();
+        let mut text = "invalid AGE-SECRET-123 Bearer abcsecret headersecret".to_string();
+        redact_credentials(&profile, &mut text);
+        assert!(!text.contains("SECRET-123") && !text.contains("abcsecret") && !text.contains("headersecret"));
+    }
+
+    #[test]
+    fn subscription_negotiation_skips_placeholder_and_html_then_accepts_mihomo() {
+        let placeholder = "proxies: [{name: 'unsupported client', type: ss, server: 127.0.0.1, port: 1}]";
+        let mut attempted = Vec::new();
+        let (body, (metadata, kind, nodes)) = negotiate_subscription("Custom/1", |agent| {
+            attempted.push(agent.to_string());
+            Ok((match attempted.len() { 1 => placeholder.into(), 2 => "<html>subscription page</html>".into(), _ => clash_profile("") }, attempted.len()))
+        }).unwrap();
+        assert_eq!(attempted, ["Custom/1", UA, "ClashMeta/1.19.32"]);
+        assert_eq!((metadata, kind.as_str(), nodes), (3, "clash", 1));
+        assert!(!body.contains("unsupported client"));
+    }
+
+    #[test]
+    fn subscription_negotiation_accepts_uri_base64_and_stops_on_auth_failure() {
+        let mut calls = 0;
+        let (_, (_, kind, nodes)) = negotiate_subscription("", |_| {
+            calls += 1;
+            Ok(("dmxlc3M6Ly91c2VyQGV4YW1wbGUuY29tOjQ0MyNOb2Rl".into(), ()))
+        }).unwrap();
+        assert_eq!((calls, kind.as_str(), nodes), (1, "uri", 1));
+        calls = 0;
+        let error = negotiate_subscription::<()>("", |_| { calls += 1; Err("HTTP 403".into()) }).unwrap_err();
+        assert_eq!(error, "HTTP 403");
+        assert_eq!(calls, 1);
+        calls = 0;
+        assert!(negotiate_subscription("", |_| { calls += 1; Ok(("<html>unsupported</html>".into(), ())) }).is_err());
+        assert_eq!(calls, SUBSCRIPTION_AGENTS.len());
+    }
+
+    #[test]
+    fn unsupported_client_placeholder_and_html_are_not_valid_subscriptions() {
+        let _g = EnvGuard::vpn_dirs();
+        let body = clash_profile("").replace("name: n1", "name: Приложение не поддерживается");
+        assert!(classify_sub(&body).unwrap_err().contains("User-Agent"));
+        assert!(build_with(&body, &Config::defaults(vec![])).unwrap_err().contains("заглушку"));
+        assert!(classify_sub("<html><a href=\"https://example.com\">Error</a></html>").is_err());
+        assert!(classify_sub("url: https://example.com/rules\ninvalid: [").is_err());
+        assert_eq!(classify_sub("vless://example-user@example.com:443#Node\n").unwrap(), ("uri".into(), 1));
+    }
+
+    #[test]
+    fn core_validation_keeps_real_error_before_generic_failure_line() {
+        assert_eq!(core_validation_reason("", "level=error msg=\"proxy group: node not found\"\nconfiguration file /tmp/test.yaml test failed\n"), "level=error msg=\"proxy group: node not found\"");
+        assert_eq!(core_validation_reason("bad file\n", "configuration file /tmp/test.yaml test failed\n"), "bad file");
+    }
+
+    #[test]
+    fn http_provider_empty_path_uses_private_default_cache() {
+        let _g = EnvGuard::vpn_dirs();
+        let c = Config::defaults(vec![]);
+        let profile = clash_profile("rule-providers:\n  remote: {type: http, url: 'https://example.com/r', behavior: domain, path: ''}\n");
+        let m = build_with(&profile, &c).unwrap();
+        assert!(m["rule-providers"]["remote"]["path"].as_str().unwrap().ends_with("/provider.yaml"));
+        let wrong = profile.replace("path: ''", "path: 123");
+        assert!(build_with(&wrong, &c).is_err());
+    }
+
+    #[test]
+    fn per_subscription_user_agent_is_validated_and_persisted_privately() {
+        let _g = EnvGuard::vpn_dirs();
+        two_subs();
+        let reference = SubRef::Id("b2".into());
+        set_user_agent(&reference, "mihomo/1.19.0").unwrap();
+        let subs = load_subs().unwrap();
+        assert_eq!(subs.active, "a1");
+        assert_eq!(subs.list[0].user_agent, "");
+        assert_eq!(subs.list[1].user_agent, "mihomo/1.19.0");
+        for agent in ["", "bad\nheader", "bad\rheader", "кириллица"] { assert!(set_user_agent(&reference, agent).is_err()); }
+        assert!(set_user_agent(&reference, &"x".repeat(513)).is_err());
+        assert_eq!(load_subs().unwrap().list[1].user_agent, "mihomo/1.19.0");
+        assert!(!fs::read_to_string(format!("{}/vpn.json", state_dir())).unwrap().contains("user_agent"));
+    }
+
+    #[test]
+    fn subscription_request_uses_selected_user_agent() {
+        use std::io::{BufRead, BufReader};
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap();
+        let worker = std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            stream.set_read_timeout(Some(Duration::from_secs(3))).unwrap();
+            let mut headers = String::new();
+            let mut reader = BufReader::new(stream.try_clone().unwrap());
+            loop {
+                let mut line = String::new();
+                reader.read_line(&mut line).unwrap();
+                if line == "\r\n" || line.is_empty() { break; }
+                headers.push_str(&line);
+            }
+            std::io::Write::write_all(&mut stream, b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nok").unwrap();
+            headers
+        });
+        let _response = get_with_redirects_user_agent(&format!("http://{address}/profile"), 3, 7890, 0, "mihomo/1.19.0").unwrap();
+        assert!(worker.join().unwrap().to_ascii_lowercase().contains("user-agent: mihomo/1.19.0\r\n"));
     }
 
     /// B23: «миллиард смешков» укладывается в лимит тела, но отвергается бюджетом до сборки конфига.
@@ -2892,7 +3664,7 @@ mod contract_tests {
         assert_eq!(v["g"]["type"].as_str(), Some("select"));
     }
 
-    /// B13: порт прокси, совпадающий с DNS, не попадает в YAML; конфиг upd при этом читается.
+    /// B13: порт прокси, совпадающий с DNS, не попадает в YAML; конфиг cm при этом читается.
     #[test]
     fn b13_port_conflict_is_reported_by_vpn_build() {
         let _g = EnvGuard::vpn_dirs();
@@ -2965,7 +3737,7 @@ mod contract_tests {
         let busy = [proc_fixture("11", "nc", false, &["555"], &[])];
         let msg = find_conflict(&c, &busy, &[(&tcp, false)]).unwrap();
         assert!(msg.contains("7897") && msg.contains("nc"), "{msg}");
-        let ours = [proc_fixture("12", "mihomo", true, &["555", "777"], &["upd-vpn"])];
+        let ours = [proc_fixture("12", "mihomo", true, &["555", "777"], &["cm-vpn"])];
         assert!(find_conflict(&c, &ours, &[(&tcp, false), (&udp, true)]).is_none(), "свой mihomo — не конфликт");
         let dns = [proc_fixture("13", "dnsmasq", false, &["777"], &[])];
         assert!(find_conflict(&c, &dns, &[(&udp, true)]).unwrap().contains("1053"));

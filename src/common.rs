@@ -36,17 +36,19 @@ pub fn number_setting(key: &str) -> Option<NumberSetting> {
 pub type Log<'a> = &'a dyn Fn(&str);
 
 pub fn env_or(k: &str, def: &str) -> String {
-    std::env::var(k).ok().filter(|v| !v.is_empty()).unwrap_or_else(|| def.to_string())
+    std::env::var(k).ok().filter(|v| !v.is_empty())
+        .or_else(|| k.strip_prefix("CM_").and_then(|suffix| std::env::var(format!("UPD_{suffix}")).ok()).filter(|v| !v.is_empty()))
+        .unwrap_or_else(|| def.to_string())
 }
 
 pub fn conf_path() -> String {
-    env_or("UPD_CONF", "/etc/upd.conf")
+    env_or("CM_CONF", if Path::new("/etc/cm.conf").exists() || !Path::new("/etc/upd.conf").exists() { "/etc/cm.conf" } else { "/etc/upd.conf" })
 }
 pub fn state_dir() -> String {
-    env_or("UPD_STATE_DIR", "/var/lib/upd")
+    env_or("CM_STATE_DIR", if Path::new("/var/lib/cm").exists() || !Path::new("/var/lib/upd").exists() { "/var/lib/cm" } else { "/var/lib/upd" })
 }
 pub fn test_mode() -> bool {
-    std::env::var("UPD_STATE_DIR").is_ok()
+    std::env::var("CM_STATE_DIR").is_ok() || std::env::var("UPD_STATE_DIR").is_ok()
 }
 
 pub fn now() -> i64 {
@@ -446,7 +448,7 @@ impl Config {
     }
 
     fn save_locked(&self) -> std::io::Result<()> {
-        let mut s = String::from(t!("# upd — настройки. Правится вручную или через TUI (upd → Зеркала).\n"));
+        let mut s = String::from(t!("# cm — настройки. Правится вручную или через TUI (cm → Зеркала).\n"));
         s += &format!("\n# {}\nlang = {}\n", t!("Язык интерфейса: ru, en, de, it, zh, ar или auto (по локали системы)"), self.lang);
         for (k, doc) in DOCS {
             s += &format!("\n# {}\n{k} = {}\n", t!(*doc), self.value(k));
@@ -681,7 +683,7 @@ fn unique_temp_path() -> impl FnMut(&Path, usize) -> PathBuf {
     static NEXT: AtomicU64 = AtomicU64::new(0);
     let pid = std::process::id();
     let first = NEXT.fetch_add(ATTEMPTS, Ordering::Relaxed);
-    move |dir, attempt| dir.join(format!(".upd.{pid}.{}.tmp", first.wrapping_add(attempt as u64)))
+    move |dir, attempt| dir.join(format!(".cm.{pid}.{}.tmp", first.wrapping_add(attempt as u64)))
 }
 
 fn sync_directory(dir: &Path) -> std::io::Result<()> {
@@ -1728,10 +1730,10 @@ mod contract_tests {
 
     #[test]
     fn sys02_lib_modules_layout_keeps_running_kernel() {
-        let base = std::env::temp_dir().join(format!("upd-modules-{}", std::process::id()));
+        let base = std::env::temp_dir().join(format!("cm-modules-{}", std::process::id()));
         let lib = base.join("lib").join("modules");
         let usr = base.join("usr").join("lib").join("modules");
-        let release = "6.8.0-upd";
+        let release = "6.8.0-cm";
         fs::create_dir_all(lib.join(release)).unwrap();
         let only_lib = module_dirs_from(&[usr.clone(), lib.clone()]);
         assert_eq!(only_lib, vec![fs::canonicalize(&lib).unwrap()]);
@@ -1750,13 +1752,13 @@ mod contract_tests {
     // --- DATA-04 ---
     #[test]
     fn data04_unreadable_config_is_error_without_clobber() {
-        let base = std::env::temp_dir().join(format!("upd-conf-{}", std::process::id()));
+        let base = std::env::temp_dir().join(format!("cm-conf-{}", std::process::id()));
         fs::create_dir_all(&base).unwrap();
-        let conf = base.join("upd.conf");
+        let conf = base.join("cm.conf");
         fs::write(&conf, "keep=7\n").unwrap();
         let before = fs::read_to_string(&conf).unwrap();
         unsafe {
-            std::env::set_var("UPD_CONF", conf.to_str().unwrap());
+            std::env::set_var("CM_CONF", conf.to_str().unwrap());
         }
         fs::set_permissions(&conf, fs::Permissions::from_mode(0o000)).unwrap();
         assert!(Config::load(vec![]).is_err());
@@ -1765,7 +1767,7 @@ mod contract_tests {
         let c = Config::load(vec![]).unwrap();
         assert_eq!(c.keep, 7);
         unsafe {
-            std::env::remove_var("UPD_CONF");
+            std::env::remove_var("CM_CONF");
         }
         let _ = fs::remove_dir_all(&base);
     }
@@ -1805,15 +1807,15 @@ mod contract_tests {
     #[test]
     fn b08_config_upper_bounds() {
         let _iso = contract_fixtures::isolation_lock();
-        let base = contract_fixtures::TempDirGuard::new("upd-conf-bounds").unwrap();
-        let conf = base.path().join("upd.conf");
+        let base = contract_fixtures::TempDirGuard::new("cm-conf-bounds").unwrap();
+        let conf = base.path().join("cm.conf");
         let mut text = String::from("parallel = 100000\nparallel_vpn = 99999999\nretries = 1000000000\ntimeout = 999999\nkeep = 500\nrescan_count = 100000\nextra_from_list = 100000\nmirror_max_age_h = 9223372036854775807\nvpn_sub_update_h = 9223372036854775807\nvpn_core_check_h = -5\nnetwork_memory_days = -3\nvpn_port = 1053\n");
         for i in 0..500 {
             text += &format!("mirror = https://m{i}.example/\n");
         }
         fs::write(&conf, text).unwrap();
         let mut env = contract_fixtures::EnvGuard::new();
-        env.set("UPD_CONF", &conf);
+        env.set("CM_CONF", &conf);
         let c = Config::load(vec![]);
         let c = c.expect("экстремальные значения не ломают загрузку конфига");
         assert_eq!((c.parallel, c.parallel_vpn, c.retries, c.timeout, c.keep), (MAX_PARALLEL, MAX_PARALLEL, MAX_RETRIES, MAX_TIMEOUT, 10));
@@ -1832,7 +1834,7 @@ mod atomic_write_tests {
     use std::sync::{Arc, Barrier};
 
     fn audit_temp_path(dir: &Path, n: usize) -> PathBuf {
-        dir.join(format!(".upd-audit-{}-{n}.tmp", std::process::id()))
+        dir.join(format!(".cm-audit-{}-{n}.tmp", std::process::id()))
     }
 
     fn audit_temp_names() -> impl FnMut(&Path, usize) -> PathBuf {
@@ -1840,8 +1842,8 @@ mod atomic_write_tests {
     }
 
     fn assert_no_audit_temps(dir: &Path) {
-        let process_prefix = format!(".upd.{}.", std::process::id());
-        let fixture_prefix = format!(".upd-audit-{}-", std::process::id());
+        let process_prefix = format!(".cm.{}.", std::process::id());
+        let fixture_prefix = format!(".cm-audit-{}-", std::process::id());
         let names: Vec<_> = fs::read_dir(dir)
             .unwrap()
             .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
@@ -1855,7 +1857,7 @@ mod atomic_write_tests {
     #[test]
     fn atomic_write_16_concurrent_paths_keep_complete_content() {
         const WORKERS: usize = 16;
-        let dir = contract_fixtures::TempDirGuard::new("upd-atomic-many-files").unwrap();
+        let dir = contract_fixtures::TempDirGuard::new("cm-atomic-many-files").unwrap();
         let barrier = Arc::new(Barrier::new(WORKERS));
         let mut workers = Vec::with_capacity(WORKERS);
         for n in 0..WORKERS {
@@ -1877,7 +1879,7 @@ mod atomic_write_tests {
     #[test]
     fn atomic_write_concurrent_same_path_never_exposes_mixed_content() {
         const WORKERS: usize = 16;
-        let dir = contract_fixtures::TempDirGuard::new("upd-atomic-one-file").unwrap();
+        let dir = contract_fixtures::TempDirGuard::new("cm-atomic-one-file").unwrap();
         let path = dir.path().join("state");
         fs::write(&path, b"initial").unwrap();
         let payloads: Vec<Vec<u8>> = (0..WORKERS).map(|n| vec![b'A' + n as u8; 64 * 1024]).collect();
@@ -1926,7 +1928,7 @@ mod atomic_write_tests {
 
     #[test]
     fn atomic_write_uses_exact_mode_and_replaces_symlink_entry() {
-        let dir = contract_fixtures::TempDirGuard::new("upd-atomic-mode").unwrap();
+        let dir = contract_fixtures::TempDirGuard::new("cm-atomic-mode").unwrap();
         let target = dir.path().join("target");
         let link = dir.path().join("state-link");
         fs::write(&target, b"target content").unwrap();
@@ -1945,7 +1947,7 @@ mod atomic_write_tests {
 
     #[test]
     fn atomic_write_temp_symlink_collision_does_not_follow_target() {
-        let dir = contract_fixtures::TempDirGuard::new("upd-atomic-temp-link").unwrap();
+        let dir = contract_fixtures::TempDirGuard::new("cm-atomic-temp-link").unwrap();
         let target = dir.path().join("sensitive");
         let temp_link = dir.path().join(".temp-link");
         let output = dir.path().join("output");
@@ -1974,7 +1976,7 @@ mod atomic_write_tests {
 
     #[test]
     fn atomic_write_failure_before_rename_preserves_target_and_cleans_temp() {
-        let dir = contract_fixtures::TempDirGuard::new("upd-atomic-write-fail").unwrap();
+        let dir = contract_fixtures::TempDirGuard::new("cm-atomic-write-fail").unwrap();
         let path = dir.path().join("state");
         fs::write(&path, b"old content").unwrap();
         let error = atomic_write_with_ops(
@@ -1995,7 +1997,7 @@ mod atomic_write_tests {
 
     #[test]
     fn atomic_write_rename_failure_preserves_target_and_cleans_temp() {
-        let dir = contract_fixtures::TempDirGuard::new("upd-atomic-rename-fail").unwrap();
+        let dir = contract_fixtures::TempDirGuard::new("cm-atomic-rename-fail").unwrap();
         let path = dir.path().join("state-dir");
         fs::create_dir(&path).unwrap();
         fs::write(path.join("marker"), b"old content").unwrap();
@@ -2007,7 +2009,7 @@ mod atomic_write_tests {
 
     #[test]
     fn atomic_write_directory_sync_error_reports_commit_stage() {
-        let dir = contract_fixtures::TempDirGuard::new("upd-atomic-sync-fail").unwrap();
+        let dir = contract_fixtures::TempDirGuard::new("cm-atomic-sync-fail").unwrap();
         let path = dir.path().join("state");
         fs::write(&path, b"old content").unwrap();
         let error = atomic_write_with_ops(

@@ -108,7 +108,7 @@ impl ProcessSession {
     pub fn spawn(args: &[String], rows: u16, cols: u16) -> io::Result<Self> {
         let exe = std::env::current_exe()?;
         let mut s = Self::spawn_program(exe.as_os_str(), args, rows, cols)?;
-        s.title = format!("upd {}", args.join(" "));
+        s.title = format!("cm {}", args.join(" "));
         if args.first().is_some_and(|arg| arg == "aur") {
             s.progress.aur = true;
             s.progress.phase = "Загрузка исходников";
@@ -182,7 +182,7 @@ impl ProcessSession {
         let pgid = child.id() as i32;
         let leader_start = start_time(pgid);
         #[cfg(test)]
-        if let Some(path) = std::env::var_os("UPD_TUI_CHILD_PID_FILE") {
+        if let Some(path) = std::env::var_os("CM_TUI_CHILD_PID_FILE") {
             if let Err(error) = std::fs::write(path, pgid.to_string()) {
                 let _ = child.kill();
                 let _ = child.wait();
@@ -267,14 +267,14 @@ impl ProcessSession {
             }
         };
         #[cfg(test)]
-        let injected = std::env::var("UPD_TUI_FAIL_READER").as_deref() == Ok("1");
+        let injected = std::env::var("CM_TUI_FAIL_READER").as_deref() == Ok("1");
         #[cfg(not(test))]
         let injected = false;
         let reader = if injected {
             Err(io::Error::other("injected reader spawn failure"))
         } else {
             std::thread::Builder::new()
-                .name("upd-pty".into())
+                .name("cm-pty".into())
                 .spawn(read_work)
         };
         let reader = match reader {
@@ -411,7 +411,7 @@ impl ProcessSession {
             return None;
         }
         let text = self.current_line();
-        let upd::helper::PromptKind::YesNo { default_yes } = upd::helper::prompt_kind(text)? else {
+        let cm::helper::PromptKind::YesNo { default_yes } = cm::helper::prompt_kind(text)? else {
             return None;
         };
         if self
@@ -805,7 +805,7 @@ mod tests {
 
     #[test]
     fn audit_resize_ctrl_c_and_utf8_terminal_session() {
-        let _isolation = upd::common::contract_fixtures::isolation_lock();
+        let _isolation = cm::common::contract_fixtures::isolation_lock();
         let mut session = spawn_with(
             "sh",
             &[
@@ -860,8 +860,8 @@ mod tests {
     /// B06: команда завершилась, её потомок держит PTY; закрытие сессии освобождает поток чтения и убивает потомка.
     #[test]
     fn b06_closing_session_releases_reader_and_group() {
-        let _iso = upd::common::contract_fixtures::isolation_lock();
-        let dir = std::env::temp_dir().join(format!("upd-pty-{}", std::process::id()));
+        let _iso = cm::common::contract_fixtures::isolation_lock();
+        let dir = std::env::temp_dir().join(format!("cm-pty-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let pidfile = dir.join("pid");
         // лидер сразу выходит, фоновый sleep остаётся с открытым PTY
@@ -913,7 +913,7 @@ mod tests {
     /// Закрытие сессии, когда поток чтения уже вышел: при SIGPIPE по умолчанию (как в main) процесс не погибает.
     #[test]
     fn b06_drop_after_reader_exit_does_not_raise_sigpipe() {
-        let _isolation = upd::common::contract_fixtures::isolation_lock();
+        let _isolation = cm::common::contract_fixtures::isolation_lock();
         let old = unsafe { libc::signal(libc::SIGPIPE, libc::SIG_DFL) };
         let mut s = spawn_with("true", &[], 24, 80).unwrap();
         let t0 = Instant::now();
@@ -928,7 +928,7 @@ mod tests {
 
     #[test]
     fn review_full_pty_input_has_a_deadline_and_keeps_poll_responsive() {
-        let _isolation = upd::common::contract_fixtures::isolation_lock();
+        let _isolation = cm::common::contract_fixtures::isolation_lock();
         let mut s = spawn_with(
             "sh",
             &[
@@ -956,7 +956,7 @@ mod tests {
 
     #[test]
     fn review_full_reader_queue_drop_joins_and_reaps_active_child() {
-        let _isolation = upd::common::contract_fixtures::isolation_lock();
+        let _isolation = cm::common::contract_fixtures::isolation_lock();
         let s = spawn_with(
             "sh",
             &[
@@ -989,13 +989,13 @@ mod tests {
 
     #[test]
     fn review_reader_spawn_failure_rolls_back_child() {
-        use upd::common::contract_fixtures::{EnvGuard, TempDirGuard, isolation_lock};
+        use cm::common::contract_fixtures::{EnvGuard, TempDirGuard, isolation_lock};
         let _isolation = isolation_lock();
-        let dir = TempDirGuard::new("upd-reader-fail").unwrap();
+        let dir = TempDirGuard::new("cm-reader-fail").unwrap();
         let pidfile = dir.path().join("pid");
         let mut env = EnvGuard::new();
-        env.set("UPD_TUI_FAIL_READER", "1");
-        env.set("UPD_TUI_CHILD_PID_FILE", &pidfile);
+        env.set("CM_TUI_FAIL_READER", "1");
+        env.set("CM_TUI_CHILD_PID_FILE", &pidfile);
         assert!(spawn_with("sleep", &["30".into()], 24, 80).is_err());
         let pid = std::fs::read_to_string(pidfile).unwrap();
         assert!(!std::path::Path::new(&format!("/proc/{pid}")).exists());
@@ -1003,7 +1003,7 @@ mod tests {
 
     #[test]
     fn b06_reused_pid_is_not_our_group() {
-        let _isolation = upd::common::contract_fixtures::isolation_lock();
+        let _isolation = cm::common::contract_fixtures::isolation_lock();
         let mut s = spawn_with("true", &[], 24, 80).unwrap();
         let t0 = Instant::now();
         while s.finished().is_none() && t0.elapsed().as_secs() < 10 {

@@ -1,8 +1,8 @@
 //! Системный помощник для графического интерфейса.
 //!
 //! Интерфейс работает от обычного пользователя; всё, что требует root (установка, зеркала, VPN,
-//! живой снимок ядра VPN через закрытый сокет), он просит у помощника `upd helper`. Помощник
-//! запускается systemd по обращению к сокету `/run/upd/helper.sock` и сам завершается без работы.
+//! живой снимок ядра VPN через закрытый сокет), он просит у помощника `cm helper`. Помощник
+//! запускается systemd по обращению к сокету `/run/cm/helper.sock` и сам завершается без работы.
 //! Каждый запрос проверяется через polkit (`pkcheck`) для процесса, который прислал запрос
 //! (pid, время старта и uid берутся из SO_PEERCRED, а не из запроса).
 //!
@@ -27,15 +27,15 @@ use std::sync::mpsc::{self, Receiver, SyncSender};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-pub const SOCKET: &str = "/run/upd/helper.sock";
+pub const SOCKET: &str = "/run/cm/helper.sock";
 /// Чтение: состояние операции, живой снимок VPN, списки снапшотов и истории.
-pub const ACTION_STATUS: &str = "io.github.upd.status";
+pub const ACTION_STATUS: &str = "io.github.cm.status";
 /// Проверка обновлений (как обновление кэша в PackageKit): без пароля в активном сеансе.
-pub const ACTION_CHECK: &str = "io.github.upd.check";
+pub const ACTION_CHECK: &str = "io.github.cm.check";
 /// Включить или выключить VPN и выбрать сервер (как VPN в NetworkManager): без пароля в активном сеансе.
-pub const ACTION_VPN: &str = "io.github.upd.vpn";
+pub const ACTION_VPN: &str = "io.github.cm.vpn";
 /// Изменение системы: установка, зеркала, подписки и настройки — с паролем администратора.
-pub const ACTION_MANAGE: &str = "io.github.upd.manage";
+pub const ACTION_MANAGE: &str = "io.github.cm.manage";
 pub const PROTOCOL_VERSION: u32 = 2;
 
 /// Какое действие polkit нужно для запуска команды.
@@ -75,7 +75,7 @@ const RUNNER_DRAIN: Duration = Duration::from_millis(500);
 const RUNNER_TERM_GRACE: Duration = Duration::from_millis(500);
 
 pub fn socket_path() -> String {
-    env_or("UPD_HELPER_SOCK", SOCKET)
+    env_or("CM_HELPER_SOCK", SOCKET)
 }
 
 // ======================= протокол =======================
@@ -89,7 +89,7 @@ pub enum Request {
     Status,
     /// подписаться на вывод текущей (или последней) операции
     Attach,
-    /// запустить команду upd из разрешённого списка
+    /// запустить команду cm из разрешённого списка
     Start { args: Vec<String> },
     /// ответ на вопрос операции (строка без перевода строки)
     Input { operation_id: OperationId, prompt_id: PromptId, data: String },
@@ -371,7 +371,7 @@ fn safe_url(s: &str) -> bool {
     (s.starts_with("https://") || s.starts_with("http://")) && s.len() <= 2048 && !s.chars().any(|c| c.is_whitespace() || c.is_control())
 }
 
-/// Команды upd, которые интерфейс может запустить через помощника. Всё прочее отклоняется.
+/// Команды cm, которые интерфейс может запустить через помощника. Всё прочее отклоняется.
 pub fn allowed(args: &[String]) -> bool {
     let a: Vec<&str> = args.iter().map(String::as_str).collect();
     match a.as_slice() {
@@ -429,9 +429,9 @@ enum Auth {
     No(String),
 }
 
-/// Проверка через polkit. root разрешено всё; в тестовом режиме (UPD_STATE_DIR) можно разрешить явно.
+/// Проверка через polkit. root разрешено всё; в тестовом режиме (CM_STATE_DIR) можно разрешить явно.
 fn authorize(p: Peer, action: &str) -> Auth {
-    if p.uid == 0 || (test_mode() && std::env::var("UPD_HELPER_ALLOW").as_deref() == Ok("1")) {
+    if p.uid == 0 || (test_mode() && std::env::var("CM_HELPER_ALLOW").as_deref() == Ok("1")) {
         return Auth::Yes;
     }
     let Some(start) = start_time(p.pid) else { return Auth::No(t!("процесс запроса уже завершился").into()) };
@@ -732,7 +732,7 @@ impl ConnectionWorker {
 }
 
 fn spawn_connection_worker(f: impl FnOnce() + Send + 'static) -> Result<ConnectionWorker, String> {
-    if test_mode() && std::env::var("UPD_HELPER_FAIL_CONNECTION_WORKER").as_deref() == Ok("1") {
+    if test_mode() && std::env::var("CM_HELPER_FAIL_CONNECTION_WORKER").as_deref() == Ok("1") {
         return Err("injected helper connection worker spawn failure".into());
     }
     let (tx, rx) = std::sync::mpsc::sync_channel(1);
@@ -839,7 +839,7 @@ fn finish(shared: &Shared, operation_id: &OperationId, code: i32) {
     if let Some(line) = line {
         broadcast(&mut st, operation_id, None, Event::Line { text: line });
     }
-    println!("upd helper: {command} → {code}");
+    println!("cm helper: {command} → {code}");
     st.last_activity = Some(Instant::now());
     broadcast(&mut st, operation_id, None, Event::Exit { code });
 }
@@ -910,7 +910,7 @@ fn cancel_operation(shared: &Shared, owner: u32, operation_id: &OperationId) -> 
         .map_err(|message| ControlError { code: ControlErrorCode::SignalFailed, message })
 }
 
-/// Запуск `upd ARGS` в отдельном PTY: pacman, apt и sudo видят настоящий терминал.
+/// Запуск `cm ARGS` в отдельном PTY: pacman, apt и sudo видят настоящий терминал.
 fn spawn_pty(args: &[String], env: &[(String, String)]) -> std::io::Result<(std::process::Child, File)> {
     let size = libc::winsize { ws_row: 40, ws_col: 120, ws_xpixel: 0, ws_ypixel: 0 };
     let (mut m, mut s) = (-1, -1);
@@ -922,14 +922,14 @@ fn spawn_pty(args: &[String], env: &[(String, String)]) -> std::io::Result<(std:
     unsafe {
         libc::fcntl(master.as_raw_fd(), libc::F_SETFD, libc::FD_CLOEXEC);
     }
-    // в тестовом режиме вместо upd можно подставить свою программу (сквозной тест протокола)
-    let exe = match std::env::var_os("UPD_HELPER_EXE").filter(|_| test_mode()) {
+    // в тестовом режиме вместо cm можно подставить свою программу (сквозной тест протокола)
+    let exe = match std::env::var_os("CM_HELPER_EXE").filter(|_| test_mode()) {
         Some(p) => std::path::PathBuf::from(p),
         None => std::env::current_exe()?,
     };
     let mut cmd = Command::new(exe);
     for key in ["SUDO_USER", "SUDO_UID", "DOAS_USER", "PKEXEC_UID", "XDG_RUNTIME_DIR", "DBUS_SESSION_BUS_ADDRESS"] { cmd.env_remove(key); }
-    cmd.args(args).env("PAGER", "cat").env("TERM", "xterm-256color").env("UPD_GUI", "1");
+    cmd.args(args).env("PAGER", "cat").env("TERM", "xterm-256color").env("CM_GUI", "1");
     for (k, v) in env {
         cmd.env(k, v);
     }
@@ -942,7 +942,7 @@ fn spawn_pty(args: &[String], env: &[(String, String)]) -> std::io::Result<(std:
             Ok(())
         });
     }
-    if test_mode() && std::env::var("UPD_HELPER_FAIL_CHILD").as_deref() == Ok("1") {
+    if test_mode() && std::env::var("CM_HELPER_FAIL_CHILD").as_deref() == Ok("1") {
         return Err(std::io::Error::other("injected child spawn failure"));
     }
     let child = cmd.spawn()?;
@@ -950,7 +950,7 @@ fn spawn_pty(args: &[String], env: &[(String, String)]) -> std::io::Result<(std:
 }
 
 fn spawn_operation_worker<T: Send + 'static>(name: &str, f: impl FnOnce() -> T + Send + 'static) -> Result<std::thread::JoinHandle<T>, String> {
-    if test_mode() && std::env::var("UPD_HELPER_FAIL_WORKER").as_deref() == Ok(name) {
+    if test_mode() && std::env::var("CM_HELPER_FAIL_WORKER").as_deref() == Ok(name) {
         // Let the child get far enough to create a marker or fork a descendant so
         // the failure fixture verifies cleanup of a real process tree.
         std::thread::sleep(Duration::from_millis(50));
@@ -1136,7 +1136,7 @@ fn runner_loop(shared: &Shared, operation_id: &OperationId, resources: &mut Runn
                 Ok(None) => {}
                 Err(error) => {
                     forced_error = true;
-                    eprintln!("upd helper: child status failed: {error}");
+                    eprintln!("cm helper: child status failed: {error}");
                     let _ = signal_runner_group(resources, libc::SIGKILL);
                     if let Some(child) = resources.child.as_mut() {
                         let _ = child.kill();
@@ -1165,7 +1165,7 @@ fn runner_loop(shared: &Shared, operation_id: &OperationId, resources: &mut Runn
                         cancel_count = 2;
                         terminate_deadline = Some(Instant::now() + RUNNER_TERM_GRACE);
                     }
-                    eprintln!("upd helper: reader failed: {error}");
+                    eprintln!("cm helper: reader failed: {error}");
                 }
                 Err(mpsc::TryRecvError::Disconnected) => {
                     reader_ended = true;
@@ -1278,7 +1278,7 @@ fn start_command(shared: &Shared, args: Vec<String>, p: Peer, lang: &str) -> Res
         Ok(x) => x,
         Err(e) => {
             finish(shared, &operation_id, 127);
-            return Err(t!("не удалось запустить upd: {0}", e));
+            return Err(t!("не удалось запустить cm: {0}", e));
         }
     };
     let pgid = child.id() as i32;
@@ -1292,7 +1292,7 @@ fn start_command(shared: &Shared, args: Vec<String>, p: Peer, lang: &str) -> Res
         let _ = child.kill();
         let _ = child.wait();
         finish(shared, &operation_id, 127);
-        return Err(t!("не удалось запустить upd: {0}", error));
+        return Err(t!("не удалось запустить cm: {0}", error));
     }
     let flags = unsafe { libc::fcntl(master.as_raw_fd(), libc::F_GETFL) };
     if flags < 0 || unsafe { libc::fcntl(master.as_raw_fd(), libc::F_SETFL, flags | libc::O_NONBLOCK) } < 0 {
@@ -1300,7 +1300,7 @@ fn start_command(shared: &Shared, args: Vec<String>, p: Peer, lang: &str) -> Res
         let _ = child.kill(); let _ = child.wait(); finish(shared, &operation_id, 127);
         return Err("cannot configure nonblocking PTY input".into());
     }
-    let reader = if test_mode() && std::env::var("UPD_HELPER_FAIL_CLONE").as_deref() == Ok("1") {
+    let reader = if test_mode() && std::env::var("CM_HELPER_FAIL_CLONE").as_deref() == Ok("1") {
         std::thread::sleep(Duration::from_millis(50));
         Err(std::io::Error::other("injected PTY reader clone failure"))
     } else {
@@ -1313,7 +1313,7 @@ fn start_command(shared: &Shared, args: Vec<String>, p: Peer, lang: &str) -> Res
             let _ = child.kill();
             let _ = child.wait();
             finish(shared, &operation_id, 127);
-            return Err(t!("не удалось запустить upd: {0}", error));
+            return Err(t!("не удалось запустить cm: {0}", error));
         }
     };
     let (wake_read, wake_write) = match UnixStream::pair() {
@@ -1323,7 +1323,7 @@ fn start_command(shared: &Shared, args: Vec<String>, p: Peer, lang: &str) -> Res
             let _ = child.kill();
             let _ = child.wait();
             finish(shared, &operation_id, 127);
-            return Err(t!("не удалось запустить upd: {0}", error));
+            return Err(t!("не удалось запустить cm: {0}", error));
         }
     };
     let reader_stop = Arc::new(AtomicBool::new(false));
@@ -1403,7 +1403,7 @@ fn start_command(shared: &Shared, args: Vec<String>, p: Peer, lang: &str) -> Res
         finish(shared, &operation_id, 127);
         return Err(error);
     }
-    println!("upd helper: uid {} → upd {}", p.uid, args.join(" "));
+    println!("cm helper: uid {} → cm {}", p.uid, args.join(" "));
     Ok(operation_id)
 }
 
@@ -1484,7 +1484,7 @@ pub fn apply_setting(b: &dyn Backend, key: &str, value: &str, user: Option<&User
         _ => Ok(()),
     };
     let runtime = match result {
-        Err(reason) => SettingsRuntime::SavedButNotApplied { reason, retry: format!("upd vpn restart (revision {revision})") },
+        Err(reason) => SettingsRuntime::SavedButNotApplied { reason, retry: format!("cm vpn restart (revision {revision})") },
         Ok(()) if pending.is_some() => SettingsRuntime::Pending { reason: pending.unwrap() },
         Ok(()) if key.starts_with("vpn_") && !vpn::service_active() => SettingsRuntime::Pending { reason: "VPN is not running; the saved configuration will be used on its next start".into() },
         Ok(()) if key.starts_with("vpn_") => SettingsRuntime::Applied,
@@ -1493,7 +1493,7 @@ pub fn apply_setting(b: &dyn Backend, key: &str, value: &str, user: Option<&User
     let current = Config::load(b.default_mirrors())?;
     let current_revision = current.revision();
     let runtime = if key.starts_with("vpn_") && current_revision != revision {
-        SettingsRuntime::SavedButNotApplied { reason: "configuration changed during runtime apply".into(), retry: "upd vpn restart".into() }
+        SettingsRuntime::SavedButNotApplied { reason: "configuration changed during runtime apply".into(), retry: "cm vpn restart".into() }
     } else { runtime };
     Ok(SettingsReply { config: current, revision: current_revision, runtime })
 }
@@ -1657,7 +1657,7 @@ fn handle(shared: &Shared, b: &dyn Backend, mut stream: UnixStream, p: Peer) {
                 if vpn::service_active() {
                     vpn::apply(&c, user.as_ref(), log)?;
                 } else {
-                    log(t!("подписка добавлена. Запуск VPN: upd vpn start"));
+                    log(t!("подписка добавлена. Запуск VPN: cm vpn start"));
                 }
                 Ok(())
             }) {
@@ -1929,21 +1929,21 @@ fn listener() -> Result<UnixListener, String> {
     Ok(l)
 }
 
-/// `upd helper`: служба по сокету; завершается после IDLE_EXIT без клиентов и операций.
+/// `cm helper`: служба по сокету; завершается после IDLE_EXIT без клиентов и операций.
 pub fn serve() -> i32 {
     if !is_root() && !test_mode() {
-        eprintln!("{}", t!("upd helper: нужны права root"));
+        eprintln!("{}", t!("cm helper: нужны права root"));
         return 1;
     }
     let l = match listener() {
         Ok(l) => l,
         Err(e) => {
-            eprintln!("upd helper: {e}");
+            eprintln!("cm helper: {e}");
             return 1;
         }
     };
     if let Err(e) = backend::detect() {
-        eprintln!("upd helper: {e}");
+        eprintln!("cm helper: {e}");
         return 1;
     }
     let shared: Shared = Arc::new(Mutex::new(State { last_activity: Some(Instant::now()), ..Default::default() }));
@@ -1956,7 +1956,7 @@ pub fn serve() -> i32 {
         if r <= 0 {
             let st = lock(&shared);
             let busy = st.clients > 0 || st.op.as_ref().is_some_and(|o| o.phase != OperationPhase::Finished);
-            let idle = if test_mode() { std::env::var("UPD_HELPER_IDLE_MS").ok().and_then(|v| v.parse::<u64>().ok()).map(Duration::from_millis).unwrap_or(IDLE_EXIT) } else { IDLE_EXIT };
+            let idle = if test_mode() { std::env::var("CM_HELPER_IDLE_MS").ok().and_then(|v| v.parse::<u64>().ok()).map(Duration::from_millis).unwrap_or(IDLE_EXIT) } else { IDLE_EXIT };
             if !busy && st.last_activity.is_some_and(|t| t.elapsed() > idle) {
                 return 0;
             }
@@ -1990,7 +1990,7 @@ pub fn serve() -> i32 {
         });
         match spawn {
             Ok(worker) => workers.push((peer.uid, worker)),
-            Err(error) => eprintln!("upd helper: {error}"),
+            Err(error) => eprintln!("cm helper: {error}"),
         }
     }
 }
@@ -2015,7 +2015,7 @@ fn check_reply_protocol(reply: &Reply) -> Result<(), String> {
         Ok(())
     } else {
         Err(format!(
-            "helper protocol mismatch: client {PROTOCOL_VERSION}, helper {}; update upd and upd-cosmic together",
+            "helper protocol mismatch: client {PROTOCOL_VERSION}, helper {}; update cm and cm-cosmic together",
             reply.protocol_version
         ))
     }
@@ -2077,7 +2077,7 @@ fn connect_once_observed(req: &Request, observe: &mut impl FnMut(EventCancelHand
     let path = socket_path();
     let mut s = connect_socket(&path, Instant::now() + Duration::from_secs(2)).map_err(|e| {
         if e.kind() == std::io::ErrorKind::NotFound || e.kind() == std::io::ErrorKind::ConnectionRefused {
-            t!("помощник upd недоступен — установите upd заново (sudo upd install)").into()
+            t!("помощник cm недоступен — установите cm заново (sudo cm install)").into()
         } else {
             format!("{path}: {e}")
         }
@@ -2354,7 +2354,7 @@ mod tests {
 
     #[test]
     fn stale_prompt_from_previous_operation_is_rejected_once() {
-        let dir = crate::common::contract_fixtures::TempDirGuard::new("upd-helper-prompt-id").unwrap();
+        let dir = crate::common::contract_fixtures::TempDirGuard::new("cm-helper-prompt-id").unwrap();
         let old_path = dir.path().join("old-input");
         let new_path = dir.path().join("new-input");
         let mut st = State::default();
@@ -2445,7 +2445,7 @@ mod tests {
     fn inline_operation_reports_cancellation_as_unsupported() {
         let _isolation = crate::common::contract_fixtures::isolation_lock();
         let mut env = crate::common::contract_fixtures::EnvGuard::new();
-        env.remove("UPD_HELPER_FAIL_WORKER");
+        env.remove("CM_HELPER_FAIL_WORKER");
         let shared: Shared = Arc::new(Mutex::new(State::default()));
         let (started_tx, started_rx) = mpsc::sync_channel(1);
         let (release_tx, release_rx) = mpsc::sync_channel(1);
@@ -2621,8 +2621,8 @@ mod frame_tests {
     fn connection_spawn_failure_releases_guard() {
         let _isolation = crate::common::contract_fixtures::isolation_lock();
         let mut env = crate::common::contract_fixtures::EnvGuard::new();
-        env.set("UPD_STATE_DIR", "/tmp/upd-contract-spawn");
-        env.set("UPD_HELPER_FAIL_CONNECTION_WORKER", "1");
+        env.set("CM_STATE_DIR", "/tmp/cm-contract-spawn");
+        env.set("CM_HELPER_FAIL_CONNECTION_WORKER", "1");
         let shared = Arc::new(Mutex::new(State::default()));
         assert!(reserve_connection(&shared, 1000));
         let guard = ClientGuard { shared: shared.clone(), uid: 1000 };
@@ -2663,7 +2663,7 @@ mod frame_tests {
         use std::os::unix::fs::PermissionsExt;
         let _isolation = isolation_lock();
         for allowed in [false, true] {
-            let dir = TempDirGuard::new("upd-fake-polkit-barrier").unwrap();
+            let dir = TempDirGuard::new("cm-fake-polkit-barrier").unwrap();
             let pkcheck = dir.path().join("pkcheck");
             let ready = dir.path().join("ready"); let release = dir.path().join("release");
             let code = if allowed { 0 } else { 1 };
@@ -2671,7 +2671,7 @@ mod frame_tests {
             std::fs::set_permissions(&pkcheck, std::fs::Permissions::from_mode(0o755)).unwrap();
             let apt = dir.path().join("apt-get"); std::fs::write(&apt, "#!/bin/sh\nexit 99\n").unwrap();
             std::fs::set_permissions(&apt, std::fs::Permissions::from_mode(0o755)).unwrap();
-            let mut env = EnvGuard::new(); env.set("PATH", dir.path()); env.set("UPD_HELPER_ALLOW", "0");
+            let mut env = EnvGuard::new(); env.set("PATH", dir.path()); env.set("CM_HELPER_ALLOW", "0");
             let shared = Arc::new(Mutex::new(State::default()));
             let old = begin(&mut lock(&shared), "check".into(), 65534).unwrap();
             let (runner, commands) = mpsc::sync_channel(1);
