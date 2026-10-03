@@ -1,0 +1,74 @@
+{
+  "utc": "2026-10-03T19:34:30.947108+00:00",
+  "scope": "native same-config offline validate/start; private netns/cap-drop ALL/no TUN",
+  "binary_sha256": "98f50f0fdc498a9be1aa65ee991cda1c5854650d948e9001d7e13b703ab6cc3d",
+  "status": "PASS",
+  "public_requests": 0,
+  "node": {
+    "type": "vless",
+    "network": "ws",
+    "full_node_sha256": "8b40ade9cdbc6ff22f0570ae2532e414403aac03e146411996c024d51df4aa0d"
+  },
+  "shared_config_sha256": "7b8fa6628a5004a067b6c2796499c81fa9402f5ad78b7133e5b2e899085e9602",
+  "original_full_node_preserved": true,
+  "native_validate_exit_code": 0,
+  "validate_output_redacted": true,
+  "private_rest_api_summary": {
+    "transport": "unix",
+    "methods": [
+      "GET /version",
+      "GET /proxies"
+    ],
+    "reachable": true,
+    "http_status": 200,
+    "version": "v1.19.32",
+    "proxies_http_status": 200,
+    "terminal_config_match": true,
+    "terminal_node": {
+      "type": "vless",
+      "network": "ws"
+    },
+    "chain": [
+      {
+        "type": "Selector",
+        "alive": true,
+        "latest_delay_ms": null
+      },
+      {
+        "type": "other_or_missing",
+        "alive": true,
+        "latest_delay_ms": null
+      }
+    ],
+    "termination": "terminal",
+    "root_basis": "MATCH rule from current runtime file; API resolves now values",
+    "loop_detected": false
+  },
+  "effective_general_known_fields": {
+    "mixed-port": 48123,
+    "port": 0,
+    "socks-port": 0,
+    "redir-port": 0,
+    "tproxy-port": 0,
+    "allow-lan": false,
+    "bind-address": "127.0.0.1",
+    "mode": "rule",
+    "ipv6": false,
+    "find-process-mode": "off"
+  },
+  "effective_tun_known_fields": {
+    "enable": false,
+    "auto-route": false,
+    "auto-detect-interface": false
+  },
+  "effective_general_matches_explicit_config": true,
+  "fixed_selection_matches": true,
+  "source_file_unchanged": true,
+  "own_config_unchanged": true,
+  "worker_exit_code": -15,
+  "own_process_reaped": true,
+  "output_redacted": true,
+  "output_bytes": 406,
+  "temporary_directory_removed": true,
+  "finished_utc": "2026-10-03T19:34:31.104360+00:00"
+}

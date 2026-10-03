@@ -1,0 +1,51 @@
+{
+  "utc": "2026-10-03T19:42:57.917389+00:00",
+  "classification": "nonexclusive textual classes; generic dial overlaps protocol failures",
+  "config_generation": "unknown",
+  "historical_causality": "INCONCLUSIVE",
+  "journals": {
+    "upd-vpn.service": {
+      "exit_code": 0,
+      "events": 18681,
+      "error_events": 17518,
+      "classes": {
+        "DNS": 1234,
+        "dial": 14574,
+        "TLS_REALITY": 0,
+        "WS": 26,
+        "HTTP": 11274,
+        "HTTP_502": 11214,
+        "handshake": 0,
+        "timeout": 2054,
+        "TUN": 302,
+        "unknown_error": 2649
+      },
+      "first_utc": "2026-10-01T19:17:45.494642+00:00",
+      "last_utc": "2026-10-03T14:45:18.058425+00:00"
+    },
+    "cm-vpn.service": {
+      "exit_code": 0,
+      "events": 0,
+      "error_events": 0,
+      "classes": {
+        "DNS": 0,
+        "dial": 0,
+        "TLS_REALITY": 0,
+        "WS": 0,
+        "HTTP": 0,
+        "HTTP_502": 0,
+        "handshake": 0,
+        "timeout": 0,
+        "TUN": 0,
+        "unknown_error": 0
+      },
+      "first_utc": null,
+      "last_utc": null
+    }
+  },
+  "versions": {
+    "UPD": "0.2.7",
+    "UPD_core": "v1.19.32",
+    "FlClash_package": "0.8.98-1"
+  }
+}

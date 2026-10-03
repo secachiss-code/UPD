@@ -1,0 +1,108 @@
+{
+  "utc": "2026-10-03T19:57:13.935325+00:00",
+  "scope": "single own Fl worker config validation; private network, no public requests",
+  "status": "PASS",
+  "binary_sha256": "b5014e62eda428795056221ce304990be30512f821d803a3b4bd8b0abafa1059",
+  "source_generation": {
+    "kind": "FlClash saved file, first eligible VLESS TCP/REALITY node in file order; active selection unknown",
+    "sha256": "c3b6c713edb056b91b81c3cc54c7d6e534a3e4f0fcded6e4fd164e4358f802e7",
+    "mtime_utc": "2026-10-03T14:45:40.621309+00:00"
+  },
+  "node": {
+    "type": "vless",
+    "network": "tcp",
+    "reality": true,
+    "full_node_sha256": "26bb6fda04b54182c8e5489fa5819fb87c02034512def88816a3ccdf66dff523"
+  },
+  "capabilities_dropped": "ALL",
+  "no_tun_device": true,
+  "network_namespace": "private offline",
+  "public_requests": 0,
+  "steps": [
+    {
+      "method": "getIsInit",
+      "expected_result_observed": true
+    },
+    {
+      "method": "initClash",
+      "expected_result_observed": true
+    },
+    {
+      "method": "validateConfig",
+      "expected_result_observed": true
+    },
+    {
+      "method": "setupConfig",
+      "expected_result_observed": true
+    },
+    {
+      "method": "startListener",
+      "expected_result_observed": true
+    }
+  ],
+  "shared_config_sha256": "cf43811a7e3cf738da53bbdfcec10dedc71dbc6612207899ab8aa2efa71584cb",
+  "original_full_node_preserved": true,
+  "active_proxies": {
+    "test_node_present": true,
+    "fixed_group_present": true,
+    "fixed_now_matches": true
+  },
+  "raw_config_full_node_equal": true,
+  "private_rest_api_summary": {
+    "transport": "unix",
+    "methods": [
+      "GET /version",
+      "GET /proxies"
+    ],
+    "reachable": true,
+    "http_status": 200,
+    "version": "1.10.0",
+    "proxies_http_status": 200,
+    "terminal_config_match": true,
+    "terminal_node": {
+      "type": "vless",
+      "network": "tcp"
+    },
+    "chain": [
+      {
+        "type": "Selector",
+        "alive": true,
+        "latest_delay_ms": null
+      },
+      {
+        "type": "other_or_missing",
+        "alive": true,
+        "latest_delay_ms": null
+      }
+    ],
+    "termination": "terminal",
+    "root_basis": "MATCH rule from current runtime file; API resolves now values",
+    "loop_detected": false
+  },
+  "effective_general_known_fields": {
+    "mixed-port": 48123,
+    "port": 0,
+    "socks-port": 0,
+    "redir-port": 0,
+    "tproxy-port": 0,
+    "allow-lan": false,
+    "bind-address": "127.0.0.1",
+    "mode": "rule",
+    "ipv6": false,
+    "find-process-mode": "off"
+  },
+  "effective_tun_known_fields": {
+    "enable": false,
+    "auto-route": false,
+    "auto-detect-interface": false
+  },
+  "source_file_unchanged": true,
+  "own_config_unchanged": true,
+  "effective_general_matches_explicit_config": true,
+  "worker_exit_code": 0,
+  "own_process_reaped": true,
+  "output_redacted": true,
+  "output_bytes": 406,
+  "temporary_directory_removed": true,
+  "finished_utc": "2026-10-03T19:57:14.020829+00:00"
+}

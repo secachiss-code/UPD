@@ -1,0 +1,48 @@
+{
+  "utc": "2026-10-03T20:14:15.889542+00:00",
+  "scope": "offline synthetic sanitizer/argv assertions; no external requests",
+  "cases": [
+    {
+      "fixture": 0,
+      "status": "PASS",
+      "secret_tokens_absent": true,
+      "stage_matches": true,
+      "tls_verify_zero_without_handshake_not_success": true
+    },
+    {
+      "fixture": 1,
+      "status": "PASS",
+      "secret_tokens_absent": true,
+      "stage_matches": true,
+      "tls_verify_zero_without_handshake_not_success": true
+    },
+    {
+      "fixture": 2,
+      "status": "PASS",
+      "secret_tokens_absent": true,
+      "stage_matches": true,
+      "tls_verify_zero_without_handshake_not_success": true
+    },
+    {
+      "fixture": 3,
+      "status": "PASS",
+      "secret_tokens_absent": true,
+      "stage_matches": true,
+      "tls_verify_zero_without_handshake_not_success": true
+    }
+  ],
+  "unchanged_core_digests": {
+    "native": true,
+    "FlClash": true
+  },
+  "source_generation_unchanged": true,
+  "scripts_sha256": {
+    "cm-i01-c20-offline-check.py": "a5ec67f32a055b9143608f4dc6e6c39a70e2b0545e55461ee1c77085ce7461a1",
+    "cm-i01-c20-controls.py": "b320d5ebc29ffde087d70c019abfd2dcafbbd0eef50ffe3d7ddecba93146d7b2",
+    "cm-i01-c20-workers.py": "b7e8f8be16d396511291ec4a99b89d1560caf840db967e75090256a8d86dcec4",
+    "cm-i01-c20-phase.py": "e8783eecc1d9b4c897748c306a4cbf7d1fd97eb53e92f6d89e66344a15ba9c27",
+    "cm-i01-c20-request.py": "62e26c46a32d690a15b199376b6f1ac3cae486b3106aeaafe534a49133cc51f3"
+  },
+  "public_requests": 0,
+  "status": "PASS"
+}

@@ -1,0 +1,8 @@
+{
+  "utc": "2026-10-03T19:30:40.251807+00:00",
+  "scope": "read-only copy of installed core to own temporary executable, no installation",
+  "source_sha256": "98f50f0fdc498a9be1aa65ee991cda1c5854650d948e9001d7e13b703ab6cc3d",
+  "copy_sha256": "98f50f0fdc498a9be1aa65ee991cda1c5854650d948e9001d7e13b703ab6cc3d",
+  "copy_mode": "0o700",
+  "copy_path": "/tmp/cm-i01-native-mihomo"
+}

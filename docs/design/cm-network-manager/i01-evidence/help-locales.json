@@ -1,0 +1,169 @@
+{
+  "utc": "2026-10-03T19:32:12.294212+00:00",
+  "binary_sha256": "22b00cb906e430ea689faeea4f09e0641a2f6e9e073ba5ef71ec89435dc695d4",
+  "source_sha256": {
+    "src/main.rs": "2249921075f725f0f1e8abc2783c876fb3abc8073cb6246ccc24716068de1724",
+    "src/i18n_table.rs": "2fb4cfd8ad0c0974441d93b07e982024535edceebefb3120bf1922d76dc9d7cb"
+  },
+  "scope": "actual help, private CM_CONF, synthetic external command sentinels",
+  "cases": [
+    {
+      "lang": "ru",
+      "argv": [
+        "/home/somovas/\u041f\u0440\u043e\u0435\u043a\u0442\u044b/upd/target/x86_64-unknown-linux-musl/debug/cm",
+        "help"
+      ],
+      "exit_code": 0,
+      "localized_headline": true,
+      "localized_migration_notice": true,
+      "private_config_and_tree_unchanged": true,
+      "no_external_commands": true,
+      "status": "PASS"
+    },
+    {
+      "lang": "ru",
+      "argv": [
+        "/home/somovas/\u041f\u0440\u043e\u0435\u043a\u0442\u044b/upd/target/x86_64-unknown-linux-musl/debug/cm",
+        "--help"
+      ],
+      "exit_code": 0,
+      "localized_headline": true,
+      "localized_migration_notice": true,
+      "private_config_and_tree_unchanged": true,
+      "no_external_commands": true,
+      "status": "PASS"
+    },
+    {
+      "lang": "en",
+      "argv": [
+        "/home/somovas/\u041f\u0440\u043e\u0435\u043a\u0442\u044b/upd/target/x86_64-unknown-linux-musl/debug/cm",
+        "help"
+      ],
+      "exit_code": 0,
+      "localized_headline": true,
+      "localized_migration_notice": true,
+      "private_config_and_tree_unchanged": true,
+      "no_external_commands": true,
+      "status": "PASS"
+    },
+    {
+      "lang": "en",
+      "argv": [
+        "/home/somovas/\u041f\u0440\u043e\u0435\u043a\u0442\u044b/upd/target/x86_64-unknown-linux-musl/debug/cm",
+        "--help"
+      ],
+      "exit_code": 0,
+      "localized_headline": true,
+      "localized_migration_notice": true,
+      "private_config_and_tree_unchanged": true,
+      "no_external_commands": true,
+      "status": "PASS"
+    },
+    {
+      "lang": "de",
+      "argv": [
+        "/home/somovas/\u041f\u0440\u043e\u0435\u043a\u0442\u044b/upd/target/x86_64-unknown-linux-musl/debug/cm",
+        "help"
+      ],
+      "exit_code": 0,
+      "localized_headline": true,
+      "localized_migration_notice": true,
+      "private_config_and_tree_unchanged": true,
+      "no_external_commands": true,
+      "status": "PASS"
+    },
+    {
+      "lang": "de",
+      "argv": [
+        "/home/somovas/\u041f\u0440\u043e\u0435\u043a\u0442\u044b/upd/target/x86_64-unknown-linux-musl/debug/cm",
+        "--help"
+      ],
+      "exit_code": 0,
+      "localized_headline": true,
+      "localized_migration_notice": true,
+      "private_config_and_tree_unchanged": true,
+      "no_external_commands": true,
+      "status": "PASS"
+    },
+    {
+      "lang": "it",
+      "argv": [
+        "/home/somovas/\u041f\u0440\u043e\u0435\u043a\u0442\u044b/upd/target/x86_64-unknown-linux-musl/debug/cm",
+        "help"
+      ],
+      "exit_code": 0,
+      "localized_headline": true,
+      "localized_migration_notice": true,
+      "private_config_and_tree_unchanged": true,
+      "no_external_commands": true,
+      "status": "PASS"
+    },
+    {
+      "lang": "it",
+      "argv": [
+        "/home/somovas/\u041f\u0440\u043e\u0435\u043a\u0442\u044b/upd/target/x86_64-unknown-linux-musl/debug/cm",
+        "--help"
+      ],
+      "exit_code": 0,
+      "localized_headline": true,
+      "localized_migration_notice": true,
+      "private_config_and_tree_unchanged": true,
+      "no_external_commands": true,
+      "status": "PASS"
+    },
+    {
+      "lang": "zh",
+      "argv": [
+        "/home/somovas/\u041f\u0440\u043e\u0435\u043a\u0442\u044b/upd/target/x86_64-unknown-linux-musl/debug/cm",
+        "help"
+      ],
+      "exit_code": 0,
+      "localized_headline": true,
+      "localized_migration_notice": true,
+      "private_config_and_tree_unchanged": true,
+      "no_external_commands": true,
+      "status": "PASS"
+    },
+    {
+      "lang": "zh",
+      "argv": [
+        "/home/somovas/\u041f\u0440\u043e\u0435\u043a\u0442\u044b/upd/target/x86_64-unknown-linux-musl/debug/cm",
+        "--help"
+      ],
+      "exit_code": 0,
+      "localized_headline": true,
+      "localized_migration_notice": true,
+      "private_config_and_tree_unchanged": true,
+      "no_external_commands": true,
+      "status": "PASS"
+    },
+    {
+      "lang": "ar",
+      "argv": [
+        "/home/somovas/\u041f\u0440\u043e\u0435\u043a\u0442\u044b/upd/target/x86_64-unknown-linux-musl/debug/cm",
+        "help"
+      ],
+      "exit_code": 0,
+      "localized_headline": true,
+      "localized_migration_notice": true,
+      "private_config_and_tree_unchanged": true,
+      "no_external_commands": true,
+      "status": "PASS"
+    },
+    {
+      "lang": "ar",
+      "argv": [
+        "/home/somovas/\u041f\u0440\u043e\u0435\u043a\u0442\u044b/upd/target/x86_64-unknown-linux-musl/debug/cm",
+        "--help"
+      ],
+      "exit_code": 0,
+      "localized_headline": true,
+      "localized_migration_notice": true,
+      "private_config_and_tree_unchanged": true,
+      "no_external_commands": true,
+      "status": "PASS"
+    }
+  ],
+  "status": "PASS",
+  "finished_utc": "2026-10-03T19:32:12.390056+00:00"
+}

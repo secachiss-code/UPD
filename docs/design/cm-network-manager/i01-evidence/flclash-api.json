@@ -1,0 +1,51 @@
+{
+  "utc": "2026-10-03T19:03:39.676154+00:00",
+  "scope": "read-only FlClashCore owned socket GET discovery",
+  "core_processes": [
+    {
+      "pid": 43845,
+      "binary": {
+        "exists": true,
+        "sha256": "b5014e62eda428795056221ce304990be30512f821d803a3b4bd8b0abafa1059",
+        "size": 61124770,
+        "mode": "0o755",
+        "uid": 0,
+        "gid": 0,
+        "mtime_utc": "2026-09-24T20:42:10+00:00"
+      },
+      "argv_count": 2,
+      "non_exe_args_decimal": [
+        false
+      ],
+      "standard_mihomo_cli_markers": {
+        "ext-ctl-unix": false,
+        "config.yaml": true,
+        "flag provided but not defined": false
+      }
+    }
+  ],
+  "api": [
+    {
+      "transport": "unix",
+      "methods": [
+        "GET /version",
+        "GET /proxies"
+      ],
+      "reachable": false,
+      "error_class": "OSError"
+    },
+    {
+      "transport": "owned_tcp_loopback",
+      "methods": [
+        "GET /version",
+        "GET /proxies"
+      ],
+      "reachable": false,
+      "http_status": 400
+    }
+  ],
+  "owned_candidate_counts": {
+    "unix": 1,
+    "tcp_loopback": 1
+  }
+}

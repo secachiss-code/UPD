@@ -1,0 +1,94 @@
+{
+  "utc": "2026-10-03T20:30:18.106808+00:00",
+  "uid": 0,
+  "scope": "read-only host snapshot and live FlClashCore socket ownership",
+  "snapshot": {
+    "0": {
+      "exists": true,
+      "entries": 3,
+      "errors": 0,
+      "content_permissions_digest": "6319b63eac1ab8a087c62f9ef24e780063a0d4138f2afcdbe462270a85c97f9f"
+    },
+    "1": {
+      "exists": false
+    },
+    "2": {
+      "exists": true,
+      "entries": 13,
+      "errors": 0,
+      "content_permissions_digest": "2ce0b73fa28ed272a1b93474d137982fba12aa8b0f5c327629f4af0421050ebe"
+    },
+    "3": {
+      "exists": false
+    },
+    "4": {
+      "exists": true,
+      "entries": 15,
+      "errors": 0,
+      "content_permissions_digest": "4a085db7dcbd0a0a55467cef515bd4fbf90c70b9eee82360043cc685aba4e5d5"
+    },
+    "routes": {
+      "exit_code": 0,
+      "sha256": "cd39dfbecc2f1fe824ef0b8edcdff3ead3ef18369f22f7d21c11ad55556bfb92"
+    },
+    "resolv_conf": {
+      "exists": true,
+      "sha256": "bbea1627272790a4e1c4b7256f398ab0d931f3bdf106598d75eb19dd968ede25",
+      "size": 53,
+      "mode": "0o644",
+      "uid": 0,
+      "gid": 0,
+      "mtime_utc": "2026-10-03T08:38:31.459000+00:00"
+    },
+    "upd-vpn.service": {
+      "exit_code": 0,
+      "properties": [
+        "LoadState=loaded",
+        "ActiveState=inactive",
+        "SubState=dead",
+        "MainPID=0"
+      ]
+    },
+    "cm-vpn.service": {
+      "exit_code": 0,
+      "properties": [
+        "LoadState=not-found",
+        "ActiveState=inactive",
+        "SubState=dead",
+        "MainPID=0"
+      ]
+    },
+    "upd-helper.service": {
+      "exit_code": 0,
+      "properties": [
+        "LoadState=loaded",
+        "ActiveState=inactive",
+        "SubState=dead",
+        "MainPID=0"
+      ]
+    },
+    "cm-helper.service": {
+      "exit_code": 0,
+      "properties": [
+        "LoadState=not-found",
+        "ActiveState=inactive",
+        "SubState=dead",
+        "MainPID=0"
+      ]
+    }
+  },
+  "live_proxy_candidates": [
+    {
+      "pid": 43845,
+      "uid": 0,
+      "port": 7890,
+      "config_role": "mixed-port",
+      "socket_inode": "275973",
+      "bind": "127.0.0.1",
+      "exe_sha256": "b5014e62eda428795056221ce304990be30512f821d803a3b4bd8b0abafa1059",
+      "ownership": "exact executable + process fd inode + LISTEN socket table + saved proxy port",
+      "netns_inode": 4026531833
+    }
+  ],
+  "finished_utc": "2026-10-03T20:30:18.372818+00:00"
+}

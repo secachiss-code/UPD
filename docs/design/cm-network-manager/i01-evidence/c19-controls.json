@@ -1,0 +1,70 @@
+{
+  "started_utc": "2026-10-03T19:59:25.006763+00:00",
+  "status": "FAIL",
+  "scope": "live FlClash owned loopback proxy path, live selected node unknown; no IPC mutations",
+  "requests": [
+    {
+      "utc": "2026-10-03T19:59:28.362904+00:00",
+      "index": 0,
+      "target": "gstatic",
+      "expected_http": 204,
+      "http_status": 0,
+      "success": false,
+      "curl_exit_code": 35,
+      "latency_wall_seconds": 3.355197357996076,
+      "curl_total_seconds": 3.347097,
+      "ttfb_seconds": 3.347094,
+      "error_class": "tls"
+    },
+    {
+      "utc": "2026-10-03T19:59:30.719188+00:00",
+      "index": 1,
+      "target": "cloudflare_trace",
+      "expected_http": 200,
+      "http_status": 0,
+      "success": false,
+      "curl_exit_code": 35,
+      "latency_wall_seconds": 2.3552331719984068,
+      "curl_total_seconds": 2.342154,
+      "ttfb_seconds": 2.342153,
+      "error_class": "tls"
+    },
+    {
+      "utc": "2026-10-03T19:59:34.225137+00:00",
+      "index": 2,
+      "target": "gstatic",
+      "expected_http": 204,
+      "http_status": 0,
+      "success": false,
+      "curl_exit_code": 35,
+      "latency_wall_seconds": 3.5025344570021844,
+      "curl_total_seconds": 3.485219,
+      "ttfb_seconds": 3.485217,
+      "error_class": "tls"
+    },
+    {
+      "utc": "2026-10-03T19:59:37.972472+00:00",
+      "index": 3,
+      "target": "cloudflare_trace",
+      "expected_http": 200,
+      "http_status": 0,
+      "success": false,
+      "curl_exit_code": 35,
+      "latency_wall_seconds": 3.743280574999517,
+      "curl_total_seconds": 3.726638,
+      "ttfb_seconds": 3.726636,
+      "error_class": "tls"
+    }
+  ],
+  "budget": {
+    "controls_max": 4,
+    "concurrency": 1,
+    "timeout_seconds": 10
+  },
+  "source_ownership_evidence": "c19-host-before.json",
+  "owned_port": 7890,
+  "core_pid": 43845,
+  "socket_inode": "275973",
+  "finished_utc": "2026-10-03T19:59:37.972532+00:00",
+  "body_handling": "curl /dev/null; raw response bodies and errors not exported"
+}

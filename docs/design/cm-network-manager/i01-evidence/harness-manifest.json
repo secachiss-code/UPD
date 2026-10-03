@@ -1,0 +1,22 @@
+{
+  "utc": "2026-10-03T20:09:18.563556+00:00",
+  "scope": "redacted harness scripts; no config contents or credential values",
+  "files": {
+    "cm-i01-c19-controls.py": "01b613c8997694c9e28b4769498249075503c06dcddf4a536b03dbb558cd8170",
+    "cm-i01-c19-fl-config-probe.py": "eaa8db01ae561ba7b86436a4f9732c443bafb65c5cccb4461a926e5c9f56466d",
+    "cm-i01-c19-native-config-probe.py": "86a9f42ecadbc0ea41181a79d91d31996724e4433d735f7c97329335f15195ec",
+    "cm-i01-c19-pilot-phase.py": "f0616eb413f2b392ba6e0fe8c62fb1582190a7e2d627c26fb93cc9f424e84840",
+    "cm-i01-c19-pilot.py": "1a3fcaa44e3e9021a49936e2696960e5f4cbde1a58b6f9f5e137cb45ddd7eed2",
+    "cm-i01-c19-prepare.py": "daddbba66a6df8617469c99d55b526f6b0c3a1de4a6f712a5af5e56625077b06",
+    "cm-i01-c19-root-read.py": "f79e33de27dd38b99117dc7a14f0c19c30409e42a706e4157a08b5723d3c5634",
+    "cm-i01-cli-guard.py": "dfa901aa4c383b1f0c58b6b6e747f71b934e51d75aa107fe085b20c9eb63f866",
+    "cm-i01-doc-check.py": "55a9e942d00cc3e25355a59368fcd042ad4d6e8dbdcb980bbb6492dea4c9c95d",
+    "cm-i01-fl-config-probe.py": "eaa2d0ac0af0134385d55f7bacd645afc20a3551ee4cce79d8d044077f11c4d9",
+    "cm-i01-inventory.py": "591da018f1e005c8127cc76b1608b9fe461417633db7d7a60b314eb7e24e56bb",
+    "cm-i01-native-config-probe.py": "47ec036dc9f8f070c04219865e7593d97e0f8dc7e02663ff54318fd428291e00",
+    "cm-i01-pilot-phase.py": "4f4448375af8963a3aeb7a8ee8442a143473cb6eb7fd84be37fa1f076457d92d",
+    "cm-i01-pilot.py": "562524ea2de1ace08a5ab8d3563df6643d66875a39cd98decced0b12f396763e",
+    "cm-i01-summarize.py": "67d4ce92a067a035220d4348fdcee6998feb919c9d97a958fd7758128254ca75",
+    "cm-i01-test-runner.py": "fbd37f5853ec073a222256cffbcea41537fbce77297b965a114ebccd39a9be72"
+  }
+}

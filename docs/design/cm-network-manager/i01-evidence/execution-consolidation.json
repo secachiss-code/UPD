@@ -1,0 +1,349 @@
+{
+  "utc": "2026-10-03T20:07:51.681345+00:00",
+  "scope": "read-only consolidation of actually recorded evidence; no re-execution",
+  "log_results": {
+    "c18-bin-unit.log": {
+      "sha256": "0cac5fb0a2c8403c5a03867795f9aaedd22ec4b126d63acf89579ba514a90f99",
+      "test_results": [
+        "test result: FAILED. 55 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 33.31s"
+      ],
+      "explicit_pass_lines": []
+    },
+    "c18-cli-guard-run.log": {
+      "sha256": "88e9be79645f272f28486d971a6fbeaa89526fbd147afdb489655da37b034ca3",
+      "test_results": [],
+      "explicit_pass_lines": []
+    },
+    "c18-debug-build.log": {
+      "sha256": "2648553bcfaaccbee7e671353eac34582b66241b958f4d2da894978e69063406",
+      "test_results": [],
+      "explicit_pass_lines": []
+    },
+    "c18-i18n-unit.log": {
+      "sha256": "56c4da4e6e78a0ef6f98264c7c574f02ab849a6bd929282bfdf746a2cf338dae",
+      "test_results": [
+        "test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 167 filtered out; finished in 0.01s"
+      ],
+      "explicit_pass_lines": []
+    },
+    "cargo-bin-integration.log": {
+      "sha256": "37e318fdfc3a08c57d9bd33ca7461a3a0ddcb0110f16552c92f883bfb28ea861",
+      "test_results": [
+        "test result: ok. 56 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.45s",
+        "test result: ok. 24 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 33.33s"
+      ],
+      "explicit_pass_lines": []
+    },
+    "cargo-cosmic-debug-build.log": {
+      "sha256": "5c6a27cc011dbd662d2e76f310874f41ec8dc46b2ab4367f4fb2473698335493",
+      "test_results": [],
+      "explicit_pass_lines": []
+    },
+    "cargo-cosmic.log": {
+      "sha256": "9608770b60e0869be4372b844fda94bfc8ce7aeb1ccc7f2865199b68ad8ab34d",
+      "test_results": [
+        "test result: ok. 15 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 30.24s"
+      ],
+      "explicit_pass_lines": []
+    },
+    "cargo-install-guard.log": {
+      "sha256": "89de509d7148d36730c369e12950e1d69d76b6114e7230ac679448995a586125",
+      "test_results": [
+        "test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s"
+      ],
+      "explicit_pass_lines": []
+    },
+    "cargo-lib-unrestricted.log": {
+      "sha256": "a6cea22701fff2ae45b1667bdd420623d19f5fa02e53608041a46d27c162e452",
+      "test_results": [
+        "test result: ok. 175 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 12.38s"
+      ],
+      "explicit_pass_lines": []
+    },
+    "cargo-lib.log": {
+      "sha256": "10b00d7c2a81c21c08d890918139896dfe9c897910fb1597f81dba88550639f6",
+      "test_results": [
+        "test result: FAILED. 169 passed; 6 failed; 0 ignored; 0 measured; 0 filtered out; finished in 8.43s"
+      ],
+      "explicit_pass_lines": []
+    },
+    "final-bin-compile.log": {
+      "sha256": "fa97a10515cc9c4a96a38b05c7e7f1774835e21f91049707bf3415c32b7df4dc",
+      "test_results": [],
+      "explicit_pass_lines": []
+    },
+    "final-bin-tests.log": {
+      "sha256": "cd9adce793123d7a0043482f1e3a85335cabea7e077473c8bfe948952eb7c63d",
+      "test_results": [
+        "test result: ok. 56 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.49s"
+      ],
+      "explicit_pass_lines": []
+    },
+    "final-cosmic-compile.log": {
+      "sha256": "9565f8f80756c91a5b11d592870172e708badd4a82f7ec01574390b42704531e",
+      "test_results": [],
+      "explicit_pass_lines": []
+    },
+    "final-cosmic-tests.log": {
+      "sha256": "c573caa532a56c39e24de921eb09fea132354adc2c6575eb7b8eb67088f4de9a",
+      "test_results": [
+        "test result: ok. 15 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 30.25s"
+      ],
+      "explicit_pass_lines": []
+    },
+    "final-guard-compile.log": {
+      "sha256": "55750bf0a47da997eaed9bea2ea0486928d860958276c5dfed52dba1ca5e4242",
+      "test_results": [],
+      "explicit_pass_lines": []
+    },
+    "final-guard-tests.log": {
+      "sha256": "631bc91e7984c467e45515d66cabd693e92a292b838c97a5903bbfb4064a99a8",
+      "test_results": [
+        "test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s"
+      ],
+      "explicit_pass_lines": []
+    },
+    "final-i18n-compile.log": {
+      "sha256": "fa916b8b79e1ddce517795536bca6c47549f17d954b4784065fbfff67f073419",
+      "test_results": [],
+      "explicit_pass_lines": []
+    },
+    "final-i18n-tests.log": {
+      "sha256": "e43c9549babe1d8d77efabfb63dd19f4fc1ab6e1340e5e2cd96c8174522fb71f",
+      "test_results": [
+        "test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 167 filtered out; finished in 0.02s"
+      ],
+      "explicit_pass_lines": []
+    },
+    "final-root-compile.log": {
+      "sha256": "96dea7848f7dc67031b0a78cbe2986b6bcb0b6dbc02fcd2509938c3dd0fd9a08",
+      "test_results": [],
+      "explicit_pass_lines": []
+    },
+    "final-root-tests.log": {
+      "sha256": "3a9f4e641a5e4d90ab32dff38266b6698a418dfa5916fc2972df54aa543bcfa5",
+      "test_results": [
+        "test result: ok. 175 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 14.88s",
+        "test result: ok. 56 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.47s",
+        "test result: ok. 24 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 33.01s",
+        "test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s"
+      ],
+      "explicit_pass_lines": []
+    },
+    "tui-launcher.log": {
+      "sha256": "3df00aaf38e6225cadf58c8b9c914736c4cba3acc59232f262c446d69b209b64",
+      "test_results": [],
+      "explicit_pass_lines": [
+        "PASS: TUI entry, duplicate suppression, new window and stale process recovery"
+      ]
+    },
+    "vpn-prepare-bwrap.log": {
+      "sha256": "e48ea3a3c06de6044d47776c107ffe6ab24b297c9d53e9b7b00374ad185777d7",
+      "test_results": [],
+      "explicit_pass_lines": [
+        "PASS: VPN preparation writes only inside VPN home"
+      ]
+    }
+  },
+  "first_failure_logs": {
+    "c18-bin-unit.log": {
+      "failed_tests": [
+        "contract_tests::install_reloads_helper_and_reports_restart_failure"
+      ],
+      "error_classes": {
+        "PermissionDenied": 1,
+        "Operation not permitted": 1,
+        "Timeout": 0,
+        "TimedOut": 0
+      }
+    },
+    "cargo-lib.log": {
+      "failed_tests": [
+        "helper::frame_tests::cancellation_wakes_blocked_event_reader",
+        "helper::frame_tests::delayed_fake_authorizer_denies_foreign_uid_and_cannot_cancel_next_operation",
+        "helper::frame_tests::slow_reader_has_absolute_write_deadline",
+        "helper::frame_tests::slowloris_has_absolute_request_deadline",
+        "vpn::contract_tests::b02_api_over_unix_socket",
+        "vpn::contract_tests::subscription_request_uses_selected_user_agent"
+      ],
+      "error_classes": {
+        "PermissionDenied": 4,
+        "Operation not permitted": 3,
+        "Timeout": 1,
+        "TimedOut": 1
+      }
+    }
+  },
+  "c14_pre_c19": {
+    "before_uid": 0,
+    "after_uid": 0,
+    "before_utc": "2026-10-03T19:01:49.182138+00:00",
+    "after_utc": "2026-10-03T19:42:56.049755+00:00",
+    "snapshot_equal_keys": {
+      "0": true,
+      "1": true,
+      "2": true,
+      "3": true,
+      "4": true,
+      "routes": true,
+      "resolv_conf": true,
+      "upd-vpn.service": true,
+      "cm-vpn.service": true,
+      "upd-helper.service": true,
+      "cm-helper.service": true
+    },
+    "journals_nonempty": true
+  },
+  "current_source_matches_final_bin_manifest": {
+    "Cargo.lock": true,
+    "Cargo.toml": true,
+    "cosmic/Cargo.lock": true,
+    "cosmic/Cargo.toml": true,
+    "cosmic/src/applet.rs": true,
+    "cosmic/src/jobs.rs": true,
+    "cosmic/src/launch.rs": true,
+    "cosmic/src/main.rs": true,
+    "cosmic/src/model.rs": true,
+    "cosmic/src/notifications.rs": true,
+    "cosmic/src/panel.rs": true,
+    "cosmic/src/tui_launch.rs": true,
+    "src/backend.rs": true,
+    "src/common/probe.rs": true,
+    "src/common.rs": true,
+    "src/extras.rs": true,
+    "src/helper.rs": true,
+    "src/i18n.rs": true,
+    "src/i18n_table.rs": true,
+    "src/lib.rs": true,
+    "src/main.rs": true,
+    "src/migration.rs": true,
+    "src/mirrors.rs": true,
+    "src/status.rs": true,
+    "src/summary.rs": true,
+    "src/tui/host.rs": true,
+    "src/tui/process.rs": true,
+    "src/tui/progress.rs": true,
+    "src/tui.rs": true,
+    "src/vpn.rs": true,
+    "tests/audit_contracts.rs": true,
+    "tests/audit_i01_install_guard.rs": true
+  },
+  "c19": {
+    "controls": {
+      "status": "FAIL",
+      "total": 4,
+      "successes": 0,
+      "error_classes": {
+        "tls": 4
+      }
+    },
+    "phases": [
+      {
+        "phase": "A1",
+        "status": "FAIL",
+        "measured": 10,
+        "successes": 0,
+        "warmup_successes": 0,
+        "error_classes": {
+          "tls": 10
+        },
+        "targets": {
+          "gstatic": {
+            "total": 5,
+            "successes": 0
+          },
+          "cloudflare_trace": {
+            "total": 5,
+            "successes": 0
+          }
+        },
+        "all_attempt_latency_median_ms": 5012.090982498194,
+        "successful_latency_median_ms": null,
+        "cleanup": {
+          "own_core_reaped": true,
+          "temporary_directory_removed": true,
+          "own_config_unmodified": true
+        }
+      },
+      {
+        "phase": "B",
+        "status": "FAIL",
+        "measured": 10,
+        "successes": 0,
+        "warmup_successes": 0,
+        "error_classes": {
+          "tls": 10
+        },
+        "targets": {
+          "gstatic": {
+            "total": 5,
+            "successes": 0
+          },
+          "cloudflare_trace": {
+            "total": 5,
+            "successes": 0
+          }
+        },
+        "all_attempt_latency_median_ms": 5011.970810497587,
+        "successful_latency_median_ms": null,
+        "cleanup": {
+          "own_core_reaped": true,
+          "temporary_directory_removed": true,
+          "own_config_unmodified": true
+        }
+      },
+      {
+        "phase": "A2",
+        "status": "FAIL",
+        "measured": 10,
+        "successes": 0,
+        "warmup_successes": 0,
+        "error_classes": {
+          "tls": 10
+        },
+        "targets": {
+          "gstatic": {
+            "total": 5,
+            "successes": 0
+          },
+          "cloudflare_trace": {
+            "total": 5,
+            "successes": 0
+          }
+        },
+        "all_attempt_latency_median_ms": 5014.540274503815,
+        "successful_latency_median_ms": null,
+        "cleanup": {
+          "own_core_reaped": true,
+          "temporary_directory_removed": true,
+          "own_config_unmodified": true
+        }
+      }
+    ],
+    "total_public_requests": 37,
+    "performance_status": "INCONCLUSIVE",
+    "network_snapshot_unchanged": true,
+    "source_file_unchanged": true
+  },
+  "harness_sha256": {
+    "cm-i01-summarize.py": "67d4ce92a067a035220d4348fdcee6998feb919c9d97a958fd7758128254ca75",
+    "cm-i01-c19-controls.py": "01b613c8997694c9e28b4769498249075503c06dcddf4a536b03dbb558cd8170",
+    "cm-i01-c19-root-read.py": "f79e33de27dd38b99117dc7a14f0c19c30409e42a706e4157a08b5723d3c5634",
+    "cm-i01-c19-pilot-phase.py": "f0616eb413f2b392ba6e0fe8c62fb1582190a7e2d627c26fb93cc9f424e84840",
+    "cm-i01-c19-pilot.py": "1a3fcaa44e3e9021a49936e2696960e5f4cbde1a58b6f9f5e137cb45ddd7eed2",
+    "cm-i01-c19-native-config-probe.py": "86a9f42ecadbc0ea41181a79d91d31996724e4433d735f7c97329335f15195ec",
+    "cm-i01-c19-fl-config-probe.py": "eaa8db01ae561ba7b86436a4f9732c443bafb65c5cccb4461a926e5c9f56466d",
+    "cm-i01-c19-prepare.py": "daddbba66a6df8617469c99d55b526f6b0c3a1de4a6f712a5af5e56625077b06",
+    "cm-i01-doc-check.py": "55a9e942d00cc3e25355a59368fcd042ad4d6e8dbdcb980bbb6492dea4c9c95d",
+    "cm-i01-pilot.py": "562524ea2de1ace08a5ab8d3563df6643d66875a39cd98decced0b12f396763e",
+    "cm-i01-pilot-phase.py": "4f4448375af8963a3aeb7a8ee8442a143473cb6eb7fd84be37fa1f076457d92d",
+    "cm-i01-native-config-probe.py": "47ec036dc9f8f070c04219865e7593d97e0f8dc7e02663ff54318fd428291e00",
+    "cm-i01-fl-config-probe.py": "eaa2d0ac0af0134385d55f7bacd645afc20a3551ee4cce79d8d044077f11c4d9",
+    "cm-i01-fl-rpc-probe.py": "fc8d03d37b907e6a95a282e686fad882346ed5723c2e37cfeec1105805d0e694",
+    "cm-i01-journals.py": "4c8f9dfb5a2286a6762d2afc1b83872de8793d8ddfac2362bf08e3d863407904",
+    "cm-i01-test-runner.py": "fbd37f5853ec073a222256cffbcea41537fbce77297b965a114ebccd39a9be72",
+    "cm-i01-cli-guard.py": "dfa901aa4c383b1f0c58b6b6e747f71b934e51d75aa107fe085b20c9eb63f866",
+    "cm-i01-fl-api.py": "e2c4a1a0614685428db4c9dc320417e64ca83cd6add967430fb4c0498b99f21d",
+    "cm-i01-inventory.py": "591da018f1e005c8127cc76b1608b9fe461417633db7d7a60b314eb7e24e56bb"
+  }
+}

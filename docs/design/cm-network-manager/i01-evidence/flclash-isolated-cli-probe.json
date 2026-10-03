@@ -1,0 +1,35 @@
+{
+  "utc": "2026-10-03T19:05:06.229540+00:00",
+  "binary_sha256": "b5014e62eda428795056221ce304990be30512f821d803a3b4bd8b0abafa1059",
+  "argv": [
+    "bwrap",
+    "--unshare-user",
+    "--unshare-net",
+    "--unshare-pid",
+    "--ro-bind",
+    "/",
+    "/",
+    "--tmpfs",
+    "/tmp",
+    "--dev",
+    "/dev",
+    "--proc",
+    "/proc",
+    "/usr/lib/flclash/FlClashCore",
+    "-h"
+  ],
+  "no_host_writes": true,
+  "no_host_network": true,
+  "tun_device_unavailable": true,
+  "exit_code": 2,
+  "output_bytes": 251,
+  "output_redacted": true,
+  "recognized_help_markers": {
+    "Usage of": false,
+    "-f string": false,
+    "-d string": false,
+    "ext-ctl": false,
+    "unknown": false,
+    "invalid": false
+  }
+}

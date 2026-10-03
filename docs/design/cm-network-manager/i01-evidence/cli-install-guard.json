@@ -1,0 +1,171 @@
+{
+  "utc": "2026-10-03T19:32:52.417140+00:00",
+  "binary_sha256": "22b00cb906e430ea689faeea4f09e0641a2f6e9e073ba5ef71ec89435dc695d4",
+  "scope": "actual CLI inside disposable user/net/pid/mount namespace; no host install",
+  "cases": [
+    {
+      "case": "old-config",
+      "exit_code": 1,
+      "expected_legacy_path_reported": true,
+      "blocked_before_config_or_commands": true,
+      "full_content_permissions_unchanged": true,
+      "status": "PASS",
+      "output_redacted": true,
+      "error_markers": {
+        "bwrap:": false,
+        "No such file": false,
+        "Operation not permitted": false,
+        "Permission denied": false,
+        "panic": false,
+        "package": false,
+        "unsupported": true
+      }
+    },
+    {
+      "case": "old-new-config",
+      "exit_code": 1,
+      "expected_legacy_path_reported": true,
+      "blocked_before_config_or_commands": true,
+      "full_content_permissions_unchanged": true,
+      "status": "PASS",
+      "output_redacted": true,
+      "error_markers": {
+        "bwrap:": false,
+        "No such file": false,
+        "Operation not permitted": false,
+        "Permission denied": false,
+        "panic": false,
+        "package": false,
+        "unsupported": true
+      }
+    },
+    {
+      "case": "old-data",
+      "exit_code": 1,
+      "expected_legacy_path_reported": true,
+      "blocked_before_config_or_commands": true,
+      "full_content_permissions_unchanged": true,
+      "status": "PASS",
+      "output_redacted": true,
+      "error_markers": {
+        "bwrap:": false,
+        "No such file": false,
+        "Operation not permitted": false,
+        "Permission denied": false,
+        "panic": false,
+        "package": false,
+        "unsupported": true
+      }
+    },
+    {
+      "case": "dangling-config",
+      "exit_code": 1,
+      "expected_legacy_path_reported": true,
+      "blocked_before_config_or_commands": true,
+      "full_content_permissions_unchanged": true,
+      "status": "PASS",
+      "output_redacted": true,
+      "error_markers": {
+        "bwrap:": false,
+        "No such file": false,
+        "Operation not permitted": false,
+        "Permission denied": false,
+        "panic": false,
+        "package": false,
+        "unsupported": true
+      }
+    },
+    {
+      "case": "foreign-unit",
+      "exit_code": 1,
+      "expected_legacy_path_reported": true,
+      "blocked_before_config_or_commands": true,
+      "full_content_permissions_unchanged": true,
+      "status": "PASS",
+      "output_redacted": true,
+      "error_markers": {
+        "bwrap:": false,
+        "No such file": false,
+        "Operation not permitted": false,
+        "Permission denied": false,
+        "panic": false,
+        "package": false,
+        "unsupported": true
+      }
+    },
+    {
+      "case": "enabled-link",
+      "exit_code": 1,
+      "expected_legacy_path_reported": true,
+      "blocked_before_config_or_commands": true,
+      "full_content_permissions_unchanged": true,
+      "status": "PASS",
+      "output_redacted": true,
+      "error_markers": {
+        "bwrap:": false,
+        "No such file": false,
+        "Operation not permitted": false,
+        "Permission denied": false,
+        "panic": false,
+        "package": false,
+        "unsupported": true
+      }
+    },
+    {
+      "case": "helper-socket",
+      "exit_code": 1,
+      "expected_legacy_path_reported": true,
+      "blocked_before_config_or_commands": true,
+      "full_content_permissions_unchanged": true,
+      "status": "PASS",
+      "output_redacted": true,
+      "error_markers": {
+        "bwrap:": false,
+        "No such file": false,
+        "Operation not permitted": false,
+        "Permission denied": false,
+        "panic": false,
+        "package": false,
+        "unsupported": true
+      }
+    },
+    {
+      "case": "cron",
+      "exit_code": 1,
+      "expected_legacy_path_reported": true,
+      "blocked_before_config_or_commands": true,
+      "full_content_permissions_unchanged": true,
+      "status": "PASS",
+      "output_redacted": true,
+      "error_markers": {
+        "bwrap:": false,
+        "No such file": false,
+        "Operation not permitted": false,
+        "Permission denied": false,
+        "panic": false,
+        "package": false,
+        "unsupported": true
+      }
+    },
+    {
+      "case": "desktop",
+      "exit_code": 1,
+      "expected_legacy_path_reported": true,
+      "blocked_before_config_or_commands": true,
+      "full_content_permissions_unchanged": true,
+      "status": "PASS",
+      "output_redacted": true,
+      "error_markers": {
+        "bwrap:": false,
+        "No such file": false,
+        "Operation not permitted": false,
+        "Permission denied": false,
+        "panic": false,
+        "package": false,
+        "unsupported": true
+      }
+    }
+  ],
+  "status": "PASS",
+  "finished_utc": "2026-10-03T19:32:52.589564+00:00"
+}

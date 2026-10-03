@@ -1,0 +1,43 @@
+{
+  "phase_summaries": [
+    {
+      "phase": "A1",
+      "measured": 10,
+      "success": 4,
+      "failure": 6,
+      "success_latency_min_ms": 4197.843679998186,
+      "success_latency_max_ms": 5471.9555560004665,
+      "success_latency_median_ms": 4860.0444455041725,
+      "all_attempt_latency_median_ms": 5010.139134999918,
+      "warmup_success": false
+    },
+    {
+      "phase": "B",
+      "measured": 10,
+      "success": 2,
+      "failure": 8,
+      "success_latency_min_ms": 3495.8335159972194,
+      "success_latency_max_ms": 4000.932686998567,
+      "success_latency_median_ms": 3748.383101497893,
+      "all_attempt_latency_median_ms": 5012.160544498329,
+      "warmup_success": true
+    },
+    {
+      "phase": "A2",
+      "measured": 10,
+      "success": 0,
+      "failure": 10,
+      "success_latency_min_ms": null,
+      "success_latency_max_ms": null,
+      "success_latency_median_ms": null,
+      "all_attempt_latency_median_ms": 5011.464667000837,
+      "warmup_success": false
+    }
+  ],
+  "performance_status": "INCONCLUSIVE",
+  "threshold_preaccepted": null,
+  "p95_claim_allowed": false,
+  "failure_stage": "curl exit35 indicates endpoint TLS handshake symptom through CONNECT; remote WS/TLS root cause unknown",
+  "requests_used": 30,
+  "warmups_used": 3
+}

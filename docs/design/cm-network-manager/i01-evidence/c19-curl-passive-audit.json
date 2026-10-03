@@ -1,0 +1,59 @@
+{
+  "utc": "2026-10-03T20:06:40.580339+00:00",
+  "scope": "passive curl configuration audit; zero network requests",
+  "environment_presence": {
+    "CURL_HOME": false,
+    "XDG_CONFIG_HOME": false,
+    "HOME": true,
+    "CURL_CA_BUNDLE": false,
+    "SSL_CERT_FILE": false,
+    "SSL_CERT_DIR": false,
+    "SSLKEYLOGFILE": false,
+    "CURL_SSL_BACKEND": false,
+    "CURL_SSL_NO_REVOKE": false,
+    "http_proxy": false,
+    "https_proxy": false,
+    "all_proxy": false,
+    "no_proxy": false,
+    "HTTP_PROXY": false,
+    "HTTPS_PROXY": false,
+    "ALL_PROXY": false,
+    "NO_PROXY": false
+  },
+  "rc_candidates": [
+    {
+      "basis": "HOME",
+      "exists": false,
+      "readable": false,
+      "noncomment_directives": 0,
+      "impacting_option_names": []
+    },
+    {
+      "basis": "default_xdg",
+      "exists": false,
+      "readable": false,
+      "noncomment_directives": 0,
+      "impacting_option_names": []
+    }
+  ],
+  "network_command_explicit_flags": {
+    "proxy_explicit": true,
+    "noproxy_empty": true,
+    "output_dev_null": true,
+    "timeout_10": true,
+    "disable_default_curlrc": false,
+    "insecure": false
+  },
+  "pilot_env_proxy_suffixes_removed": true,
+  "controls_env_inherited": true,
+  "version_argv": [
+    "/usr/bin/curl",
+    "--disable",
+    "--version"
+  ],
+  "version_exit_code": 0,
+  "version_header": "curl 8.22.0 (x86_64-pc-linux-gnu) libcurl/8.22.0 OpenSSL/3.6.5 zlib/1.3.2 brotli/1.2.0 zstd/1.5.7 libidn2/2.3.8 libpsl/0.21.5 libssh2/1.11.1 nghttp2/1.70.0 ngtcp2/1.25.0 nghttp3/1.18.0 mit-krb5/1.22.2",
+  "stderr_retention": "prior drivers classified curl stderr then discarded it; exact OpenSSL/CONNECT text cannot be reconstructed without new requests",
+  "failure_stage": "curl exit35 TLS negotiation symptom; proxy CONNECT status was not recorded; outer node/core handshake cause unknown",
+  "extra_network_requests": 0
+}

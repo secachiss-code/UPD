@@ -1,0 +1,395 @@
+{
+  "utc": "2026-10-03T19:42:56.049755+00:00",
+  "mode": "baseline",
+  "uid": 0,
+  "snapshot": {
+    "0": {
+      "exists": true,
+      "entries": 3,
+      "errors": 0,
+      "content_permissions_digest": "6319b63eac1ab8a087c62f9ef24e780063a0d4138f2afcdbe462270a85c97f9f"
+    },
+    "1": {
+      "exists": false
+    },
+    "2": {
+      "exists": true,
+      "entries": 13,
+      "errors": 0,
+      "content_permissions_digest": "2ce0b73fa28ed272a1b93474d137982fba12aa8b0f5c327629f4af0421050ebe"
+    },
+    "3": {
+      "exists": false
+    },
+    "4": {
+      "exists": true,
+      "entries": 15,
+      "errors": 0,
+      "content_permissions_digest": "ea3fd662ffc9d6de463e3605da6de28bfafc63a8cc653baca2b18d58a18efabc"
+    },
+    "routes": {
+      "exit_code": 0,
+      "sha256": "cd39dfbecc2f1fe824ef0b8edcdff3ead3ef18369f22f7d21c11ad55556bfb92"
+    },
+    "resolv_conf": {
+      "exists": true,
+      "sha256": "bbea1627272790a4e1c4b7256f398ab0d931f3bdf106598d75eb19dd968ede25",
+      "size": 53,
+      "mode": "0o644",
+      "uid": 0,
+      "gid": 0,
+      "mtime_utc": "2026-10-03T08:38:31.459000+00:00"
+    },
+    "upd-vpn.service": {
+      "exit_code": 0,
+      "properties": [
+        "LoadState=loaded",
+        "ActiveState=inactive",
+        "SubState=dead",
+        "MainPID=0"
+      ]
+    },
+    "cm-vpn.service": {
+      "exit_code": 0,
+      "properties": [
+        "LoadState=not-found",
+        "ActiveState=inactive",
+        "SubState=dead",
+        "MainPID=0"
+      ]
+    },
+    "upd-helper.service": {
+      "exit_code": 0,
+      "properties": [
+        "LoadState=loaded",
+        "ActiveState=inactive",
+        "SubState=dead",
+        "MainPID=0"
+      ]
+    },
+    "cm-helper.service": {
+      "exit_code": 0,
+      "properties": [
+        "LoadState=not-found",
+        "ActiveState=inactive",
+        "SubState=dead",
+        "MainPID=0"
+      ]
+    }
+  },
+  "binaries": {
+    "/usr/local/bin/upd": {
+      "exists": true,
+      "sha256": "58520fbe70796d5bd018d56ad4ebbb120cea92c8edcb2cb52f5983ea694b14c2",
+      "size": 5493744,
+      "mode": "0o755",
+      "uid": 0,
+      "gid": 0,
+      "mtime_utc": "2026-10-02T21:25:47.308360+00:00"
+    },
+    "/usr/local/bin/cm": {
+      "exists": false,
+      "error_class": "FileNotFoundError"
+    },
+    "/var/lib/upd/vpn/bin/mihomo": {
+      "exists": true,
+      "sha256": "98f50f0fdc498a9be1aa65ee991cda1c5854650d948e9001d7e13b703ab6cc3d",
+      "size": 61993086,
+      "mode": "0o755",
+      "uid": 0,
+      "gid": 0,
+      "mtime_utc": "2026-10-02T17:17:15.180027+00:00"
+    },
+    "/var/lib/cm/vpn/bin/mihomo": {
+      "exists": false,
+      "error_class": "FileNotFoundError"
+    }
+  },
+  "configs": {
+    "UPD_runtime": {
+      "file": {
+        "exists": true,
+        "sha256": "5ec3ceca10c02e772e8885008681522946d5c8ae09e173c6b70fae1a02a72da2",
+        "size": 30967,
+        "mode": "0o600",
+        "uid": 0,
+        "gid": 0,
+        "mtime_utc": "2026-10-03T14:51:09.747382+00:00"
+      },
+      "overview": {
+        "node_count": 62,
+        "types": {
+          "vless": 62
+        },
+        "networks": {
+          "tcp": 56,
+          "ws": 6
+        },
+        "global_knobs": {
+          "general": {
+            "mode": "rule",
+            "ipv6": false,
+            "unified-delay": true,
+            "tcp-concurrent": true,
+            "find-process-mode": false
+          },
+          "tun": {
+            "enable": true,
+            "stack": "mixed",
+            "auto-route": true,
+            "auto-redirect": true,
+            "auto-detect-interface": true,
+            "strict-route": false
+          },
+          "dns": {
+            "enable": true,
+            "ipv6": false,
+            "enhanced-mode": "fake-ip",
+            "respect-rules": true
+          }
+        },
+        "providers": 0,
+        "rules": 7
+      }
+    },
+    "FlClash_saved": {
+      "file": {
+        "exists": true,
+        "sha256": "c3b6c713edb056b91b81c3cc54c7d6e534a3e4f0fcded6e4fd164e4358f802e7",
+        "size": 36931,
+        "mode": "0o644",
+        "uid": 1000,
+        "gid": 1000,
+        "mtime_utc": "2026-10-03T14:45:40.621309+00:00"
+      },
+      "overview": {
+        "node_count": 62,
+        "types": {
+          "vless": 62
+        },
+        "networks": {
+          "tcp": 56,
+          "ws": 6
+        },
+        "global_knobs": {
+          "general": {
+            "mode": "rule",
+            "ipv6": false,
+            "unified-delay": true,
+            "tcp-concurrent": true,
+            "find-process-mode": "always",
+            "keep-alive-interval": 30
+          },
+          "tun": {
+            "enable": true,
+            "stack": "mixed",
+            "auto-route": true,
+            "auto-detect-interface": true
+          },
+          "dns": {
+            "enable": true,
+            "ipv6": false,
+            "enhanced-mode": "fake-ip",
+            "respect-rules": false,
+            "use-hosts": true,
+            "use-system-hosts": true,
+            "prefer-h3": false
+          }
+        },
+        "providers": 0,
+        "rules": 1
+      }
+    },
+    "CM_runtime": {
+      "file": {
+        "exists": false,
+        "error_class": "FileNotFoundError"
+      },
+      "overview": {
+        "node_count": 0,
+        "types": {},
+        "networks": {},
+        "global_knobs": {
+          "general": {},
+          "tun": {},
+          "dns": {}
+        },
+        "providers": 0,
+        "rules": 0
+      }
+    },
+    "UPD_source": {
+      "file": {
+        "exists": true,
+        "sha256": "ef2c941723aceef424abb60e032e486b8ca0e8f6ce04e482c41844b73c592a35",
+        "size": 31713,
+        "mode": "0o600",
+        "uid": 0,
+        "gid": 0,
+        "mtime_utc": "2026-10-03T14:50:39.548355+00:00"
+      },
+      "overview": {
+        "node_count": 62,
+        "types": {
+          "vless": 62
+        },
+        "networks": {
+          "tcp": 56,
+          "ws": 6
+        },
+        "global_knobs": {
+          "general": {
+            "mode": "rule",
+            "ipv6": false,
+            "unified-delay": true,
+            "tcp-concurrent": true
+          },
+          "tun": {},
+          "dns": {
+            "enable": true,
+            "ipv6": false,
+            "enhanced-mode": "fake-ip",
+            "use-hosts": true,
+            "use-system-hosts": true
+          }
+        },
+        "providers": 0,
+        "rules": 1
+      }
+    }
+  },
+  "comparisons": {
+    "UPD_runtime_vs_FlClash_saved": {
+      "a_count": 62,
+      "b_count": 62,
+      "common_named_nodes": 62,
+      "full_identical_nodes": 1,
+      "different_fields": {
+        "reality-opts": 55,
+        "servername": 49,
+        "server": 18,
+        "ws-opts": 5
+      },
+      "full_node_equality_includes_credentials": true,
+      "rules_equal": false,
+      "dns_full_equal": false
+    },
+    "UPD_source_vs_UPD_runtime": {
+      "a_count": 62,
+      "b_count": 62,
+      "common_named_nodes": 62,
+      "full_identical_nodes": 62,
+      "different_fields": {},
+      "full_node_equality_includes_credentials": true,
+      "rules_equal": false,
+      "dns_full_equal": false
+    },
+    "UPD_source_vs_FlClash_saved": {
+      "a_count": 62,
+      "b_count": 62,
+      "common_named_nodes": 62,
+      "full_identical_nodes": 1,
+      "different_fields": {
+        "reality-opts": 55,
+        "servername": 49,
+        "server": 18,
+        "ws-opts": 5
+      },
+      "full_node_equality_includes_credentials": true,
+      "rules_equal": true,
+      "dns_full_equal": false
+    }
+  },
+  "processes": [
+    {
+      "pid": 43703,
+      "comm": "FlClash",
+      "uid": 1000,
+      "exe_basename": "FlClash",
+      "binary": {
+        "exists": true,
+        "sha256": "8c0f28aa71e9cfea1be1ad0f0d639da0c17fad6845a55dc1dffb2f9b06c6de9f",
+        "size": 25008,
+        "mode": "0o755",
+        "uid": 0,
+        "gid": 0,
+        "mtime_utc": "2026-09-24T20:42:10+00:00"
+      },
+      "argv_shape": [
+        "value_redacted"
+      ]
+    },
+    {
+      "pid": 43845,
+      "comm": "FlClashCore",
+      "uid": 0,
+      "exe_basename": "FlClashCore",
+      "binary": {
+        "exists": true,
+        "sha256": "b5014e62eda428795056221ce304990be30512f821d803a3b4bd8b0abafa1059",
+        "size": 61124770,
+        "mode": "0o755",
+        "uid": 0,
+        "gid": 0,
+        "mtime_utc": "2026-09-24T20:42:10+00:00"
+      },
+      "argv_shape": [
+        "value_redacted",
+        "value_redacted"
+      ]
+    }
+  ],
+  "api": {
+    "UPD": {
+      "transport": "unix",
+      "methods": [
+        "GET /version",
+        "GET /proxies"
+      ],
+      "reachable": false,
+      "error_class": "ConnectionRefusedError"
+    }
+  },
+  "flclash_unix_candidate_count": 1,
+  "flclash_api": [
+    {
+      "transport": "unix",
+      "methods": [
+        "GET /version",
+        "GET /proxies"
+      ],
+      "reachable": false,
+      "error_class": "OSError"
+    }
+  ],
+  "journals": {
+    "upd-vpn.service": {
+      "exit_code": 0,
+      "events": 18681,
+      "error_events": 17518,
+      "nonexclusive_error_classes": {
+        "TUN": 319,
+        "DNS": 1234,
+        "dial": 14574,
+        "timeout": 2054
+      },
+      "first_utc": "2026-10-01T19:17:45.494642+00:00",
+      "last_utc": "2026-10-03T14:45:18.058425+00:00",
+      "boot_generations": 5,
+      "config_generation": "unknown",
+      "historical_causality": "INCONCLUSIVE"
+    },
+    "cm-vpn.service": {
+      "exit_code": 0,
+      "events": 0,
+      "error_events": 0,
+      "nonexclusive_error_classes": {},
+      "first_utc": null,
+      "last_utc": null,
+      "boot_generations": 0,
+      "config_generation": "unknown",
+      "historical_causality": "INCONCLUSIVE"
+    }
+  },
+  "finished_utc": "2026-10-03T19:42:57.816293+00:00"
+}

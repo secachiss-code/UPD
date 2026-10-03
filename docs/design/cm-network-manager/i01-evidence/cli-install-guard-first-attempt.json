@@ -1,0 +1,90 @@
+{
+  "utc": "2026-10-03T19:10:09.931303+00:00",
+  "binary_sha256": "e38d6a00fbc0f54b59340e641571cea6b1472e7dee931a0b1687bfc1d18a4558",
+  "scope": "actual CLI inside disposable user/net/pid/mount namespace; no host install",
+  "cases": [
+    {
+      "case": "old-config",
+      "exit_code": 1,
+      "expected_legacy_path_reported": false,
+      "blocked_before_config_or_commands": false,
+      "full_content_permissions_unchanged": true,
+      "status": "FAIL",
+      "output_redacted": true
+    },
+    {
+      "case": "old-new-config",
+      "exit_code": 1,
+      "expected_legacy_path_reported": false,
+      "blocked_before_config_or_commands": false,
+      "full_content_permissions_unchanged": true,
+      "status": "FAIL",
+      "output_redacted": true
+    },
+    {
+      "case": "old-data",
+      "exit_code": 1,
+      "expected_legacy_path_reported": false,
+      "blocked_before_config_or_commands": false,
+      "full_content_permissions_unchanged": true,
+      "status": "FAIL",
+      "output_redacted": true
+    },
+    {
+      "case": "dangling-config",
+      "exit_code": 1,
+      "expected_legacy_path_reported": false,
+      "blocked_before_config_or_commands": false,
+      "full_content_permissions_unchanged": true,
+      "status": "FAIL",
+      "output_redacted": true
+    },
+    {
+      "case": "foreign-unit",
+      "exit_code": 1,
+      "expected_legacy_path_reported": false,
+      "blocked_before_config_or_commands": false,
+      "full_content_permissions_unchanged": true,
+      "status": "FAIL",
+      "output_redacted": true
+    },
+    {
+      "case": "enabled-link",
+      "exit_code": 1,
+      "expected_legacy_path_reported": false,
+      "blocked_before_config_or_commands": false,
+      "full_content_permissions_unchanged": true,
+      "status": "FAIL",
+      "output_redacted": true
+    },
+    {
+      "case": "helper-socket",
+      "exit_code": 1,
+      "expected_legacy_path_reported": false,
+      "blocked_before_config_or_commands": false,
+      "full_content_permissions_unchanged": true,
+      "status": "FAIL",
+      "output_redacted": true
+    },
+    {
+      "case": "cron",
+      "exit_code": 1,
+      "expected_legacy_path_reported": false,
+      "blocked_before_config_or_commands": false,
+      "full_content_permissions_unchanged": true,
+      "status": "FAIL",
+      "output_redacted": true
+    },
+    {
+      "case": "desktop",
+      "exit_code": 1,
+      "expected_legacy_path_reported": false,
+      "blocked_before_config_or_commands": false,
+      "full_content_permissions_unchanged": true,
+      "status": "FAIL",
+      "output_redacted": true
+    }
+  ],
+  "status": "FAIL",
+  "finished_utc": "2026-10-03T19:10:10.041042+00:00"
+}

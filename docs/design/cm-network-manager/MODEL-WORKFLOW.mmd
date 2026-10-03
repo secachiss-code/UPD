@@ -1,0 +1,70 @@
+flowchart TD
+  subgraph ASTRA["Astra: архитектура и критические свойства"]
+    I02["I02: Модель и ownership"]
+    I06["I06: Root controller"]
+    I07["I07: Host / outer egress"]
+    I08["I08: App netns"]
+    I09["I09: Fail-closed"]
+    I10["I10: DNS / IPv6 / UDP"]
+    I15_R["I15-R: Раннее fingerprint исследование"]
+    I18["I18: Приёмка A01–A20"]
+  end
+  subgraph SOL["Sol: реализация и интеграция"]
+    I01["I01: Baseline и parity"]
+    I03["I03: Источники"]
+    I04["I04: CoreAdapter / mihomo"]
+    I05["I05: Xray / доставка"]
+    I11["I11: Generic launcher"]
+    I12["I12: Группы"]
+    I13["I13: Brokers / упаковки"]
+    I14["I14: Страна / timezone"]
+    I15["I15: Privacy adapters"]
+    I16["I16: Качество / выбор"]
+    I17_D["I17-D: Ранний проект UI"]
+    I17["I17: TUI / applet / export"]
+  end
+  I01 --> I02
+  I02 --> I03
+  I02 --> I04
+  I03 --> I05
+  I04 --> I05
+  I02 --> I06
+  I04 --> I06
+  I04 --> I07
+  I06 --> I07
+  I06 --> I08
+  I07 --> I08
+  I08 --> I09
+  I05 --> I10
+  I08 --> I10
+  I09 --> I10
+  I02 --> I11
+  I09 --> I11
+  I10 --> I11
+  I11 --> I12
+  I11 --> I13
+  I12 --> I13
+  I02 --> I14
+  I08 --> I14
+  I10 --> I14
+  I01 --> I15_R
+  I02 --> I15_R
+  I13 --> I15
+  I14 --> I15
+  I15_R --> I15
+  I03 --> I16
+  I04 --> I16
+  I05 --> I16
+  I09 --> I16
+  I10 --> I16
+  I12 --> I16
+  I14 --> I16
+  I02 --> I17_D
+  I15 --> I17
+  I16 --> I17
+  I17_D --> I17
+  I17 --> I18
+  classDef astra fill:#e8ddff,stroke:#6941a5,color:#17121e;
+  classDef sol fill:#dceeff,stroke:#29679d,color:#102438;
+  class I02,I06,I07,I08,I09,I10,I15_R,I18 astra;
+  class I01,I03,I04,I05,I11,I12,I13,I14,I15,I16,I17_D,I17 sol;

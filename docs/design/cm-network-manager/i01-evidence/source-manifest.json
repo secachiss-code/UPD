@@ -1,0 +1,52 @@
+{
+  "utc": "2026-10-03T19:01:20.358090+00:00",
+  "revision": "07ef2381fb962fe74958c504a896c584f6a4e4be",
+  "dirty": true,
+  "source_files": {
+    "Cargo.lock": "9ca6db8efe7bd3acfc350dd1364d6a3219b444210c3393690c51da255851c335",
+    "Cargo.toml": "7b9ff33750000605ec1099a10df2e4ba1c3f4479a1c64643e549c15b51681cd0",
+    "cosmic/Cargo.lock": "d01ec2daa0fb87bcc656e03bbb7661621653a3ac44619da6a47bf54e19906f7f",
+    "cosmic/Cargo.toml": "b006e3594a70b7a160dca8b4b9a2df52d7f90fc72652efad761a54d1577bfacc",
+    "cosmic/src/applet.rs": "694c1f6c5b4b6588ffe14903fd490a187a58f5f4b26061a7cea832448844ef10",
+    "cosmic/src/jobs.rs": "38f334e1c05511d406f003f93e5741919cd5add98043ef490d819fd0f6cceb2b",
+    "cosmic/src/launch.rs": "d474e8de45e62945e481fa7e959a495351a8c2b89046cdfc9e2fbda37f84caee",
+    "cosmic/src/main.rs": "b366c8048a3291b50387380f4e7499875f27656cf3a179c2c4a4c6c3eec692a2",
+    "cosmic/src/model.rs": "6f2a5926b9ff88fa03bd4a342c6f0e500ba11627e783f9a908bc97b95ed78ccf",
+    "cosmic/src/notifications.rs": "dd3b944239d81a17153d470ade439ea2791fa8229a2dc497db49c1e22a15bcd2",
+    "cosmic/src/panel.rs": "4a166ec00f0d295b09c5d5561863e254421848f04a71e0111998aaa7dd30d679",
+    "cosmic/src/tui_launch.rs": "1d607852955272e3951f42993e2e50dca5c4c8e182f421ff0ee989c4fe6f6c29",
+    "src/backend.rs": "fefd4947ad05d0cce2ec85135cbe883ee8416819b8e0a71a319ff9be44f92266",
+    "src/common/probe.rs": "f4ca59c7b6496d8fb203dc444e79e82e001f8faebe12e06e2aac0a0e8b3f0aee",
+    "src/common.rs": "26d69f2cb46741102fa5e6e80c94a0d6b0689b881c19e3e0c6a63a05a3c7d420",
+    "src/extras.rs": "e5b4d4dd54fd741e0e7b2c616ae82151274d7051a0c921687da194f4ff74c9f5",
+    "src/helper.rs": "f1a4a3988f46541089c718733dbaf3dc01b094a109761e1b88ec766ab561d511",
+    "src/i18n.rs": "521a474064cd2c697248e83b36b3728e50ebb3076670d20c6c8787c3db2def99",
+    "src/i18n_table.rs": "1088e74eee1129ac075b63d67f9b7c11648fa3cd54ba91236adf63fe58520088",
+    "src/lib.rs": "15e85881e6d93400062b2e71a7a280ae3f80281cd9cc4a465e1ad7ca311b14ff",
+    "src/main.rs": "c8564820132f5864800ec282ffcac69794afbd7c2aa0c1a562a8c121f86e25e9",
+    "src/mirrors.rs": "dcd8b59cf64cbba81011f002dc52064ea7b36a84281e5305a2a2b8a6044eaa20",
+    "src/status.rs": "c50b2b5e9d929dc312a0d6bf5b06b7e92e4d4529ba37bc1e91a0dfb3ccb8def5",
+    "src/summary.rs": "6bb8398cc40f8895d3389efa485adf89c40d63d9d769128aac3f647a4dc56960",
+    "src/tui/host.rs": "c1f66217525115c5e79a2f6df9c7bc78e016403729e7b6d7a257e53b0e7c4890",
+    "src/tui/process.rs": "d38bc897851693645868787bcadefc47c9caa29dfd72ee033251122aa2ddd5fa",
+    "src/tui/progress.rs": "f34c89845f4b2042012afb9c7bebc7b3da2b4f3e8f42764f1d3c17245dd2fa4b",
+    "src/tui.rs": "e2a89f523fea71dea0d7c60faafab294970291336225f711e649109a1ab78577",
+    "src/vpn.rs": "089b3bec27f9094cfbd0d8f4f3bee1954c725e4e2c608786f3547b7b7e592d28",
+    "tests/audit_contracts.rs": "1584a4fb2efd589e2ddefb4dc2990a52cc13e865102208311900b77d73dcbe9c"
+  },
+  "source_tree_sha256": "1351a458c8e46f0bdcc2a380c0ee31b19d13a1fa36d3a7d7a188a647170a0599",
+  "target": [
+    "x86_64-unknown-linux-musl",
+    "x86_64-unknown-linux-gnu"
+  ],
+  "binaries": {
+    "target/x86_64-unknown-linux-musl/debug/cm": {
+      "sha256": "7d05147544d425c8627c9c696dee509a613b9d06fdc7a0809a2a111fa81f68c5",
+      "mtime_utc": "2026-10-03T19:00:27.924497+00:00"
+    },
+    "cosmic/target/x86_64-unknown-linux-gnu/debug/cm-cosmic": {
+      "sha256": "dfe7c46b4a3b82ceaabc5edfee3ad3404b2023b9fc7313735164a63ce663ac82",
+      "mtime_utc": "2026-10-03T09:31:18.153060+00:00"
+    }
+  }
+}

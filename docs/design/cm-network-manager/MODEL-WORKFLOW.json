@@ -1,0 +1,301 @@
+{
+  "schema_version": 1,
+  "date": "2026-10-03",
+  "purpose": "Model-role overlay; DAG-PLAN.json remains authoritative for execution dependencies",
+  "status": "IN_PROGRESS",
+  "launch_authorized": true,
+  "package_build_allowed": false,
+  "assignments": [
+    {
+      "milestone": "I01",
+      "direction": "I01",
+      "lead_model": "gpt-6.1-sol",
+      "reasoning_effort": "high",
+      "independent_review_model": "gpt-6-astra",
+      "critical_review": "fresh gpt-6-astra review plus direct evidence",
+      "status": "IN_PROGRESS",
+      "depends_on": [],
+      "test_execution": {
+        "coordinator_runs_tests": false,
+        "initial_executor": "gpt-6.1-sol",
+        "continuation_executor": "gpt-6-astra",
+        "reason": "Initial executor service usage limit; separate continuation preserves evidence and bounded contracts."
+      }
+    },
+    {
+      "milestone": "I02",
+      "direction": "I02",
+      "lead_model": "gpt-6-astra",
+      "reasoning_effort": "high",
+      "independent_review_model": "gpt-6.1-sol",
+      "critical_review": "fresh gpt-6-astra review plus direct evidence",
+      "status": "PROPOSED",
+      "depends_on": [
+        "I01"
+      ]
+    },
+    {
+      "milestone": "I03",
+      "direction": "I03",
+      "lead_model": "gpt-6.1-sol",
+      "reasoning_effort": "high",
+      "independent_review_model": "gpt-6-astra",
+      "critical_review": "direct evidence plus independent review",
+      "status": "PROPOSED",
+      "depends_on": [
+        "I02"
+      ]
+    },
+    {
+      "milestone": "I04",
+      "direction": "I04",
+      "lead_model": "gpt-6.1-sol",
+      "reasoning_effort": "high",
+      "independent_review_model": "gpt-6-astra",
+      "critical_review": "fresh gpt-6-astra review plus direct evidence",
+      "status": "PROPOSED",
+      "depends_on": [
+        "I02"
+      ]
+    },
+    {
+      "milestone": "I05",
+      "direction": "I05",
+      "lead_model": "gpt-6.1-sol",
+      "reasoning_effort": "high",
+      "independent_review_model": "gpt-6-astra",
+      "critical_review": "direct evidence plus independent review",
+      "status": "PROPOSED",
+      "depends_on": [
+        "I03",
+        "I04"
+      ]
+    },
+    {
+      "milestone": "I06",
+      "direction": "I06",
+      "lead_model": "gpt-6-astra",
+      "reasoning_effort": "high",
+      "independent_review_model": "gpt-6.1-sol",
+      "critical_review": "fresh gpt-6-astra review plus direct evidence",
+      "status": "PROPOSED",
+      "depends_on": [
+        "I02",
+        "I04"
+      ]
+    },
+    {
+      "milestone": "I07",
+      "direction": "I07",
+      "lead_model": "gpt-6-astra",
+      "reasoning_effort": "high",
+      "independent_review_model": "gpt-6.1-sol",
+      "critical_review": "fresh gpt-6-astra review plus direct evidence",
+      "status": "PROPOSED",
+      "depends_on": [
+        "I04",
+        "I06"
+      ]
+    },
+    {
+      "milestone": "I08",
+      "direction": "I08",
+      "lead_model": "gpt-6-astra",
+      "reasoning_effort": "high",
+      "independent_review_model": "gpt-6.1-sol",
+      "critical_review": "fresh gpt-6-astra review plus direct evidence",
+      "status": "PROPOSED",
+      "depends_on": [
+        "I06",
+        "I07"
+      ]
+    },
+    {
+      "milestone": "I09",
+      "direction": "I09",
+      "lead_model": "gpt-6-astra",
+      "reasoning_effort": "high",
+      "independent_review_model": "gpt-6.1-sol",
+      "critical_review": "fresh gpt-6-astra review plus direct evidence",
+      "status": "PROPOSED",
+      "depends_on": [
+        "I08"
+      ]
+    },
+    {
+      "milestone": "I10",
+      "direction": "I10",
+      "lead_model": "gpt-6-astra",
+      "reasoning_effort": "high",
+      "independent_review_model": "gpt-6.1-sol",
+      "critical_review": "fresh gpt-6-astra review plus direct evidence",
+      "status": "PROPOSED",
+      "depends_on": [
+        "I05",
+        "I08",
+        "I09"
+      ]
+    },
+    {
+      "milestone": "I11",
+      "direction": "I11",
+      "lead_model": "gpt-6.1-sol",
+      "reasoning_effort": "high",
+      "independent_review_model": "gpt-6-astra",
+      "critical_review": "direct evidence plus independent review",
+      "status": "PROPOSED",
+      "depends_on": [
+        "I02",
+        "I09",
+        "I10"
+      ]
+    },
+    {
+      "milestone": "I12",
+      "direction": "I12",
+      "lead_model": "gpt-6.1-sol",
+      "reasoning_effort": "high",
+      "independent_review_model": "gpt-6-astra",
+      "critical_review": "direct evidence plus independent review",
+      "status": "PROPOSED",
+      "depends_on": [
+        "I11"
+      ]
+    },
+    {
+      "milestone": "I13",
+      "direction": "I13",
+      "lead_model": "gpt-6.1-sol",
+      "reasoning_effort": "high",
+      "independent_review_model": "gpt-6-astra",
+      "critical_review": "fresh gpt-6-astra review plus direct evidence",
+      "status": "PROPOSED",
+      "depends_on": [
+        "I11",
+        "I12"
+      ]
+    },
+    {
+      "milestone": "I14",
+      "direction": "I14",
+      "lead_model": "gpt-6.1-sol",
+      "reasoning_effort": "high",
+      "independent_review_model": "gpt-6-astra",
+      "critical_review": "direct evidence plus independent review",
+      "status": "PROPOSED",
+      "depends_on": [
+        "I02",
+        "I08",
+        "I10"
+      ]
+    },
+    {
+      "milestone": "I15-R",
+      "direction": "I15",
+      "lead_model": "gpt-6-astra",
+      "reasoning_effort": "high",
+      "independent_review_model": "gpt-6.1-sol",
+      "critical_review": "fresh gpt-6-astra review plus direct evidence",
+      "status": "PROPOSED",
+      "depends_on": [
+        "I01",
+        "I02"
+      ]
+    },
+    {
+      "milestone": "I15",
+      "direction": "I15",
+      "lead_model": "gpt-6.1-sol",
+      "reasoning_effort": "high",
+      "independent_review_model": "gpt-6-astra",
+      "critical_review": "fresh gpt-6-astra review plus direct evidence",
+      "status": "PROPOSED",
+      "depends_on": [
+        "I13",
+        "I14",
+        "I15-R"
+      ]
+    },
+    {
+      "milestone": "I16",
+      "direction": "I16",
+      "lead_model": "gpt-6.1-sol",
+      "reasoning_effort": "high",
+      "independent_review_model": "gpt-6-astra",
+      "critical_review": "direct evidence plus independent review",
+      "status": "PROPOSED",
+      "depends_on": [
+        "I03",
+        "I04",
+        "I05",
+        "I09",
+        "I10",
+        "I12",
+        "I14"
+      ]
+    },
+    {
+      "milestone": "I17-D",
+      "direction": "I17",
+      "lead_model": "gpt-6.1-sol",
+      "reasoning_effort": "high",
+      "independent_review_model": "gpt-6-astra",
+      "critical_review": "direct evidence plus independent review",
+      "status": "PROPOSED",
+      "depends_on": [
+        "I02"
+      ]
+    },
+    {
+      "milestone": "I17",
+      "direction": "I17",
+      "lead_model": "gpt-6.1-sol",
+      "reasoning_effort": "high",
+      "independent_review_model": "gpt-6-astra",
+      "critical_review": "direct evidence plus independent review",
+      "status": "PROPOSED",
+      "depends_on": [
+        "I15",
+        "I16",
+        "I17-D"
+      ]
+    },
+    {
+      "milestone": "I18",
+      "direction": "I18",
+      "lead_model": "gpt-6-astra",
+      "reasoning_effort": "high",
+      "independent_review_model": "gpt-6.1-sol",
+      "critical_review": "fresh gpt-6-astra review plus direct evidence",
+      "status": "PROPOSED",
+      "depends_on": [
+        "I17"
+      ]
+    }
+  ],
+  "support": {
+    "model": "gpt-6-luna",
+    "reasoning_effort": "medium",
+    "allowed": [
+      "sanitized evidence indexing",
+      "documentation formatting",
+      "link and coverage reports"
+    ],
+    "excluded": [
+      "security acceptance",
+      "route or root design",
+      "privacy guarantees",
+      "network test verdicts"
+    ]
+  },
+  "external_reviewer": {
+    "name": "Grok",
+    "model_version": null,
+    "role": "optional external critique of sanitized material",
+    "automatically_sent": false
+  },
+  "authorized_directions": [
+    "I01"
+  ],
+  "coordinator_runs_tests": false
+}

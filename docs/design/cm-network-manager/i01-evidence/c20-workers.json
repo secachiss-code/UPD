@@ -1,0 +1,202 @@
+{
+  "started_utc": "2026-10-03T20:16:06.396161+00:00",
+  "scope": "host-conditioned proxy pilot, same shared host network namespace; live FlClash TUN may carry outer traffic; no physical independence proof",
+  "source_file_sha256": "c3b6c713edb056b91b81c3cc54c7d6e534a3e4f0fcded6e4fd164e4358f802e7",
+  "full_node_sha256": "26bb6fda04b54182c8e5489fa5819fb87c02034512def88816a3ccdf66dff523",
+  "shared_config_sha256": "cf43811a7e3cf738da53bbdfcec10dedc71dbc6612207899ab8aa2efa71584cb",
+  "native_binary_sha256": "98f50f0fdc498a9be1aa65ee991cda1c5854650d948e9001d7e13b703ab6cc3d",
+  "fl_binary_sha256": "b5014e62eda428795056221ce304990be30512f821d803a3b4bd8b0abafa1059",
+  "before": {
+    "routes": {
+      "exit_code": 0,
+      "sha256": "cd39dfbecc2f1fe824ef0b8edcdff3ead3ef18369f22f7d21c11ad55556bfb92"
+    },
+    "rules": {
+      "exit_code": 0,
+      "sha256": "421ff770828444c1ae2fdd522452846762864ac10cffc58500d5ec4f7211c5e8"
+    },
+    "namespace_inode": 4026531833,
+    "FlClashCore_live": true
+  },
+  "phases": [
+    {
+      "phase": "A1",
+      "started_utc": "2026-10-03T20:16:06.598635+00:00",
+      "scope": "host-conditioned proxy path; host FlClash TUN may carry outer traffic",
+      "kernel_host_uid": 1000,
+      "network_namespace_inode": 4026531833,
+      "requests": [
+        {
+          "utc": "2026-10-03T20:16:06.660880+00:00",
+          "target": "gstatic",
+          "expected_http": 204,
+          "warmup": false,
+          "argv_shape": [
+            "/usr/bin/curl",
+            "--disable",
+            "--noproxy",
+            "empty",
+            "--proxy",
+            "owned_loopback",
+            "--max-time",
+            "10",
+            "--connect-timeout",
+            "10",
+            "--silent",
+            "--show-error",
+            "--output",
+            "/dev/null",
+            "--write-out",
+            "safe_metrics",
+            "https://www.gstatic.com/generate_204"
+          ],
+          "curl_exit_code": 35,
+          "latency_wall_seconds": 5.015407642997161,
+          "connect_http_status": 200,
+          "http_status": 0,
+          "ssl_verify_result": 1,
+          "proxy_ssl_verify_result": 0,
+          "time_connect": 0.000173,
+          "time_appconnect": 0.0,
+          "curl_total_seconds": 4.997846,
+          "ttfb_seconds": 4.997844,
+          "size_download": 0.0,
+          "sanitized_curl_causes": [
+            "unexpected_eof"
+          ],
+          "success": false,
+          "tls_handshake_completed": false,
+          "certificate_verification_success_confirmed": false,
+          "error_stage": "endpoint_TLS_after_CONNECT_200",
+          "raw_stderr_exported": false,
+          "response_body_stored": false
+        }
+      ],
+      "status": "FAIL",
+      "public_endpoint": "https://www.gstatic.com/generate_204",
+      "core_api_version": "v1.19.32",
+      "same_fixed_node_active": true,
+      "expected_loopback_proxy": true,
+      "tun_disabled": true,
+      "own_proxy_socket_confirmed": true,
+      "core_capabilities_zero": true,
+      "own_core_reaped": true,
+      "core_exit_code": 0,
+      "core_output_redacted": true,
+      "core_error_stage_tokens": [],
+      "core_error_stage": "UNKNOWN",
+      "core_log_level": "silent_unchanged_config",
+      "body_handling": "curl output /dev/null; raw bodies never exported",
+      "finished_utc": "2026-10-03T20:16:11.679931+00:00",
+      "lifecycle": "fresh core and private home, profile selection/cache persistence disabled",
+      "same_config_sha256": "cf43811a7e3cf738da53bbdfcec10dedc71dbc6612207899ab8aa2efa71584cb",
+      "own_config_unmodified": true,
+      "temporary_directory_removed": true
+    },
+    {
+      "phase": "B",
+      "started_utc": "2026-10-03T20:16:11.832217+00:00",
+      "scope": "host-conditioned proxy path; host FlClash TUN may carry outer traffic",
+      "kernel_host_uid": 1000,
+      "network_namespace_inode": 4026531833,
+      "requests": [
+        {
+          "utc": "2026-10-03T20:16:11.867145+00:00",
+          "target": "gstatic",
+          "expected_http": 204,
+          "warmup": false,
+          "argv_shape": [
+            "/usr/bin/curl",
+            "--disable",
+            "--noproxy",
+            "empty",
+            "--proxy",
+            "owned_loopback",
+            "--max-time",
+            "10",
+            "--connect-timeout",
+            "10",
+            "--silent",
+            "--show-error",
+            "--output",
+            "/dev/null",
+            "--write-out",
+            "safe_metrics",
+            "https://www.gstatic.com/generate_204"
+          ],
+          "curl_exit_code": 35,
+          "latency_wall_seconds": 5.010931381002592,
+          "connect_http_status": 200,
+          "http_status": 0,
+          "ssl_verify_result": 1,
+          "proxy_ssl_verify_result": 0,
+          "time_connect": 0.000136,
+          "time_appconnect": 0.0,
+          "curl_total_seconds": 4.998781,
+          "ttfb_seconds": 4.99878,
+          "size_download": 0.0,
+          "sanitized_curl_causes": [
+            "unexpected_eof"
+          ],
+          "success": false,
+          "tls_handshake_completed": false,
+          "certificate_verification_success_confirmed": false,
+          "error_stage": "endpoint_TLS_after_CONNECT_200",
+          "raw_stderr_exported": false,
+          "response_body_stored": false
+        }
+      ],
+      "status": "FAIL",
+      "public_endpoint": "https://www.gstatic.com/generate_204",
+      "core_api_version": "1.10.0",
+      "same_fixed_node_active": true,
+      "expected_loopback_proxy": true,
+      "tun_disabled": true,
+      "own_proxy_socket_confirmed": true,
+      "core_capabilities_zero": true,
+      "own_core_reaped": true,
+      "core_exit_code": 0,
+      "core_output_redacted": true,
+      "core_error_stage_tokens": [],
+      "core_error_stage": "UNKNOWN",
+      "core_log_level": "silent_unchanged_config",
+      "body_handling": "curl output /dev/null; raw bodies never exported",
+      "finished_utc": "2026-10-03T20:16:16.236072+00:00",
+      "lifecycle": "fresh core and private home, profile selection/cache persistence disabled",
+      "same_config_sha256": "cf43811a7e3cf738da53bbdfcec10dedc71dbc6612207899ab8aa2efa71584cb",
+      "own_config_unmodified": true,
+      "temporary_directory_removed": true
+    }
+  ],
+  "request_budget": {
+    "measured_max": 2,
+    "warmup_max": 0,
+    "concurrency": 1,
+    "timeout_seconds": 10,
+    "deadline_seconds": 300
+  },
+  "performance_status": "INCONCLUSIVE",
+  "contract": "C20",
+  "node_selection": "first eligible complete VLESS TCP REALITY in Fl saved file order; live selection unknown",
+  "targets": [
+    "https://www.gstatic.com/generate_204"
+  ],
+  "after": {
+    "routes": {
+      "exit_code": 0,
+      "sha256": "cd39dfbecc2f1fe824ef0b8edcdff3ead3ef18369f22f7d21c11ad55556bfb92"
+    },
+    "rules": {
+      "exit_code": 0,
+      "sha256": "421ff770828444c1ae2fdd522452846762864ac10cffc58500d5ec4f7211c5e8"
+    },
+    "namespace_inode": 4026531833,
+    "FlClashCore_live": true
+  },
+  "network_snapshot_unchanged": true,
+  "source_file_unchanged": true,
+  "measured_requests": 2,
+  "warmup_requests": 0,
+  "connectivity_status": "FAIL",
+  "finished_utc": "2026-10-03T20:16:16.279991+00:00"
+}
