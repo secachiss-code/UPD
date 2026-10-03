@@ -1,31 +1,43 @@
 //! Native COSMIC symbols and compact counters at the panel's actual icon size.
 use cosmic::widget::{self, Icon};
-use upd::summary::Badge;
+use cm::summary::Badge;
 
+/// Открытый TUI виден как работа; ошибки и перезагрузка сохраняют приоритет.
+pub fn activity_badge(badge: Badge, tui_running: bool, error: bool) -> Badge {
+    if error { return Badge::Error; }
+    if tui_running && matches!(badge, Badge::Idle | Badge::Updates(_) | Badge::Stale(_) | Badge::Unverified) {
+        Badge::Busy(None)
+    } else { badge }
+}
+
+#[cfg(test)]
 pub fn name(badge: &Badge) -> &'static str {
     match badge {
-        Badge::Idle => "emblem-ok-symbolic",
-        Badge::Updates(_) => "software-update-available-symbolic",
-        Badge::Busy(_) => "emblem-synchronizing-symbolic",
-        Badge::Waiting => "media-playback-pause-symbolic",
-        Badge::Error => "dialog-warning-symbolic",
-        Badge::Reboot => "system-reboot-symbolic",
-        Badge::Stale(_) => "appointment-soon-symbolic",
-        Badge::Unverified => "dialog-question-symbolic",
+        Badge::Idle => "cm-idle-symbolic",
+        Badge::Updates(_) => "cm-updates-symbolic",
+        Badge::Busy(_) => "cm-busy-symbolic",
+        Badge::Waiting => "cm-waiting-symbolic",
+        Badge::Error => "cm-error-symbolic",
+        Badge::Reboot => "cm-reboot-symbolic",
+        Badge::Stale(_) => "cm-stale-symbolic",
+        Badge::Unverified => "cm-unverified-symbolic",
     }
 }
 
 pub fn icon(badge: &Badge, size: u16) -> Icon {
-    widget::icon::from_name(name(badge))
-        .symbolic(true)
-        .size(size)
-        .icon()
-        .size(size)
-        .opacity(if matches!(badge, Badge::Stale(_)) {
-            0.65
-        } else {
-            1.0
-        })
+    let bytes: &'static [u8] = match badge {
+        Badge::Idle => include_bytes!("../res/icons/cm-idle-symbolic.svg"),
+        Badge::Updates(_) => include_bytes!("../res/icons/cm-updates-symbolic.svg"),
+        Badge::Busy(_) => include_bytes!("../res/icons/cm-busy-symbolic.svg"),
+        Badge::Waiting => include_bytes!("../res/icons/cm-waiting-symbolic.svg"),
+        Badge::Error => include_bytes!("../res/icons/cm-error-symbolic.svg"),
+        Badge::Reboot => include_bytes!("../res/icons/cm-reboot-symbolic.svg"),
+        Badge::Stale(_) => include_bytes!("../res/icons/cm-stale-symbolic.svg"),
+        Badge::Unverified => include_bytes!("../res/icons/cm-unverified-symbolic.svg"),
+    };
+    let mut handle = widget::icon::from_svg_bytes(bytes);
+    handle.symbolic = true;
+    handle.icon().size(size).opacity(if matches!(badge, Badge::Stale(_)) { 0.65 } else { 1.0 })
 }
 
 pub fn button<'a, M: Clone + 'static>(
@@ -89,6 +101,17 @@ pub fn counter(badge: &Badge) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn open_tui_is_visible_without_hiding_errors_or_operations() {
+        assert!(matches!(activity_badge(Badge::Idle, true, false), Badge::Busy(None)));
+        assert!(matches!(activity_badge(Badge::Updates(4), true, false), Badge::Busy(None)));
+        assert!(matches!(activity_badge(Badge::Idle, false, false), Badge::Idle));
+        assert!(matches!(activity_badge(Badge::Error, true, false), Badge::Error));
+        assert!(matches!(activity_badge(Badge::Reboot, true, false), Badge::Reboot));
+        assert!(matches!(activity_badge(Badge::Waiting, true, false), Badge::Waiting));
+        assert!(matches!(activity_badge(Badge::Busy(Some((2, 4))), true, false), Badge::Busy(Some((2, 4)))));
+        assert!(matches!(activity_badge(Badge::Idle, true, true), Badge::Error));
+    }
     #[test]
     fn states_have_distinct_icons_and_bounded_counters() {
         let badges = [

@@ -33,7 +33,7 @@ impl Workers {
             })?;
         let permit = Permit(self.0.clone());
         std::thread::Builder::new()
-            .name("upd-notification".into())
+            .name("cm-notification".into())
             .spawn(move || {
                 let _permit = permit;
                 work();
@@ -47,10 +47,10 @@ pub enum Action {
     Log,
 }
 fn capture(command: &mut Command, timeout: Duration) -> Result<Option<Action>, String> {
-    let mut policy = upd::common::CapturePolicy::background(Some(256));
+    let mut policy = cm::common::CapturePolicy::background(Some(256));
     policy.stderr_max = 8192;
     policy.deadline = Instant::now() + timeout;
-    let output = upd::common::capture_with_policy(command, policy).map_err(|e| e.to_string())?;
+    let output = cm::common::capture_with_policy(command, policy).map_err(|e| e.to_string())?;
     if !output.status.success() {
         return Err(format!("notify-send exited with {}", output.status));
     }

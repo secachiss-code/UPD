@@ -12,26 +12,24 @@ pub enum Kind {
     Metadata,
     Summary,
     Operation,
+    #[cfg(test)]
     Vpn,
-    Mirrors,
-    News,
-    AurUpdates,
+    #[cfg(test)]
     AurSearch,
-    Maintenance,
 }
 impl Kind {
     pub fn label(self) -> &'static str {
         match self {
-            Self::Metadata | Self::Operation => upd::t!("Состояние"),
-            Self::Summary => upd::t!("Обновления"),
+            Self::Metadata | Self::Operation => cm::t!("Состояние"),
+            Self::Summary => cm::t!("Обновления"),
+            #[cfg(test)]
             Self::Vpn => "VPN",
-            Self::Mirrors => upd::t!("Зеркала"),
-            Self::News => upd::t!("Новости"),
-            Self::AurUpdates | Self::AurSearch => "AUR",
-            Self::Maintenance => upd::t!("Обслуживание"),
+            #[cfg(test)]
+            Self::AurSearch => "AUR",
         }
     }
 }
+
 #[derive(Clone, Debug, Default)]
 pub enum Phase {
     #[default]
@@ -140,7 +138,7 @@ impl<M: Send + 'static> Jobs<M> {
             let _guard = guard;
             let result = tokio::task::spawn_blocking(move || {
                 let _lease = lease;
-                upd::common::with_probe_scope(Duration::from_secs(30), cancel, work)
+                cm::common::with_probe_scope(Duration::from_secs(30), cancel, work)
                     .map_err(|e| e.to_string())
                     .and_then(|r| r)
                     .map(Box::new)
@@ -185,6 +183,7 @@ impl<M: Send + 'static> Jobs<M> {
         }
         (accept, Self::launch(completion.kind, slot, message))
     }
+    #[cfg(test)]
     pub fn invalidate(&mut self, kinds: &[Kind]) {
         for kind in kinds {
             if let Some(slot) = self.slots.get_mut(kind) {

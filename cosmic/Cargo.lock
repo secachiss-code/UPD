@@ -5902,8 +5902,8 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8ecb6da28b8a351d773b68d5825ac39017e680750f980f3a1a85cd8dd28a47c1"
 
 [[package]]
-name = "upd"
-version = "0.2.7"
+name = "cm"
+version = "0.2.8"
 dependencies = [
  "flate2",
  "libc",
@@ -5918,17 +5918,15 @@ dependencies = [
 ]
 
 [[package]]
-name = "upd-cosmic"
-version = "0.2.7"
+name = "cm-cosmic"
+version = "0.2.8"
 dependencies = [
  "libc",
  "libcosmic",
- "png 0.17.16",
  "serde",
  "serde_json",
  "tokio",
- "upd",
- "url",
+ "cm",
 ]
 
 [[package]]

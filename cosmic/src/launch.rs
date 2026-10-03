@@ -28,7 +28,7 @@ impl Reaper {
         let state = Arc::new((Mutex::new(Registry::default()), Condvar::new()));
         let worker = state.clone();
         std::thread::Builder::new()
-            .name("upd-launch-reaper".into())
+            .name("cm-launch-reaper".into())
             .spawn(move || {
                 let (mutex, wake) = &*worker;
                 let mut registry = mutex.lock().unwrap_or_else(|e| e.into_inner());
@@ -165,7 +165,7 @@ mod tests {
         assert!(start.elapsed() < Duration::from_secs(1));
         assert!(
             reaper
-                .spawn(&mut Command::new("/nonexistent/upd-fixture"))
+                .spawn(&mut Command::new("/nonexistent/cm-fixture"))
                 .is_err()
         );
         unsafe {
