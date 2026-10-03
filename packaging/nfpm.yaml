@@ -1,6 +1,6 @@
-# Описание пакетов upd для nfpm: одно на все форматы (arch, deb, rpm).
-# Собирается через ./package.sh — он подставляет VERSION и STAGE (файлы от `upd gen-files`).
-name: upd
+# Описание пакетов cm для nfpm: одно на все форматы (arch, deb, rpm).
+# Собирается через ./package.sh — он подставляет VERSION и STAGE (файлы от `cm gen-files`).
+name: cm
 arch: amd64
 platform: linux
 version: ${VERSION}
@@ -12,17 +12,21 @@ description: |
   Обновление системы с автоподбором зеркал и VPN на ядре mihomo.
   Один статический бинарник: pacman, apt, dnf, zypper; Flatpak, AUR, прошивки,
   снапшоты; VPN с подписками, TUN, правилами и геофайлами — всё в TUI.
+conflicts:
+  - upd
+replaces:
+  - upd
 license: MIT
 homepage: https://github.com/somovas/upd
 provides:
-  - upd
+  - cm
 contents:
   - src: LICENSE
-    dst: /usr/share/licenses/upd/LICENSE
+    dst: /usr/share/licenses/cm/LICENSE
     file_info:
       mode: 0644
-  - src: ${STAGE}/usr/bin/upd
-    dst: /usr/bin/upd
+  - src: ${STAGE}/usr/bin/cm
+    dst: /usr/bin/cm
     file_info:
       mode: 0755
   - src: ${STAGE}/usr/lib/systemd/

@@ -1,5 +1,5 @@
 #!/usr/bin/env sh
-# Пакеты upd: .pkg.tar.zst (Arch), .deb, .rpm → dist/. Нужен nfpm (скачивается сам, с проверкой sha256).
+# Пакеты cm: .pkg.tar.zst (Arch), .deb, .rpm → dist/. Нужен nfpm (скачивается сам, с проверкой sha256).
 set -e
 cd "$(dirname "$0")"
 mkdir -p dist
@@ -7,7 +7,7 @@ PACKAGE_STAGE=$(mktemp -d "$PWD/dist/.package.XXXXXX")
 trap 'rm -rf "$PACKAGE_STAGE"' 0
 BUILD_LOG=$(mktemp "$PWD/dist/package-build.XXXXXX.log")
 MANIFEST="$PACKAGE_STAGE/artifacts.tsv"
-if ! UPD_BUILD_MANIFEST="$MANIFEST" ./build.sh >"$BUILD_LOG" 2>&1; then
+if ! CM_BUILD_MANIFEST="$MANIFEST" ./build.sh >"$BUILD_LOG" 2>&1; then
     cat "$BUILD_LOG" >&2
     echo "build log: $BUILD_LOG" >&2
     exit 1
@@ -18,12 +18,12 @@ ARCH=$(manifest_value arch)
 BIN=$(manifest_value cli)
 GUI_BIN=$(manifest_value gui)
 [ -n "$VERSION" ] && [ "$ARCH" = amd64 ] && [ -x "$BIN" ] || { echo "invalid build manifest" >&2; exit 1; }
-if [ "${UPD_NO_GUI:-0}" = 1 ]; then GUI_BIN=; fi
+if [ "${CM_NO_GUI:-0}" = 1 ]; then GUI_BIN=; fi
 if [ -n "$GUI_BIN" ]; then [ -x "$GUI_BIN" ] || { echo "missing fresh GUI artifact" >&2; exit 1; }; fi
 mkdir -p "$PACKAGE_STAGE/packages"
 
 NFPM_VER=2.47.0
-TOOLS=${XDG_CACHE_HOME:-$HOME/.cache}/upd-build
+TOOLS=${XDG_CACHE_HOME:-$HOME/.cache}/cm-build
 NFPM=$(command -v nfpm || echo "$TOOLS/nfpm")
 if [ ! -x "$NFPM" ]; then
 	mkdir -p "$TOOLS"
@@ -37,7 +37,7 @@ fi
 for target in arch deb rpm; do
 	STAGE="$PACKAGE_STAGE/$target"
 	mkdir -p "$STAGE"
-	install -Dm755 "$BIN" "$STAGE/usr/bin/upd"
+	install -Dm755 "$BIN" "$STAGE/usr/bin/cm"
 	"$BIN" gen-files "$STAGE" "$target"
 	# хуки пакетных менеджеров лежат вне /usr/lib — собираем их в extra/
 	mkdir -p "$STAGE/extra/usr/share" "$STAGE/extra/etc" "$STAGE/usr/lib/NetworkManager"

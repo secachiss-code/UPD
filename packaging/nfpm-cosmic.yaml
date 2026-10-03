@@ -1,5 +1,5 @@
-# Пакет upd-cosmic: апплет и окно upd для COSMIC. Собирается через ./package.sh рядом с пакетом upd.
-name: upd-cosmic
+# Пакет cm-cosmic: индикатор cm и запуск TUI для COSMIC. Собирается через ./package.sh рядом с пакетом cm.
+name: cm-cosmic
 arch: amd64
 platform: linux
 version: ${VERSION}
@@ -8,34 +8,38 @@ section: admin
 priority: optional
 maintainer: somovas
 description: |
-  Апплет upd для панели COSMIC и окно upd: обновления, зеркала, VPN и обслуживание.
-  Привилегированные действия выполняет помощник upd с проверкой прав через polkit.
+  Индикатор состояния cm на панели COSMIC и запуск терминального интерфейса.
+  Управление обновлениями, зеркалами, VPN и обслуживанием выполняется в TUI.
+conflicts:
+  - upd-cosmic
+replaces:
+  - upd-cosmic
 license: MIT
 homepage: https://github.com/somovas/upd
 depends:
-  - upd
+  - cm
 contents:
   - src: LICENSE
-    dst: /usr/share/licenses/upd-cosmic/LICENSE
+    dst: /usr/share/licenses/cm-cosmic/LICENSE
     file_info:
       mode: 0644
   - src: ${GUI_BIN}
-    dst: /usr/bin/upd-cosmic
+    dst: /usr/bin/cm-cosmic
     file_info:
       mode: 0755
-  - src: cosmic/res/io.github.upd.desktop
-    dst: /usr/share/applications/io.github.upd.desktop
+  - src: cosmic/res/io.github.cm.desktop
+    dst: /usr/share/applications/io.github.cm.desktop
     file_info:
       mode: 0644
-  - src: cosmic/res/io.github.upd.Applet.desktop
-    dst: /usr/share/applications/io.github.upd.Applet.desktop
+  - src: cosmic/res/io.github.cm.Applet.desktop
+    dst: /usr/share/applications/io.github.cm.Applet.desktop
     file_info:
       mode: 0644
-  - src: cosmic/res/icons/io.github.upd.svg
-    dst: /usr/share/icons/hicolor/scalable/apps/io.github.upd.svg
+  - src: cosmic/res/icons/io.github.cm.svg
+    dst: /usr/share/icons/hicolor/scalable/apps/io.github.cm.svg
     file_info:
       mode: 0644
-  - src: cosmic/res/icons/io.github.upd-symbolic.svg
-    dst: /usr/share/icons/hicolor/symbolic/apps/io.github.upd-symbolic.svg
+  - src: cosmic/res/icons/io.github.cm-symbolic.svg
+    dst: /usr/share/icons/hicolor/symbolic/apps/io.github.cm-symbolic.svg
     file_info:
       mode: 0644

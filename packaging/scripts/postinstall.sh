@@ -1,4 +1,4 @@
 #!/bin/sh
 # После установки или обновления пакета: включить службы, забрать настройки ручной установки.
 # Ошибка здесь не должна срывать транзакцию пакетного менеджера.
-UPD_PACKAGE_SCRIPT=1 /usr/bin/upd install --package || true
+CM_PACKAGE_SCRIPT=1 /usr/bin/cm install --package || true
