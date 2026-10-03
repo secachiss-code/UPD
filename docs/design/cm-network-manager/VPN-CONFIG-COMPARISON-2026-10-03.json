@@ -1,0 +1,41 @@
+{
+  "scope": "Read-only comparison after user-authorized sudo; no subscription requests or VPN changes",
+  "file_dates_utc": {
+    "UPD_runtime": "2026-10-03T14:51:09.747382+00:00",
+    "FlClash_saved": "2026-10-03T14:45:40.621309+00:00",
+    "UPD_saved_source": "2026-10-03T14:50:39.548355+00:00"
+  },
+  "UPD_vs_FlClash": {
+    "common_nodes": 62,
+    "identical_nodes": 1,
+    "different_fields": {
+      "reality-opts": 55,
+      "servername": 49,
+      "server": 18,
+      "ws-opts": 5
+    },
+    "different_nested_fields": {
+      "reality-opts.short-id": 55,
+      "ws-opts.path": 5,
+      "ws-opts.headers": 5
+    },
+    "identical_uuid": 62,
+    "identical_port": 62,
+    "identical_network": 62
+  },
+  "UPD_source_vs_UPD_runtime": {
+    "common_nodes": 62,
+    "identical_nodes": 62,
+    "different_fields": {}
+  },
+  "observed_local_runtime": {
+    "UPD_api": "ConnectionRefusedError",
+    "process_names_only": ["FlClash", "FlClashCore"]
+  },
+  "limitations": [
+    "Config files are snapshots, not proof of active node selection",
+    "UPD source and runtime files postdate the earlier journal excerpt",
+    "Different server/SNI/short-id/WS fields may represent valid per-request provider variation",
+    "A controlled same-node connectivity comparison was not performed"
+  ]
+}

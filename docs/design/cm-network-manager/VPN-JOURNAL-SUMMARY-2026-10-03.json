@@ -1,0 +1,16 @@
+{
+  "entries": 600,
+  "from_utc": "2026-10-03T14:35:21.952452+00:00",
+  "to_utc": "2026-10-03T14:45:18.058425+00:00",
+  "error_counts": {
+    "deadline exceeded / unmapped": 134,
+    "502 transport handshake / ws": 236,
+    "deadline exceeded / ws": 66
+  },
+  "distinct_matching_endpoints": {
+    "deadline exceeded / unmapped": 0,
+    "502 transport handshake / ws": 1,
+    "deadline exceeded / ws": 1
+  },
+  "snapshot_only": true
+}
