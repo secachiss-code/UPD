@@ -43,9 +43,14 @@ URI scheme matching is case-insensitive. The matrix is the CM import subset, not
 | `Rules` | `rules` |
 | `SubRules` | `sub-rules` |
 | `ProviderDeclarations` | `proxy-providers`, `rule-providers`; the explicit local `file` and `inline` modes is capability-approved at this stage. Path, size, and content policy remain for the parser stage. |
-| `ConstrainedDefault` | `mode`, `log-level`, `unified-delay`, `tcp-concurrent`, `global-client-fingerprint`. Classification does not accept arbitrary values; later parser policy must validate each field's narrow value set. |
+| `ConstrainedDefault` | `mode`, `log-level`, `unified-delay`, `tcp-concurrent`. Classification does not accept arbitrary values; later parser policy must validate each field's narrow value set. |
 | `RestrictedNative` | Listeners, TUN, port bindings, controllers, host routes/firewall and DNS controls, plus `interface-name`, `routing-mark`, `dialer-proxy`, `ip-stack`, and `remote-dns-resolve`. These fields do not transfer host-network ownership to an imported profile. |
 
 Known but out-of-subset ECH, ShadowTLS, Restls, JLS, TLS mirror, Mekya/MKCP, and plugin options return `UnsupportedFeature`. `reality-opts` is a preserved **node** option whose protocol/value compatibility still requires later parsing; it is not an accepted top-level config field. Unknown native keys return `UnsupportedField`. Errors are unit-valued and never echo an unchecked field name or value; a future parser must reject the source instead of silently dropping an unsupported field.
 
 The exact capability API is in [`src/sources/capabilities.rs`](../../../src/sources/capabilities.rs). Regression cases are prepared in [`tests/audit_i03_capabilities.rs`](../../../tests/audit_i03_capabilities.rs) and remain unexecuted until the installation-time test gate.
+
+Correction during T04 review (2026-10-05): `global-client-fingerprint` is rejected as
+`UnsupportedFeature`, because the [pinned core parseGeneral](https://raw.githubusercontent.com/MetaCubeX/mihomo/v1.19.32/config/config.go)
+reports its removal and omits it from the resulting General record. Use validated per-node
+`client-fingerprint` in the later TLS parser subset; do not silently import an ignored global.

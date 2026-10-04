@@ -10,7 +10,7 @@ Source получает optional strict provenance metadata (`serde(default)` д
 
 Raw actual UA сохраняется только в private immutable artifact blob вместе с raw body, полными разрешёнными node definitions и влияющими global defaults. `Source.credential` указывает на этот artifact; Node.credential_refs удерживает artifact своего поколения. Сериализуемый private artifact ограничен до передачи Store; Debug и ошибки скрывают payload, UA, endpoint и parser text. Explicit private getter для будущего core adapter возвращает полное определение, без сокращённой реконструкции из model Node.
 
-Artifact хранит version, формат и origin каждого разрешённого определения/default. Node digest вычисляется из deterministic полного определения вместе с влияющими defaults: смена TLS/REALITY/transport/global fingerprint не может выглядеть тем же определением. Имя не используется как stable ID. Duplicate definitions допустимы только при явном различении позиций/IDs; silent collapse запрещён. Bounded node count/serialized bytes/depth проверяются до durable writes. Full format/protocol field validation завершается в T04; T03 не называет произвольный JSON проверенным core config.
+Artifact хранит version, формат и origin каждого разрешённого определения/default. Node digest вычисляется из deterministic полного определения вместе с влияющими defaults: смена TLS/REALITY/transport/разрешённых defaults не может выглядеть тем же определением. Имя не используется как stable ID. Duplicate definitions допустимы только при явном различении позиций/IDs; silent collapse запрещён. Bounded node count/serialized bytes/depth проверяются до durable writes. Full format/protocol field validation завершается в T04; T03 не называет произвольный JSON проверенным core config.
 
 Constrained `log-level` допускает `silent/error/warning/info/debug`, как в [pinned upstream config example](https://raw.githubusercontent.com/MetaCubeX/mihomo/v1.19.32/docs/config.yaml). Не заменять `warning` на Rust-style `warn`. Byte limit проверяется во время кодирования artifact, а не после неограниченного `to_vec`.
 
@@ -27,3 +27,8 @@ Source removal использует существующий durable plan и own
 ## Подготовленные проверки
 
 Actual winner второго UA после retry сохраняется и доступен только через private artifact; read/reopen сохраняет формат/time/pin/digest. Same-body refresh не меняет generation/Node IDs, а different-UA refresh переиспользует Nodes и сохраняет правильный новый header. Changed body создаёт generation+1/fresh Nodes и сохраняет старые Session pins; исчезновение меняет только NET. Протокол/defaults/credential payload сохраняются полностью. Bad artifact/negative time/unknown schema/stale revision не заменяют рабочий Source. Независимый Source остаётся byte-equivalent. Форматирование/public views не содержат synthetic secrets. Все fixtures — NOT_RUN до установки; compile-only evidence отдельно.
+
+Уточнение T04 review 2026-10-05: global-client-fingerprint удалён в [pinned parseGeneral](https://raw.githubusercontent.com/MetaCubeX/mihomo/v1.19.32/config/config.go),
+его прием в T03 typed defaults исправлен на UnsupportedFeature. Непроверенные fixtures
+предыдущего снимка не создавали опубликованных artifact файлов; старое compile evidence
+сохраняется как история, новые исходники требуют нового evidence.

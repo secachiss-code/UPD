@@ -100,6 +100,17 @@ fn wrong_core_versions_and_uri_schemes_fail_with_safe_unit_errors() {
 
 #[test]
 fn native_config_policy_restricts_host_controls_and_rejects_unknown_or_advanced_fields() {
+    assert_eq!(
+        classify_native_config_field("global-client-fingerprint"),
+        Err(CapabilityError::UnsupportedFeature)
+    );
+    assert!(matches!(
+        GlobalDefaults::new([(
+            "global-client-fingerprint".into(),
+            serde_json::json!("chrome")
+        )]),
+        Err(ArtifactError::UnsupportedFeature)
+    ));
     for field in ["proxies", "proxy-groups", "rules", "sub-rules"] {
         assert_ne!(
             classify_native_config_field(field).unwrap(),

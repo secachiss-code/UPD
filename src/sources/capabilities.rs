@@ -225,9 +225,11 @@ pub fn classify_native_config_field(
         "rules" => NativeFieldDisposition::Rules,
         "sub-rules" => NativeFieldDisposition::SubRules,
         "proxy-providers" | "rule-providers" => NativeFieldDisposition::ProviderDeclarations,
-        "mode" | "log-level" | "unified-delay" | "tcp-concurrent" | "global-client-fingerprint" => {
+        "mode" | "log-level" | "unified-delay" | "tcp-concurrent" => {
             NativeFieldDisposition::ConstrainedDefault
         }
+        // Kept in RawConfig for compatibility, but parseGeneral explicitly ignores it.
+        "global-client-fingerprint" => return Err(CapabilityError::UnsupportedFeature),
         "listeners"
         | "tun"
         | "port"

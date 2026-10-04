@@ -14,6 +14,7 @@ use std::collections::BTreeMap;
 struct PayloadProjection<'a> {
     raw_body: &'a [u8],
     actual_user_agent: Option<&'a str>,
+    fetch_settings: Option<&'a crate::sources::negotiation::PrivateFetchSettings>,
     defaults: &'a BTreeMap<DefaultField, Value>,
     definitions: Vec<DefinitionProjection<'a>>,
 }
@@ -32,6 +33,7 @@ pub(super) fn validate_payload_budget(input: &SourceImportInput) -> Result<(), A
     let projection = PayloadProjection {
         raw_body: &input.raw_body,
         actual_user_agent: input.actual_user_agent.as_deref(),
+        fetch_settings: input.fetch_settings.as_ref(),
         defaults: &input.defaults.0,
         definitions: input
             .definitions

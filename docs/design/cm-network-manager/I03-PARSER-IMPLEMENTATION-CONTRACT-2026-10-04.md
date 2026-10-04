@@ -27,7 +27,8 @@ multiple documents, YAML tags/merge/aliases (без expansion), excess nesting >
 YAML не превращать через `Value` с потерей duplicate keys. Общий strict visitor либо
 preflight token reader должен сохранять границу ресурсов; serde recursion cap не отключать.
 
-Принятый native subset: `proxies` и пять constrained global defaults T03. Остальные known
+Принятый native subset: `proxies` и четыре constrained global defaults T03 (global-client-fingerprint removed в pinned core,
+review correction 2026-10-05: reject). Остальные known
 native sections нельзя молча выбросить: host controls restricted; groups/rules/providers
 unsupported до отдельной реализации с сохранением семантики. Remote providers отвергать
 без сетевых запросов. File providers также отвергать, пока нет explicit confined resolver;

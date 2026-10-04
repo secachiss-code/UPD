@@ -388,11 +388,20 @@ fn persisted_winner_refreshes_and_historical_node_keeps_its_artifact() {
     assert_eq!(old_definition.format(), SourceFormat::MihomoYaml);
     assert_eq!(old_definition.origin(), SourceOrigin::Negotiated);
     assert_eq!(old_definition.core_version(), "1.19.32");
-    assert_eq!(old_definition.core_commit(), "88dcbf7f1614a67c3b36b848ee3592dfa92ada36");
+    assert_eq!(
+        old_definition.core_commit(),
+        "88dcbf7f1614a67c3b36b848ee3592dfa92ada36"
+    );
     let current_definition = read_node_definition(&store, &changed_body.node_ids[0]).unwrap();
     assert_eq!(current_definition.source_generation(), 2);
     assert_eq!(current_definition.format(), SourceFormat::MihomoJson);
-    assert_eq!(current_definition.defaults().get("log-level").and_then(Value::as_str), Some("debug"));
+    assert_eq!(
+        current_definition
+            .defaults()
+            .get("log-level")
+            .and_then(Value::as_str),
+        Some("debug")
+    );
     assert_eq!(
         old_definition
             .defaults()

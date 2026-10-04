@@ -6,6 +6,8 @@ pub mod artifact;
 mod bounded;
 pub mod capabilities;
 pub mod negotiation;
+pub mod parser;
+pub mod pipeline;
 
 pub use artifact::{
     ArtifactError, GlobalDefaults, MAX_ARTIFACT_DEPTH, MAX_ARTIFACT_NODE_COUNT,
@@ -25,4 +27,9 @@ pub use capabilities::{
 pub use negotiation::{
     BodyRejection, CachedWinner, ConfiguredEndpoint, FetchFailure, HttpResponse, Negotiated,
     NegotiationError, NegotiationPolicy, RequestSpec, UserAgent, negotiate, negotiate_with_clock,
+};
+
+pub use parser::{
+    MAX_NATIVE_DEPTH, MAX_NATIVE_ENTRIES, MAX_NATIVE_NODES, ParsedSource, ParserError,
+    parse_native,
 };

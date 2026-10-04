@@ -194,7 +194,8 @@
             "I03.T03"
           ],
           "status": "IN_PROGRESS",
-          "progress_note": "Sequential next stage: strict source parsing/manual input, native/provider/resource restrictions. Runtime checks deferred to installation."
+          "progress_note": "User stopped work on 2026-10-05. Native first subset, streaming YAML guard, private restart settings and bound parser/publication pipeline saved. TLS/REALITY/transports/remaining protocols/URI/base64/manual remain. All root targets cargo check --offline --locked --tests COMPILE_PASS; I03 total42 checks prepared NOT_RUN. Binary OLD_NOT_REBUILT. WORK-STOP-2026-10-05.md",
+          "coding_status": "PARTIAL"
         },
         {
           "id": "I03.T05",
@@ -1247,5 +1248,11 @@
   ],
   "test_execution": "Runtime checks only at installation of the built binary; compile-only checks allowed during coding. Actual acceptance remains separate from coding completion.",
   "coding_authorization_note": "2026-10-04: все возможные задачи кодера строго последовательно; реальные проверки при установке собранного binary. I01 code completion разрешает следующий кодовый этап I02; acceptance не подменяется. По миграционному вопросу Sol работает без дальнейшего делегирования. Для остальных рутинных задач Luna xhigh/Sol review, Astra/Opus только после отдельного решения пользователя.",
-  "authorization_scope": "Sequential coding and compile/build preparation; runtime/service/network acceptance deferred until installation. No package build/install or publication authorization."
+  "authorization_scope": "Sequential coding and compile/build preparation; runtime/service/network acceptance deferred until installation. No package build/install or publication authorization.",
+  "work_control": {
+    "state": "STOPPED_BY_USER",
+    "date": "2026-10-05",
+    "resume_task": "I03.T04",
+    "report": "WORK-STOP-2026-10-05.md"
+  }
 }

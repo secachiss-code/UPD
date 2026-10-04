@@ -1,0 +1,21 @@
+{
+  "stage": "I03.T04/private-fetch-settings",
+  "coding_status": "REVIEWED_PARTIAL_STAGE",
+  "reviewer": "Sol",
+  "compile": {
+    "command": "cargo check --offline --locked --test audit_i03_fetch_settings --test audit_i03_artifact --test audit_i03_artifact_review --test audit_i03_negotiation --test audit_i03_provenance",
+    "exit_code": 0,
+    "status": "COMPILE_PASS",
+    "stdout": "final.stdout.log",
+    "stderr": "final.stderr.log"
+  },
+  "prepared_checks": 2,
+  "runtime": "NOT_RUN",
+  "binary": "OLD_NOT_REBUILT",
+  "source_sha256": {
+    "src/sources/negotiation.rs": "32af50d63f1ed4543e58d05efba709e6a43386def99591f416e20c3e4e66c6df",
+    "src/sources/artifact.rs": "08d4e2f9ea354090cf784c4713bc7f6498bb125a5531acbbb316303a23ab254f",
+    "src/sources/artifact/preflight.rs": "edde28d467e425bcfb7bd30aba55b6ef43c0978ab7bb27a1ab15c7d6e0635142",
+    "tests/audit_i03_fetch_settings.rs": "667bac3366443662a7112fc6825f7badc4c380da08a205f426fedc8aedbb7d77"
+  }
+}

@@ -10,6 +10,7 @@ use super::capabilities::{
     CapabilityError, ImportFormat, PINNED_CORE_COMMIT, PINNED_CORE_VERSION, Transport,
     classify_node_option, validate,
 };
+use super::negotiation::PrivateFetchSettings;
 use crate::profiles::store::{fresh_id, make_metadata, reserve_id};
 use crate::profiles::{
     CredentialMaterial, EntityIdKind, GraphSnapshot, Id, Node, NodeProtocol, SCHEMA_VERSION,
@@ -212,11 +213,37 @@ pub struct SourceImportInput {
     origin: SourceOrigin,
     accepted_at_unix_ms: i64,
     actual_user_agent: Option<String>,
+    fetch_settings: Option<PrivateFetchSettings>,
     definitions: Vec<NodeDefinitionInput>,
     defaults: GlobalDefaults,
 }
 
 impl SourceImportInput {
+    /// Internal consuming path, retaining the immutable negotiation binding.
+    pub(crate) fn from_owned_negotiated<T>(
+        payload: super::negotiation::AcceptedPayload<T>,
+        into_parts: impl FnOnce(T) -> (ImportFormat, Vec<NodeDefinitionInput>, GlobalDefaults),
+    ) -> Result<Self, ArtifactError> {
+        if payload.body.len() > MAX_RAW_SOURCE_BYTES {
+            return Err(ArtifactError::RawBodyTooLarge);
+        }
+        if sha256_hex(&payload.body) != payload.source_body_sha256 {
+            return Err(ArtifactError::CorruptArtifact);
+        }
+        let (format, definitions, defaults) = into_parts(payload.parsed);
+        let input = Self {
+            raw_body: payload.body,
+            format: source_format(format),
+            origin: SourceOrigin::Negotiated,
+            accepted_at_unix_ms: payload.accepted_at_unix_ms,
+            actual_user_agent: Some(payload.actual_user_agent.expose_value().to_owned()),
+            fetch_settings: Some(payload.fetch_settings),
+            definitions,
+            defaults,
+        };
+        validate_input(&input, SourceKind::Subscription)?;
+        Ok(input)
+    }
     /// Capture body, actual successful UA, and accepted time from negotiation output.
     pub fn from_negotiated<T>(
         format: ImportFormat,
@@ -238,6 +265,7 @@ impl SourceImportInput {
             origin: SourceOrigin::Negotiated,
             accepted_at_unix_ms: negotiated.accepted_at_unix_ms(),
             actual_user_agent: Some(actual_user_agent),
+            fetch_settings: Some(negotiated.fetch_settings().clone()),
             definitions,
             defaults,
         };
@@ -258,6 +286,7 @@ impl SourceImportInput {
             origin: SourceOrigin::Local,
             accepted_at_unix_ms,
             actual_user_agent: None,
+            fetch_settings: None,
             definitions,
             defaults,
         };
@@ -294,7 +323,7 @@ fn parse_default_field(field: &str) -> Result<DefaultField, ArtifactError> {
         "log-level" => Ok(DefaultField::LogLevel),
         "unified-delay" => Ok(DefaultField::UnifiedDelay),
         "tcp-concurrent" => Ok(DefaultField::TcpConcurrent),
-        "global-client-fingerprint" => Ok(DefaultField::GlobalClientFingerprint),
+        "global-client-fingerprint" => Err(ArtifactError::UnsupportedFeature),
         _ => Err(ArtifactError::UnsupportedField),
     }
 }
@@ -316,16 +345,9 @@ fn validate_default_value(field: DefaultField, value: &Value) -> Result<(), Arti
                 Err(ArtifactError::InvalidDefault)
             }
         }
-        DefaultField::GlobalClientFingerprint => match value.as_str() {
-            Some(text)
-                if !text.is_empty()
-                    && text.len() <= 256
-                    && !text.bytes().any(|byte| byte.is_ascii_control()) =>
-            {
-                Ok(())
-            }
-            _ => Err(ArtifactError::InvalidDefault),
-        },
+        // The pinned core has removed this global setting. It must not be presented
+        // as an accepted effective default, including through a private wire record.
+        DefaultField::GlobalClientFingerprint => Err(ArtifactError::UnsupportedFeature),
     }
 }
 
@@ -407,6 +429,20 @@ fn sha256_hex(bytes: &[u8]) -> String {
 }
 
 fn validate_input(input: &SourceImportInput, kind: SourceKind) -> Result<(), ArtifactError> {
+    if let Some(settings) = &input.fetch_settings {
+        settings
+            .validate()
+            .map_err(|_| ArtifactError::InvalidInput)?;
+        if input.origin != SourceOrigin::Negotiated
+            || !settings
+                .candidates()
+                .map_err(|_| ArtifactError::InvalidInput)?
+                .iter()
+                .any(|agent| Some(agent.expose_value()) == input.actual_user_agent.as_deref())
+        {
+            return Err(ArtifactError::InvalidInput);
+        }
+    }
     if input.raw_body.len() > MAX_RAW_SOURCE_BYTES {
         return Err(ArtifactError::RawBodyTooLarge);
     }
@@ -537,6 +573,8 @@ struct PrivateArtifact {
     raw_body_digest_sha256: String,
     actual_user_agent: Option<String>,
     actual_user_agent_sha256: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    fetch_settings: Option<PrivateFetchSettings>,
     raw_body: Vec<u8>,
     defaults: BTreeMap<DefaultField, Value>,
     definitions: Vec<PrivateNodeDefinition>,
@@ -625,6 +663,7 @@ fn build_artifact(
         raw_body_digest_sha256: content_digest_sha256.clone(),
         actual_user_agent: input.actual_user_agent,
         actual_user_agent_sha256,
+        fetch_settings: input.fetch_settings,
         raw_body: input.raw_body,
         defaults: input.defaults.0,
         definitions,
@@ -643,6 +682,20 @@ fn build_artifact(
 }
 
 fn validate_private_artifact(artifact: &PrivateArtifact) -> Result<(), ArtifactError> {
+    if let Some(settings) = &artifact.fetch_settings {
+        settings
+            .validate()
+            .map_err(|_| ArtifactError::CorruptArtifact)?;
+        if artifact.origin != SourceOrigin::Negotiated
+            || !settings
+                .candidates()
+                .map_err(|_| ArtifactError::CorruptArtifact)?
+                .iter()
+                .any(|agent| Some(agent.expose_value()) == artifact.actual_user_agent.as_deref())
+        {
+            return Err(ArtifactError::CorruptArtifact);
+        }
+    }
     if artifact.schema_version != MAX_ARTIFACT_SCHEMA_VERSION
         || artifact.source_generation == 0
         || artifact.raw_body.len() > MAX_RAW_SOURCE_BYTES
@@ -760,6 +813,10 @@ pub struct SourceArtifact {
 }
 
 impl SourceArtifact {
+    /// Closed restart settings for the current Source, rather than an archived Node.
+    pub fn fetch_settings(&self) -> Option<&PrivateFetchSettings> {
+        self.inner.fetch_settings.as_ref()
+    }
     pub fn source_id(&self) -> &Id {
         &self.inner.source_id
     }
@@ -1062,62 +1119,64 @@ pub fn update_source(
     }
     let same_user_agent = old_artifact.actual_user_agent() == input.actual_user_agent.as_deref();
 
-    let (next_source, next_nodes, materials, next_generation, artifact_reused) =
-        if same_digest && same_user_agent {
-            let mut source = old_source.clone();
-            source.provenance = Some(SourceProvenance {
-                accepted_at_unix_ms: input.accepted_at_unix_ms,
-                ..old_provenance.clone()
-            });
-            let nodes = source_nodes_from_graph(&graph, &source.current_node_ids)?;
-            (source, nodes, Vec::new(), old_source.generation, true)
+    let (next_source, next_nodes, materials, next_generation, artifact_reused) = if same_digest
+        && same_user_agent
+        && old_artifact.inner.fetch_settings == input.fetch_settings
+    {
+        let mut source = old_source.clone();
+        source.provenance = Some(SourceProvenance {
+            accepted_at_unix_ms: input.accepted_at_unix_ms,
+            ..old_provenance.clone()
+        });
+        let nodes = source_nodes_from_graph(&graph, &source.current_node_ids)?;
+        (source, nodes, Vec::new(), old_source.generation, true)
+    } else {
+        let mut reservations = graph.clone();
+        let generation = if same_digest {
+            old_source.generation
         } else {
-            let mut reservations = graph.clone();
-            let generation = if same_digest {
-                old_source.generation
-            } else {
-                old_source
-                    .generation
-                    .checked_add(1)
-                    .ok_or(ArtifactError::InvalidProvenance)?
-            };
-            let credential_ref =
-                reserve_fresh(&mut reservations, "artifact", EntityIdKind::CredentialRef)?;
-            let node_ids = if same_digest {
-                old_source.current_node_ids.clone()
-            } else {
-                let mut ids = Vec::with_capacity(input.definitions.len());
-                for _ in 0..input.definitions.len() {
-                    ids.push(reserve_fresh(
-                        &mut reservations,
-                        "node",
-                        EntityIdKind::Node,
-                    )?);
-                }
-                ids
-            };
-            let built = build_artifact(
-                input,
-                source_id.clone(),
-                credential_ref.clone(),
-                generation,
-                node_ids.clone(),
-            )?;
-            let mut source = old_source.clone();
-            source.generation = generation;
-            source.content_digest_sha256 = built.content_digest_sha256;
-            source.credential = Some(built.metadata);
-            source.provenance = Some(built.provenance);
-            source.current_node_ids = node_ids;
-            let nodes = if same_digest {
-                // The newer UA artifact is source-owned; immutable Node pins keep their old refs.
-                source_nodes_from_graph(&graph, &source.current_node_ids)?
-            } else {
-                built.nodes
-            };
-            let material = CredentialMaterial::new(credential_ref, built.bytes)?;
-            (source, nodes, vec![material], generation, false)
+            old_source
+                .generation
+                .checked_add(1)
+                .ok_or(ArtifactError::InvalidProvenance)?
         };
+        let credential_ref =
+            reserve_fresh(&mut reservations, "artifact", EntityIdKind::CredentialRef)?;
+        let node_ids = if same_digest {
+            old_source.current_node_ids.clone()
+        } else {
+            let mut ids = Vec::with_capacity(input.definitions.len());
+            for _ in 0..input.definitions.len() {
+                ids.push(reserve_fresh(
+                    &mut reservations,
+                    "node",
+                    EntityIdKind::Node,
+                )?);
+            }
+            ids
+        };
+        let built = build_artifact(
+            input,
+            source_id.clone(),
+            credential_ref.clone(),
+            generation,
+            node_ids.clone(),
+        )?;
+        let mut source = old_source.clone();
+        source.generation = generation;
+        source.content_digest_sha256 = built.content_digest_sha256;
+        source.credential = Some(built.metadata);
+        source.provenance = Some(built.provenance);
+        source.current_node_ids = node_ids;
+        let nodes = if same_digest {
+            // The newer UA artifact is source-owned; immutable Node pins keep their old refs.
+            source_nodes_from_graph(&graph, &source.current_node_ids)?
+        } else {
+            built.nodes
+        };
+        let material = CredentialMaterial::new(credential_ref, built.bytes)?;
+        (source, nodes, vec![material], generation, false)
+    };
 
     let updated = store.update_source(
         expected_revision,

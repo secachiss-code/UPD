@@ -4,6 +4,7 @@
 //! policy and retry behavior can be tested without network access.
 
 use super::capabilities::PINNED_CORE_VERSION;
+use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::fmt;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
@@ -28,6 +29,109 @@ const DEFAULT_WINNER_TTL: Duration = Duration::from_secs(24 * 60 * 60);
 /// trusted fetch adapter can retrieve it through [`ConfiguredEndpoint::expose_url`].
 pub struct ConfiguredEndpoint {
     url: String,
+}
+
+/// Private restart settings captured before negotiation. Never put this record in a DTO.
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PrivateFetchSettings {
+    schema_version: u32,
+    endpoint: String,
+    candidates: Vec<String>,
+    max_requests: usize,
+    max_candidates: usize,
+    total_budget_nanos: u64,
+    per_request_timeout_nanos: u64,
+    max_body_bytes: usize,
+    winner_ttl_nanos: u64,
+}
+
+impl PrivateFetchSettings {
+    fn capture(
+        endpoint: &ConfiguredEndpoint,
+        candidates: &[UserAgent],
+        policy: &NegotiationPolicy,
+    ) -> Self {
+        // Validated hard limits fit u64 nanoseconds, including the seven-day TTL.
+        Self {
+            schema_version: 1,
+            endpoint: endpoint.url.clone(),
+            candidates: candidates.iter().map(|agent| agent.0.clone()).collect(),
+            max_requests: policy.max_requests,
+            max_candidates: policy.max_candidates,
+            total_budget_nanos: policy.total_budget.as_nanos() as u64,
+            per_request_timeout_nanos: policy.per_request_timeout.as_nanos() as u64,
+            max_body_bytes: policy.max_body_bytes,
+            winner_ttl_nanos: policy.winner_ttl.as_nanos() as u64,
+        }
+    }
+
+    pub fn endpoint(&self) -> Result<ConfiguredEndpoint, NegotiationError> {
+        // An HTTP endpoint can only enter this record after its initial explicit opt-in.
+        ConfiguredEndpoint::new(self.endpoint.clone(), true)
+    }
+
+    pub fn candidates(&self) -> Result<Vec<UserAgent>, NegotiationError> {
+        self.candidates
+            .iter()
+            .map(|value| UserAgent::new(value.clone()))
+            .collect()
+    }
+
+    pub fn policy(&self) -> NegotiationPolicy {
+        NegotiationPolicy {
+            max_requests: self.max_requests,
+            max_candidates: self.max_candidates,
+            total_budget: Duration::from_nanos(self.total_budget_nanos),
+            per_request_timeout: Duration::from_nanos(self.per_request_timeout_nanos),
+            max_body_bytes: self.max_body_bytes,
+            winner_ttl: Duration::from_nanos(self.winner_ttl_nanos),
+        }
+    }
+
+    pub(crate) fn validate(&self) -> Result<(), NegotiationError> {
+        if self.schema_version != 1
+            || self.endpoint.len() > MAX_URL_BYTES
+            || self.candidates.len() > MAX_CANDIDATES
+        {
+            return Err(NegotiationError::InvalidPolicy);
+        }
+        self.endpoint()?;
+        let policy = self.policy();
+        policy.validate()?;
+        let candidates = self.candidates()?;
+        let ordered = ordered_candidates(&candidates, &[], policy.max_candidates)?;
+        if candidates != ordered {
+            return Err(NegotiationError::InvalidCandidates);
+        }
+        Ok(())
+    }
+
+    /// Restore a private cache hint. Negotiation still checks its binding and TTL.
+    pub fn cached_winner(
+        &self,
+        winner: &UserAgent,
+        accepted_at_unix_ms: i64,
+    ) -> Result<CachedWinner, NegotiationError> {
+        self.validate()?;
+        if accepted_at_unix_ms < 0 || !self.candidates()?.contains(winner) {
+            return Err(NegotiationError::InvalidCandidates);
+        }
+        Ok(CachedWinner {
+            winner: winner.clone(),
+            endpoint_digest: endpoint_digest(&self.endpoint()?),
+            agent_set_digest: agent_set_digest(&self.candidates()?),
+            core_version: PINNED_CORE_VERSION.to_owned(),
+            created_at_unix_ms: accepted_at_unix_ms,
+            ttl: self.policy().winner_ttl,
+        })
+    }
+}
+
+impl fmt::Debug for PrivateFetchSettings {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("PrivateFetchSettings([REDACTED])")
+    }
 }
 
 impl ConfiguredEndpoint {
@@ -347,9 +451,34 @@ pub struct Negotiated<T> {
     agent_set_digest: [u8; 32],
     core_version: &'static str,
     winner_ttl: Duration,
+    fetch_settings: PrivateFetchSettings,
+}
+
+/// Internal consuming transfer; public callers cannot rebind response provenance.
+pub(crate) struct AcceptedPayload<T> {
+    pub body: Vec<u8>,
+    pub parsed: T,
+    pub actual_user_agent: UserAgent,
+    pub source_body_sha256: String,
+    pub accepted_at_unix_ms: i64,
+    pub fetch_settings: PrivateFetchSettings,
 }
 
 impl<T> Negotiated<T> {
+    pub(crate) fn into_import_payload(self) -> AcceptedPayload<T> {
+        AcceptedPayload {
+            body: self.body,
+            parsed: self.parsed,
+            actual_user_agent: self.actual_user_agent,
+            source_body_sha256: self.source_body_sha256,
+            accepted_at_unix_ms: self.accepted_at_unix_ms,
+            fetch_settings: self.fetch_settings,
+        }
+    }
+    /// Exact private settings that produced this response, before any cache reordering.
+    pub fn fetch_settings(&self) -> &PrivateFetchSettings {
+        &self.fetch_settings
+    }
     /// Explicit access to the accepted raw body for the trusted import pipeline.
     pub fn body(&self) -> &[u8] {
         &self.body
@@ -494,6 +623,7 @@ where
             policy.winner_ttl,
         )
     });
+    let fetch_settings = PrivateFetchSettings::capture(endpoint, &candidates, policy);
     let mut ordered = candidates;
     if let (true, Some(cached)) = (cached_is_valid, cached_winner) {
         if let Some(position) = ordered.iter().position(|agent| agent == &cached.winner) {
@@ -565,6 +695,7 @@ where
                     )
                     .ok_or(NegotiationError::TimestampOverflow)?;
                 return Ok(Negotiated {
+                    fetch_settings,
                     body,
                     parsed,
                     actual_user_agent: user_agent.clone(),

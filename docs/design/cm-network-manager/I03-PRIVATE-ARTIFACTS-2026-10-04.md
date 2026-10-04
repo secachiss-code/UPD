@@ -29,8 +29,9 @@ and normalized JSON values are limited to depth 64 and one million total values.
 payload is size-checked before per-node hashing; final serialization uses the same bounded
 writer before Store writes any blob. SHA-256 definition digests include protocol, transport,
 the full normalized node definition, and all accepted defaults. The limited default subset
-contains `mode`, `log-level`, `unified-delay`, `tcp-concurrent`, and
-`global-client-fingerprint`; `log-level` permits `warning`, not `warn`.
+contains `mode`, `log-level`, `unified-delay`, and `tcp-concurrent`; `log-level` permits
+`warning`, not `warn`. T04 review corrected the earlier fingerprint classification:
+`global-client-fingerprint` is rejected because the [pinned core has removed it](https://raw.githubusercontent.com/MetaCubeX/mihomo/v1.19.32/config/config.go).
 
 `read_source_artifact` verifies the current safe provenance, Source, blob metadata, body digest,
 User-Agent digest, pin, format, generation, and every current Node link. `read_node_definition`
