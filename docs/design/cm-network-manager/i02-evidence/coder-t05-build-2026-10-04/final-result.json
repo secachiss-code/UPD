@@ -1,0 +1,25 @@
+{
+  "final-check": {
+    "argv": [
+      "cargo",
+      "check",
+      "--offline",
+      "--locked",
+      "--tests"
+    ],
+    "exit_code": 0
+  },
+  "final-build": {
+    "argv": [
+      "cargo",
+      "build",
+      "--offline",
+      "--locked",
+      "--bin",
+      "cm"
+    ],
+    "exit_code": 0
+  },
+  "previous_binary_sha256": "556dd7a5b681a4874f03c1119d09b7c2455b4a0ea09ef149b231af858b8e0779",
+  "binary_sha256": "26478ee0307d1a1d1bffa0c92838d35d68f7f99551bf1d6e768901a103644a89"
+}

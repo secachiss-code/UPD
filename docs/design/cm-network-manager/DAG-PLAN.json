@@ -1,0 +1,1251 @@
+{
+  "schema_version": 1,
+  "date": "2026-10-03",
+  "status": "IN_PROGRESS",
+  "implementation_authorized": true,
+  "package_build_allowed": false,
+  "iteration_count": 18,
+  "nodes": [
+    {
+      "id": "I01",
+      "direction": "I01",
+      "title": "База, диагностика VPN и миграция",
+      "priority": "P0",
+      "status": "IN_PROGRESS",
+      "depends_on": [],
+      "questions": "Q20, Q21",
+      "acceptance": "A18, A19",
+      "tasks": [
+        {
+          "id": "I01.T01",
+          "description": "Инвентаризировать исходники CM 0.2.8 и установленный UPD: версии, digest ядер, units, пути, действующий конфиг, выбранную группу и узел. Записать время и происхождение каждого снимка.",
+          "depends_on": [],
+          "status": "IN_PROGRESS",
+          "progress_note": "Baseline собран и сведён в I01-BASELINE-REPORT.md. Live selection остаётся unknown (C04 BLOCKED). Приёмка не закрыта."
+        },
+        {
+          "id": "I01.T02",
+          "description": "Разобрать текущий отказ по этапам DNS → dial → TLS/REALITY → WS/HTTP → remote service → TUN. Связать журнал с конфигом именно того времени; при отсутствии снимка оставить историческую причину unknown.",
+          "depends_on": [
+            "I01.T01"
+          ],
+          "status": "IN_PROGRESS",
+          "progress_note": "Журналы классифицированы. Contemporaneous config отсутствует, историческая причинность unknown. Синтез не связывает журнал с текущим снимком."
+        },
+        {
+          "id": "I01.T03",
+          "description": "Подготовить и, при отдельном задании на испытания, провести сравнение CM/UPD и FlClash на одинаковом полном узле и эффективном конфиге по A/B/A. Различия ядра и глобальных настроек изменять по одному; сохранять capture и классификацию ошибок.",
+          "depends_on": [
+            "I01.T02"
+          ],
+          "status": "IN_PROGRESS",
+          "progress_note": "C06, C19 и C20 исполнены. C20 локализовал TLS после CONNECT у своих worker-ов; стадия ядра UNKNOWN. Host TUN не проверен, приёмка сети не закрыта."
+        },
+        {
+          "id": "I01.T04",
+          "description": "Составить и реализовать миграцию UPD→CM с резервной копией, проверкой владельцев и конфликтов старых/новых каталогов; обеспечить восстановление credentials, units и назначений после прерывания.",
+          "depends_on": [
+            "I01.T03"
+          ],
+          "status": "IN_PROGRESS",
+          "progress_note": "Реализованы общий production-used durable transaction executor, private backups/journal, generation/owner/mode checks, service state compensation, startup gate и explicit manual UPD 0.2.7 policy. CLI: migration plan/apply/recover, install --migrate-upd. Independent Luna: 15/15 migration, 5/5 guard, 4/4 language, 12/12 help и offline binary build PASS; verdict PASS_WITH_SCOPE_LIMITS. Fixture/fault/recovery evidence и исходные failures в i01-evidence/migration-implementation/. Обычный legacy guard сохранён. Package/foreign layouts, active VPN и live user-session transition unsupported; real disposable Linux/systemd/root CLI acceptance ещё требуется. I01-MIGRATION-IMPLEMENTATION.md. После возвращённой SIMULATED ленты Luna xhigh исправила core/deleted process audit, shared plan preflight и observed-active old service guard; Sol static review. cargo check --offline --locked --tests COMPILE_PASS; 10 новых regressions NOT_RUN, binary OLD_NOT_REBUILT. Реальные проверки отложены пользователем до установки; повторная simulation changed scenarios в I01-GROKBUILD-SIMULATION-FOLLOWUP-2026-10-04.md. Повторная SIMULATED лента возвращена, рассмотрена Sol без дальнейшего делегирования по прямому поручению пользователя; unknown unlinked executable refusal исправляет deleted-hardlink counterexample, ещё одна regression NOT_RUN (всего11 новых). Compile-only PASS в i01-evidence/simulation-followup-review-2026-10-04/. Новая внешняя simulation не требуется; runtime acceptance deferred install.",
+          "coding_status": "COMPLETE_PENDING_INSTALL_CHECKS"
+        },
+        {
+          "id": "I01.T05",
+          "description": "Закрыть регрессии обновлений, mirrors, prefetch, снапшотов, helper, TUI и launcher. Выпустить baseline-report: доказанные факты, открытые причины отказов, приоритеты и ссылки на evidence.",
+          "depends_on": [
+            "I01.T04"
+          ],
+          "status": "IN_PROGRESS",
+          "progress_note": "Кодовая часть завершена Sol перед I02: актуальный CLI offline build PASS, COSMIC compile PASS, shell/Python syntax PASS; новый бинарник9d80a30f…, предыдущий сохранён. tests/check_i01_regressions.py готов для запуска после установки matching binary. Runtime checks NOT_RUN по поручению пользователя. I01-CODER-COMPLETION-2026-10-04.md; full acceptance/history network unknown сохраняются.",
+          "coding_status": "COMPLETE_PENDING_INSTALL_CHECKS"
+        }
+      ],
+      "output": "Baseline-report; план и evidence миграции; протокол parity; реестр регрессий.",
+      "done": "Нет потери данных; факты установленной системы отделены от исходников; несовпадение снимков явно указано. Отчёт с unknown допускает переход к проектированию, но не утверждение «VPN исправлен».",
+      "blocked": "Недоказанная причина отказа остаётся блокером соответствующего заявления о стабильности; потеря данных блокирует дальнейшее применение миграции.",
+      "evidence_documents": [
+        "I01-TEST-CONTRACT.md",
+        "I01-SOURCE-AUDIT.md",
+        "I01-MIGRATION-GUARD.md",
+        "I01-PARITY-PROTOCOL.md",
+        "I01-EXECUTION-REPORT.md",
+        "I01-DECISIONS.md",
+        "I01-GROKBUILD-SIMULATION-SOL-REVIEW-2026-10-04.md",
+        "I01-GROKBUILD-SIMULATION-FOLLOWUP-SOL-REVIEW-2026-10-04.md"
+      ]
+    },
+    {
+      "id": "I02",
+      "direction": "I02",
+      "title": "Модель источников, профилей и сессий",
+      "priority": "P0",
+      "status": "IN_PROGRESS",
+      "depends_on": [
+        "I01"
+      ],
+      "questions": "Q05, Q16",
+      "acceptance": "A02, A04, A05, A06, A13",
+      "tasks": [
+        {
+          "id": "I02.T01",
+          "description": "Задать Source, Node, ConnectionProfile, TunnelInstance, ApplicationDefinition, ApplicationGroup, EnvironmentProfile, BrowserIdentityProfile, Session и Verification; описать ссылки и ownership.",
+          "depends_on": [
+            "I01.T05"
+          ],
+          "status": "IN_PROGRESS",
+          "progress_note": "Код и Sol review завершены; typed model/private atomic store,3 schema examples/error contract/install-only runner.35 meaningful regressions prepared; cargo check --offline --locked --tests, CLI build, COSMIC compile и driver syntax PASS. Runtime NOT_RUN. I02-CODER-COMPLETION-2026-10-04.md; i02-evidence/coder-t05-build-2026-10-04/summary.json.",
+          "coding_status": "COMPLETE_PENDING_INSTALL_CHECKS"
+        },
+        {
+          "id": "I02.T02",
+          "description": "Разделить HostPolicy и app policies: host off/proxy/tunnel; apps только tunnel; независимые источники, autostart и stop. Описать примеры одной группы и отдельных туннелей.",
+          "depends_on": [
+            "I02.T01"
+          ],
+          "status": "IN_PROGRESS",
+          "progress_note": "Код и Sol review завершены; typed model/private atomic store,3 schema examples/error contract/install-only runner.35 meaningful regressions prepared; cargo check --offline --locked --tests, CLI build, COSMIC compile и driver syntax PASS. Runtime NOT_RUN. I02-CODER-COMPLETION-2026-10-04.md; i02-evidence/coder-t05-build-2026-10-04/summary.json.",
+          "coding_status": "COMPLETE_PENDING_INSTALL_CHECKS"
+        },
+        {
+          "id": "I02.T03",
+          "description": "Определить stable IDs, schema version и generation pinning. DnsPolicy принадлежит connection profile, DNS cache/fake-IP — поколению tunnel, browser identity — профилю данных приложения.",
+          "depends_on": [
+            "I02.T02"
+          ],
+          "status": "IN_PROGRESS",
+          "progress_note": "Код и Sol review завершены; typed model/private atomic store,3 schema examples/error contract/install-only runner.35 meaningful regressions prepared; cargo check --offline --locked --tests, CLI build, COSMIC compile и driver syntax PASS. Runtime NOT_RUN. I02-CODER-COMPLETION-2026-10-04.md; i02-evidence/coder-t05-build-2026-10-04/summary.json.",
+          "coding_status": "COMPLETE_PENDING_INSTALL_CHECKS"
+        },
+        {
+          "id": "I02.T04",
+          "description": "Реализовать атомарное хранение, обновление и удаление связанных записей: используемый source/node нельзя молча заменить случайным. Credentials отделить от публичного статуса.",
+          "depends_on": [
+            "I02.T03"
+          ],
+          "status": "IN_PROGRESS",
+          "progress_note": "Код и Sol review завершены; typed model/private atomic store,3 schema examples/error contract/install-only runner.35 meaningful regressions prepared; cargo check --offline --locked --tests, CLI build, COSMIC compile и driver syntax PASS. Runtime NOT_RUN. I02-CODER-COMPLETION-2026-10-04.md; i02-evidence/coder-t05-build-2026-10-04/summary.json.",
+          "coding_status": "COMPLETE_PENDING_INSTALL_CHECKS"
+        },
+        {
+          "id": "I02.T05",
+          "description": "Проверить restart, concurrent update, disappeared node и staged removal; выпустить schema examples без секретов и контракт ошибок для следующих направлений.",
+          "depends_on": [
+            "I02.T04"
+          ],
+          "status": "IN_PROGRESS",
+          "progress_note": "Код и Sol review завершены; typed model/private atomic store,3 schema examples/error contract/install-only runner.35 meaningful regressions prepared; cargo check --offline --locked --tests, CLI build, COSMIC compile и driver syntax PASS. Runtime NOT_RUN. I02-CODER-COMPLETION-2026-10-04.md; i02-evidence/coder-t05-build-2026-10-04/summary.json.",
+          "coding_status": "COMPLETE_PENDING_INSTALL_CHECKS"
+        }
+      ],
+      "output": "Версионированная схема; контракты сущностей; примеры назначений; проверки хранилища.",
+      "done": "Две подписки и три произвольных приложения представлены без singleton; host stop не означает stop all; ссылка живой сессии сохраняет generation.",
+      "blocked": "Изменение схемы требует согласованной миграции; downstream не принимает несовместимый контракт молча.",
+      "progress_note": "I02.T01–T05 кодово завершены по последовательной очереди, runtime acceptance pending install. Следующий кодовый этап I03.T01.",
+      "coding_status": "COMPLETE_PENDING_INSTALL_CHECKS"
+    },
+    {
+      "id": "I03",
+      "direction": "I03",
+      "title": "Подписки и собственные серверы",
+      "priority": "P1",
+      "status": "IN_PROGRESS",
+      "depends_on": [
+        "I02"
+      ],
+      "questions": "Q04, Q06, Q24",
+      "acceptance": "A05, A13",
+      "tasks": [
+        {
+          "id": "I03.T01",
+          "description": "Закрепить версии и матрицу форматов/протоколов/транспортов. Определить поддержанные URI, YAML, base64 и native config; неизвестные поля диагностировать.",
+          "depends_on": [
+            "I02.T05"
+          ],
+          "status": "IN_PROGRESS",
+          "progress_note": "T01 typed capability matrix и Sol review завершены: pinned mihomo1.19.32, exact version gate, separate native/node restrictions, REALITY node preservation, local file/inline providers. 4 integration cases prepared; cargo check --offline --locked --tests COMPILE_PASS. i03-evidence/capability-review-2026-10-04/summary.json; runtime NOT_RUN.",
+          "coding_status": "COMPLETE_PENDING_INSTALL_CHECKS"
+        },
+        {
+          "id": "I03.T02",
+          "description": "Спроектировать UA negotiation с общим budget, лимитом запросов, HTTP/error mapping и cache выигравшего варианта. Provider endpoints брать из конфигурации, не угадывать секретные URL.",
+          "depends_on": [
+            "I03.T01"
+          ],
+          "status": "IN_PROGRESS",
+          "progress_note": "Sol review завершено: bounded UA negotiation, single-sample request deadlines, accepted actual UA/body SHA/time, immutable bound cache. 10 integration fixtures prepared; cargo check --offline --locked --tests COMPILE_PASS, runtime NOT_RUN. i03-evidence/negotiation-review-2026-10-04/summary.json",
+          "coding_status": "COMPLETE_PENDING_INSTALL_CHECKS"
+        },
+        {
+          "id": "I03.T03",
+          "description": "Реализовать сохранение actual accepted UA, формата, времени, локального digest и поколения. Сохранять разрешённые параметры узлов и влияющие глобальные defaults с происхождением.",
+          "depends_on": [
+            "I03.T02"
+          ],
+          "status": "IN_PROGRESS",
+          "progress_note": "Sol review complete: bounded private source artifacts, safe durable provenance, immutable historical definitions/defaults/core pin, single-snapshot reads and CAS publication. 10 checks prepared; cargo check --offline --locked --tests COMPILE_PASS, runtime NOT_RUN. i03-evidence/provenance-review-2026-10-04/summary.json",
+          "coding_status": "COMPLETE_PENDING_INSTALL_CHECKS"
+        },
+        {
+          "id": "I03.T04",
+          "description": "Добавить ручной собственный сервер и независимые источники для профилей. Ограничить native configs, listeners, remote providers и размеры; исключить облачный converter по умолчанию.",
+          "depends_on": [
+            "I03.T03"
+          ],
+          "status": "IN_PROGRESS",
+          "progress_note": "Sequential next stage: strict source parsing/manual input, native/provider/resource restrictions. Runtime checks deferred to installation."
+        },
+        {
+          "id": "I03.T05",
+          "description": "Проверить fixtures валидных и повреждённых ответов, HTML/заглушек, quota, timeout, исчезновения узла и обновления активного source. Плохой import не заменяет рабочее состояние.",
+          "depends_on": [
+            "I03.T04"
+          ],
+          "status": "PLANNED"
+        }
+      ],
+      "output": "Capability matrix; import pipeline; диагностические fixtures; provenance источников.",
+      "done": "Совместимость проверяется по конкретному ядру; actual UA отличается от configured UA; неудачный import атомарно отклоняется.",
+      "blocked": "Неподдержанный transport получает unsupported; нельзя имитировать успешную конверсию."
+    },
+    {
+      "id": "I04",
+      "direction": "I04",
+      "title": "Контракт ядер и mihomo",
+      "priority": "P0",
+      "status": "PLANNED",
+      "depends_on": [
+        "I02"
+      ],
+      "questions": "Q02, Q03, Q07",
+      "acceptance": "A02, A05, A18",
+      "tasks": [
+        {
+          "id": "I04.T01",
+          "description": "Определить typed CoreAdapter: capabilities, validate, start, stop, reload, health, statistics, errors. Разделить API-ready, route-ready и remote connectivity.",
+          "depends_on": [
+            "I02.T05"
+          ],
+          "status": "PLANNED"
+        },
+        {
+          "id": "I04.T02",
+          "description": "Выделить instance-owned config, socket, порт, cache, service и secret scope; сохранить отдельный legacy host wrapper для прежнего сценария.",
+          "depends_on": [
+            "I04.T01"
+          ],
+          "status": "PLANNED"
+        },
+        {
+          "id": "I04.T03",
+          "description": "Закрепить ответственность A+C: CM владеет routes/firewall, ядро обслуживает транспорт. Исключить конкурирующие auto-route/DNS изменения в app worker.",
+          "depends_on": [
+            "I04.T02"
+          ],
+          "status": "PLANNED"
+        },
+        {
+          "id": "I04.T04",
+          "description": "Реализовать mihomo adapter и сравнить worker на tunnel с несколькими outbounds в одном worker по ресурсам, отказам и независимости управления.",
+          "depends_on": [
+            "I04.T03"
+          ],
+          "status": "PLANNED"
+        },
+        {
+          "id": "I04.T05",
+          "description": "Проверить два независимых instances и legacy host. Использовать parity-протокол I01; revision FlClash core не считать тождественным upstream latest.",
+          "depends_on": [
+            "I04.T04"
+          ],
+          "status": "PLANNED"
+        }
+      ],
+      "output": "CoreAdapter contract; mihomo worker; resource report; legacy compatibility evidence.",
+      "done": "Конфиги/API/cache не пересекаются; остановка одного worker не ломает другой; API-ready не выдаётся за рабочий выход.",
+      "blocked": "Без измерений выбор модели worker остаётся ADR с незакрытым экспериментом."
+    },
+    {
+      "id": "I05",
+      "direction": "I05",
+      "title": "Xray и доставка ядер",
+      "priority": "P1",
+      "status": "PLANNED",
+      "depends_on": [
+        "I03",
+        "I04"
+      ],
+      "questions": "Q03, Q07",
+      "acceptance": "A05, A09, A18",
+      "tasks": [
+        {
+          "id": "I05.T01",
+          "description": "Закрепить источник и версии Xray, архитектуры, проверку бинарника и geo data; составить capability gaps относительно CoreAdapter.",
+          "depends_on": [
+            "I03.T05",
+            "I04.T05"
+          ],
+          "status": "PLANNED"
+        },
+        {
+          "id": "I05.T02",
+          "description": "Прототипировать путь TCP/UDP/TUN в A+C. Отдельно проверить native DNS inbound → routing → DNS outbound и qtypes сверх A/AAAA; не добавлять forwarder без выявленного gap.",
+          "depends_on": [
+            "I05.T01"
+          ],
+          "status": "PLANNED"
+        },
+        {
+          "id": "I05.T03",
+          "description": "Реализовать генерацию и validate разрешённого native config, readiness, start/stop/reload и error mapping; отсутствующие операции возвращают unsupported.",
+          "depends_on": [
+            "I05.T02"
+          ],
+          "status": "PLANNED"
+        },
+        {
+          "id": "I05.T04",
+          "description": "Реализовать update/rollback ядра с проверкой кандидата, сохранением предыдущего binary и независимостью работающих профилей; не обещать перенос существующих соединений.",
+          "depends_on": [
+            "I05.T03"
+          ],
+          "status": "PLANNED"
+        },
+        {
+          "id": "I05.T05",
+          "description": "На совместимом тестовом endpoint подтвердить транспорт, DNS и lifecycle. Зафиксировать неэквивалентные конфиги и случаи, где сравнение с mihomo невозможно.",
+          "depends_on": [
+            "I05.T04"
+          ],
+          "status": "PLANNED"
+        }
+      ],
+      "output": "Xray adapter; delivery policy; native DNS report; тесты транспорта и rollback.",
+      "done": "Поддержанные пути доказаны на закреплённой версии; invalid binary/config не уничтожает рабочую конфигурацию.",
+      "blocked": "Провал native DNS разрешается явным решением о дополнительном forwarder; произвольный новый компонент не вводится автоматически."
+    },
+    {
+      "id": "I06",
+      "direction": "I06",
+      "title": "Привилегированный контроллер",
+      "priority": "P0",
+      "status": "PLANNED",
+      "depends_on": [
+        "I02",
+        "I04"
+      ],
+      "questions": "Q08, Q11, Q16",
+      "acceptance": "A07, A17",
+      "tasks": [
+        {
+          "id": "I06.T01",
+          "description": "Выбрать расширение helper или отдельный network service; задать typed protocol, polkit scope и границы root операций.",
+          "depends_on": [
+            "I02.T05",
+            "I04.T05"
+          ],
+          "status": "PLANNED"
+        },
+        {
+          "id": "I06.T02",
+          "description": "Определить проверку uid/gid/session, PID start time, namespace/cgroup ownership, paths и FD. AppLaunch возвращает исходного пользователя, не root.",
+          "depends_on": [
+            "I06.T01"
+          ],
+          "status": "PLANNED"
+        },
+        {
+          "id": "I06.T03",
+          "description": "Реализовать allocate/apply/check/stop/reconcile с журналом ownership, транзакцией и compensation для частичного отказа.",
+          "depends_on": [
+            "I06.T02"
+          ],
+          "status": "PLANNED"
+        },
+        {
+          "id": "I06.T04",
+          "description": "Ограничить capabilities, inherited FD, secret passing, ресурсы, число instances, конкурирующие операции и timeout. Диагностика не содержит credentials.",
+          "depends_on": [
+            "I06.T03"
+          ],
+          "status": "PLANNED"
+        },
+        {
+          "id": "I06.T05",
+          "description": "Провести отрицательные проверки чужого uid, PID reuse, argv/path injection, устаревшего запроса и прерывания транзакции.",
+          "depends_on": [
+            "I06.T04"
+          ],
+          "status": "PLANNED"
+        }
+      ],
+      "output": "Privilege ADR; протокол контроллера; ownership journal; negative-test evidence.",
+      "done": "Клиент не расширяет root полномочия; приложение работает под своим uid; reconcile затрагивает только ресурсы CM.",
+      "blocked": "Любой обход ownership блокирует сетевые эксперименты с пользовательскими приложениями."
+    },
+    {
+      "id": "I07",
+      "direction": "I07",
+      "title": "Режимы хоста и outer egress",
+      "priority": "P0",
+      "status": "PLANNED",
+      "depends_on": [
+        "I04",
+        "I06"
+      ],
+      "questions": "Q02, Q03, Q09",
+      "acceptance": "A01, A02, A03, A06, A10, A19",
+      "tasks": [
+        {
+          "id": "I07.T01",
+          "description": "Детализировать принятую A+C: packet-flow TCP/UDP/DNS, таблицы routes, marks, firewall sets и ownership. Чужие таблицы и rules сохранять.",
+          "depends_on": [
+            "I04.T05",
+            "I06.T05"
+          ],
+          "status": "PLANNED"
+        },
+        {
+          "id": "I07.T02",
+          "description": "Реализовать отдельный outer egress к endpoint ядра: без случайного chaining через host VPN и рекурсивной маршрутизации.",
+          "depends_on": [
+            "I07.T01"
+          ],
+          "status": "PLANNED"
+        },
+        {
+          "id": "I07.T03",
+          "description": "Реализовать host off/proxy/tunnel как независимую политику. Host proxy не означает полный охват сети хоста.",
+          "depends_on": [
+            "I07.T02"
+          ],
+          "status": "PLANNED"
+        },
+        {
+          "id": "I07.T04",
+          "description": "Согласовать NetworkManager, firewalld, чужие VPN и обновления physical routes; применить изменения транзакционно с rollback.",
+          "depends_on": [
+            "I07.T03"
+          ],
+          "status": "PLANNED"
+        },
+        {
+          "id": "I07.T05",
+          "description": "Проверить смену сети, stop host и сохранение внешней связности app workers; подготовить packet-flow evidence для I08.",
+          "depends_on": [
+            "I07.T04"
+          ],
+          "status": "PLANNED"
+        }
+      ],
+      "output": "Routing ADR; host mode controller; outer transport evidence; coexistence matrix.",
+      "done": "Host stop не останавливает apps; endpoint traffic не зацикливается; чужие ресурсы не удаляются.",
+      "blocked": "При конфликте ownership операция отклоняется с причиной, а не переписывает чужой firewall."
+    },
+    {
+      "id": "I08",
+      "direction": "I08",
+      "title": "Сетевые окружения приложений",
+      "priority": "P0",
+      "status": "PLANNED",
+      "depends_on": [
+        "I06",
+        "I07"
+      ],
+      "questions": "Q10, Q11",
+      "acceptance": "A01, A02, A03, A05, A11, A17",
+      "tasks": [
+        {
+          "id": "I08.T01",
+          "description": "Спроектировать app netns, veth/TUN, cgroup и их связь с tunnel worker; определить единственный разрешённый egress и границы межприложенного доступа.",
+          "depends_on": [
+            "I06.T05",
+            "I07.T05"
+          ],
+          "status": "PLANNED"
+        },
+        {
+          "id": "I08.T02",
+          "description": "Реализовать выделение сети через контроллер, разрешённый транспорт к worker и блокировку прямого выхода до запуска приложения.",
+          "depends_on": [
+            "I08.T01"
+          ],
+          "status": "PLANNED"
+        },
+        {
+          "id": "I08.T03",
+          "description": "Подготовить ограниченный тестовый harness для процессов под исходным uid. Он нужен для проверки netns до универсального launcher I11.",
+          "depends_on": [
+            "I08.T02"
+          ],
+          "status": "PLANNED"
+        },
+        {
+          "id": "I08.T04",
+          "description": "Проверить fork/exec, IPv4/IPv6, прямые socket calls и inherited network FD. Доступ GUI/audio/files согласовать с сетевой моделью.",
+          "depends_on": [
+            "I08.T03"
+          ],
+          "status": "PLANNED"
+        },
+        {
+          "id": "I08.T05",
+          "description": "Проверить независимые namespaces на двух tunnels и общий transport без неявного доступа между apps; зафиксировать критерии ownership и cleanup.",
+          "depends_on": [
+            "I08.T04"
+          ],
+          "status": "PLANNED"
+        }
+      ],
+      "output": "App network runtime; test harness; namespace/cgroup trace; network captures.",
+      "done": "Приложение не получает host route; потомки охвачены в рамках проверенного способа запуска; нет root у приложения.",
+      "blocked": "Inherited host socket или обход через внешний executor не скрывается; соответствующий запуск блокируется/помечается неподдержанным."
+    },
+    {
+      "id": "I09",
+      "direction": "I09",
+      "title": "Fail-closed и восстановление",
+      "priority": "P0",
+      "status": "PLANNED",
+      "depends_on": [
+        "I08"
+      ],
+      "questions": "Q12, Q13",
+      "acceptance": "A07, A08, A10",
+      "tasks": [
+        {
+          "id": "I09.T01",
+          "description": "Определить state machine allocating/blocked/starting/verified/degraded/stopping/reconciling и порядок firewall → worker → launch.",
+          "depends_on": [
+            "I08.T05"
+          ],
+          "status": "PLANNED"
+        },
+        {
+          "id": "I09.T02",
+          "description": "Реализовать постоянную блокировку direct egress независимо от UI/worker; остановка tunnel не снимает защиту с живой app.",
+          "depends_on": [
+            "I09.T01"
+          ],
+          "status": "PLANNED"
+        },
+        {
+          "id": "I09.T03",
+          "description": "Реализовать recover/reconcile после crash, reboot и прерывания reload; не привязывать срок жизни app сети к процессу TUI.",
+          "depends_on": [
+            "I09.T02"
+          ],
+          "status": "PLANNED"
+        },
+        {
+          "id": "I09.T04",
+          "description": "Ввести policy endpoint failure: block или разрешённый резерв с соблюдением constraints. Описать явный stop all и безопасное освобождение ресурсов.",
+          "depends_on": [
+            "I09.T03"
+          ],
+          "status": "PLANNED"
+        },
+        {
+          "id": "I09.T05",
+          "description": "Проверить kill -9 worker/helper/UI, invalid reload, network flap, suspend/resume и ошибки cleanup с capture отрицательных путей.",
+          "depends_on": [
+            "I09.T04"
+          ],
+          "status": "PLANNED"
+        }
+      ],
+      "output": "Lifecycle specification; recovery runtime; fault matrix; leak-negative evidence.",
+      "done": "Ни одна проверенная авария не открывает direct egress; неизвестное состояние блокирует новую передачу.",
+      "blocked": "Любая direct утечка — P0: downstream integration и выпуск остановлены до повторной проверки."
+    },
+    {
+      "id": "I10",
+      "direction": "I10",
+      "title": "DNS, IPv6, UDP и протоколы",
+      "priority": "P0",
+      "status": "PLANNED",
+      "depends_on": [
+        "I05",
+        "I08",
+        "I09"
+      ],
+      "questions": "Q03, Q09, Q14",
+      "acceptance": "A09, A10",
+      "tasks": [
+        {
+          "id": "I10.T01",
+          "description": "Задать DnsPolicy для profile и DnsRuntime на поколение tunnel; отделить endpoint bootstrap от app resolution, определить cache/fake-IP invalidation.",
+          "depends_on": [
+            "I05.T05",
+            "I08.T05",
+            "I09.T05"
+          ],
+          "status": "PLANNED"
+        },
+        {
+          "id": "I10.T02",
+          "description": "Проверить закреплённые native DNS пути mihomo/Xray: UDP/TCP, A/AAAA/TXT/MX/SRV/HTTPS/SVCB, NXDOMAIN и truncation/TCP retry. Local/direct режимы явно ограничить firewall.",
+          "depends_on": [
+            "I10.T01"
+          ],
+          "status": "PLANNED"
+        },
+        {
+          "id": "I10.T03",
+          "description": "По результатам выбрать встроенный resolver или дополнительный локальный forwarder. Описать необходимый gap, ownership, ресурсы, trust и failure policy.",
+          "depends_on": [
+            "I10.T02"
+          ],
+          "status": "PLANNED"
+        },
+        {
+          "id": "I10.T04",
+          "description": "Реализовать per-tunnel resolution, IPv6 pass/block, UDP/STUN/QUIC и app-owned DoH. Произвольный DoH не обязан пользоваться CM DNS, но его транспорт должен оставаться в tunnel либо блокироваться.",
+          "depends_on": [
+            "I10.T03"
+          ],
+          "status": "PLANNED"
+        },
+        {
+          "id": "I10.T05",
+          "description": "Проверить protocol matrix с внешним capture, отказ DNS, смену generation и два tunnel cache. Повторить критические проверки на обоих адаптерах.",
+          "depends_on": [
+            "I10.T04"
+          ],
+          "status": "PLANNED"
+        }
+      ],
+      "output": "DNS ADR; protocol capability matrix; DNS runtime; positive/negative captures.",
+      "done": "DNS/IPv6/UDP пути доказаны либо явно blocked; кеш не смешивает tunnels; запрет утечек действует независимо от resolver.",
+      "blocked": "Дополнительный resolver не считается самостоятельным доказательством privacy; неизвестный protocol path блокирует заявление NET."
+    },
+    {
+      "id": "I11",
+      "direction": "I11",
+      "title": "Универсальный запуск",
+      "priority": "P1",
+      "status": "PLANNED",
+      "depends_on": [
+        "I02",
+        "I09",
+        "I10"
+      ],
+      "questions": "Q10, Q11",
+      "acceptance": "A11, A12, A16, A17",
+      "tasks": [
+        {
+          "id": "I11.T01",
+          "description": "Задать ApplicationDefinition без hardcoded product names: executable, argv, cwd, data profile, environment и назначение connection/group.",
+          "depends_on": [
+            "I02.T05",
+            "I09.T05",
+            "I10.T05"
+          ],
+          "status": "PLANNED"
+        },
+        {
+          "id": "I11.T02",
+          "description": "Реализовать typed launch через контроллер под исходным uid/gid в готовом network environment; argv передавать массивом без shell interpolation.",
+          "depends_on": [
+            "I11.T01"
+          ],
+          "status": "PLANNED"
+        },
+        {
+          "id": "I11.T03",
+          "description": "Описать desktop entry, CLI и пользовательские launch definitions. Проверить имя/путь/аргументы, включая пробелы и специальные символы.",
+          "depends_on": [
+            "I11.T02"
+          ],
+          "status": "PLANNED"
+        },
+        {
+          "id": "I11.T04",
+          "description": "Обработать already-running app, single-instance handoff и descendants. Не присоединять обычный host процесс по имени задним числом.",
+          "depends_on": [
+            "I11.T03"
+          ],
+          "status": "PLANNED"
+        },
+        {
+          "id": "I11.T05",
+          "description": "На произвольных test binaries проверить запуск, ошибки executable/permissions, повторный запуск, фоновые процессы и корректное назначение Session.",
+          "depends_on": [
+            "I11.T04"
+          ],
+          "status": "PLANNED"
+        }
+      ],
+      "output": "Generic launcher; CLI/desktop contract; session tracking; arbitrary-name fixtures.",
+      "done": "Добавление app не требует изменения core; несовместимый handoff не выдаётся за защищённый запуск.",
+      "blocked": "Поддержка имени приложения не означает поддержку его IPC/broker упаковки; это отдельно принимает I13."
+    },
+    {
+      "id": "I12",
+      "direction": "I12",
+      "title": "Группы и независимые назначения",
+      "priority": "P1",
+      "status": "PLANNED",
+      "depends_on": [
+        "I11"
+      ],
+      "questions": "Q05, Q12, Q16",
+      "acceptance": "A02, A04, A05, A06, A13, A14",
+      "tasks": [
+        {
+          "id": "I12.T01",
+          "description": "Реализовать app → own tunnel и app → shared group; каждый profile выбирает независимый source/server/core.",
+          "depends_on": [
+            "I11.T05"
+          ],
+          "status": "PLANNED"
+        },
+        {
+          "id": "I12.T02",
+          "description": "Задать refcount, ownership и lifetime shared tunnel; отделить условия завершения последней session от host lifecycle.",
+          "depends_on": [
+            "I12.T01"
+          ],
+          "status": "PLANNED"
+        },
+        {
+          "id": "I12.T03",
+          "description": "Реализовать per-session EnvironmentProfile и per-data-profile identity при общем выходе; не объединять private app state.",
+          "depends_on": [
+            "I12.T02"
+          ],
+          "status": "PLANNED"
+        },
+        {
+          "id": "I12.T04",
+          "description": "Реализовать изменение назначения и source generation без случайной переадресации живого соединения; явно описать restart/reconnect.",
+          "depends_on": [
+            "I12.T03"
+          ],
+          "status": "PLANNED"
+        },
+        {
+          "id": "I12.T05",
+          "description": "Проверить закрытие одного из двух apps, две подписки, несколько групп, stop host и исчезновение node во время общей session.",
+          "depends_on": [
+            "I12.T04"
+          ],
+          "status": "PLANNED"
+        }
+      ],
+      "output": "Group runtime; assignment policies; refcount and generation evidence.",
+      "done": "Обе модели назначений работают; один app не останавливает остальных; общий tunnel не смешивает state и credentials.",
+      "blocked": "Смена маршрута не обещает бесшовный перенос существующего TCP/UDP stream."
+    },
+    {
+      "id": "I13",
+      "direction": "I13",
+      "title": "Brokers, supervisors и упаковки",
+      "priority": "P1",
+      "status": "PLANNED",
+      "depends_on": [
+        "I11",
+        "I12"
+      ],
+      "questions": "Q10, Q11, Q17",
+      "acceptance": "A11, A12, A16",
+      "tasks": [
+        {
+          "id": "I13.T01",
+          "description": "Составить матрицу native/terminal/GUI/AppImage/Flatpak и Wayland/X11: фактический network executor, D-Bus, portals и systemd user services.",
+          "depends_on": [
+            "I11.T05",
+            "I12.T05"
+          ],
+          "status": "PLANNED"
+        },
+        {
+          "id": "I13.T02",
+          "description": "Проверить single-instance browser, shared supervisor и делегированные network operations на репрезентативных fixtures; product names остаются примерами.",
+          "depends_on": [
+            "I13.T01"
+          ],
+          "status": "PLANNED"
+        },
+        {
+          "id": "I13.T03",
+          "description": "Выбрать generic packaging adapters: отдельный service instance, wrapper, constrained broker либо отказ конкретного защищённого пути.",
+          "depends_on": [
+            "I13.T02"
+          ],
+          "status": "PLANNED"
+        },
+        {
+          "id": "I13.T04",
+          "description": "Реализовать ограничения inherited host sockets, network/geolocation broker access и необходимый GUI/audio/file доступ; побочные эффекты показать пользователю.",
+          "depends_on": [
+            "I13.T03"
+          ],
+          "status": "PLANNED"
+        },
+        {
+          "id": "I13.T05",
+          "description": "Подтвердить actual executor netns/cgroup. Для каждой упаковки записать supported/partial/unsupported, версию, доказательства и границы.",
+          "depends_on": [
+            "I13.T04"
+          ],
+          "status": "PLANNED"
+        }
+      ],
+      "output": "Packaging adapters; executor evidence; compatibility matrix.",
+      "done": "Фон и delegated network не выходят через host незаметно; unsupported определяется до зелёного статуса.",
+      "blocked": "Нельзя объявить охват всей упаковки по одному удачному запуску foreground процесса."
+    },
+    {
+      "id": "I14",
+      "direction": "I14",
+      "title": "Региональное окружение",
+      "priority": "P1",
+      "status": "PLANNED",
+      "depends_on": [
+        "I02",
+        "I08",
+        "I10"
+      ],
+      "questions": "Q01, Q15, Q18",
+      "acceptance": "A14, A15",
+      "tasks": [
+        {
+          "id": "I14.T01",
+          "description": "Определить country constraint, sources exit-IP observations, freshness и policy disagreement; имя узла не является геодоказательством.",
+          "depends_on": [
+            "I02.T05",
+            "I08.T05",
+            "I10.T05"
+          ],
+          "status": "PLANNED"
+        },
+        {
+          "id": "I14.T02",
+          "description": "Задать EnvironmentProfile с IANA timezone, DST, locale и languages; страна допускает несколько корректных комбинаций.",
+          "depends_on": [
+            "I14.T01"
+          ],
+          "status": "PLANNED"
+        },
+        {
+          "id": "I14.T03",
+          "description": "Реализовать per-process TZ, private localtime/locale view и проверку наличия locale. Host timezone и системные часы не изменять.",
+          "depends_on": [
+            "I14.T02"
+          ],
+          "status": "PLANNED"
+        },
+        {
+          "id": "I14.T04",
+          "description": "Проверить значения в libc, пользовательском процессе и поддержанном браузере; две apps на общем tunnel могут иметь разные явные presets.",
+          "depends_on": [
+            "I14.T03"
+          ],
+          "status": "PLANNED"
+        },
+        {
+          "id": "I14.T05",
+          "description": "После failover инвалидировать IP/country observations; перепроверить constraint и согласованность preset. Не перезапускать приложение молча.",
+          "depends_on": [
+            "I14.T04"
+          ],
+          "status": "PLANNED"
+        }
+      ],
+      "output": "Region policy; observation provenance; environment runtime; timezone/DST evidence.",
+      "done": "Unknown/stale/mismatch не verified; корректные различные timezone не считаются ошибкой сами по себе.",
+      "blocked": "Выходной IP и timezone не доказывают классификацию страны любым внешним сервисом."
+    },
+    {
+      "id": "I15-R",
+      "direction": "I15",
+      "title": "Раннее исследование отпечатка внутри I15",
+      "priority": "P1",
+      "status": "PLANNED",
+      "depends_on": [
+        "I01",
+        "I02"
+      ],
+      "questions": "Q01, Q18, Q26, Q27",
+      "acceptance": "A12, A14, A20",
+      "tasks": [
+        {
+          "id": "I15-R.T01",
+          "description": "Определить требуемые наблюдаемые свойства: network location, app environment, device identity, browser state и account link; отделить желание от доказуемого scope.",
+          "depends_on": [
+            "I01.T05",
+            "I02.T05"
+          ],
+          "status": "PLANNED"
+        },
+        {
+          "id": "I15-R.T02",
+          "description": "Составить coverage matrix documented controls, extensions, CDP и engine changes: HTTP/JS UA, Client Hints, frames/workers, Canvas/WebGL/fonts/audio/screen, TLS.",
+          "depends_on": [
+            "I15-R.T01"
+          ],
+          "status": "PLANNED"
+        },
+        {
+          "id": "I15-R.T03",
+          "description": "Провести ограниченный лабораторный эксперимент на отдельном тестовом профиле до большой интеграции: controls до первого запроса, новые tabs/workers и cold restart.",
+          "depends_on": [
+            "I15-R.T02"
+          ],
+          "status": "PLANNED"
+        },
+        {
+          "id": "I15-R.T04",
+          "description": "Проверить происхождение и правомерность каталога согласованных массовых устройств; оценить согласованность с реальным browser engine. Период 28 дней и история 5 записей остаются гипотезами.",
+          "depends_on": [
+            "I15-R.T03"
+          ],
+          "status": "PLANNED"
+        },
+        {
+          "id": "I15-R.T05",
+          "description": "Выпустить go/conditional/no-go ADR по каждому свойству и механизму: evidence, цена поддержки, ограничения, критерии регрессии. Неподтверждённое свойство оставить желанием.",
+          "depends_on": [
+            "I15-R.T04"
+          ],
+          "status": "PLANNED"
+        }
+      ],
+      "output": "Fingerprint coverage matrix; лабораторный отчёт; ADR выбора механизма и каталога.",
+      "done": "Проверен конкретный browser/version, доказательства HTTP и JS связаны; универсальная анонимность не заявлена.",
+      "blocked": "No-go блокирует обещание/реализацию этого свойства, но не generic network launcher; безопасность браузера не ждёт периода смены личности."
+    },
+    {
+      "id": "I15",
+      "direction": "I15",
+      "title": "Приватное окружение и app adapters",
+      "priority": "P1",
+      "status": "PLANNED",
+      "depends_on": [
+        "I13",
+        "I14",
+        "I15-R"
+      ],
+      "questions": "Q01, Q11, Q17, Q18, Q26, Q27",
+      "acceptance": "A11, A12, A14, A20",
+      "tasks": [
+        {
+          "id": "I15.T01",
+          "description": "По ADR I15-R определить поддержанный adapter contract и scope. Задать isolated/fresh/existing data state без автоматического удаления HOME и аккаунтов.",
+          "depends_on": [
+            "I13.T05",
+            "I14.T05",
+            "I15-R.T05"
+          ],
+          "status": "PLANNED"
+        },
+        {
+          "id": "I15.T02",
+          "description": "Реализовать разрешённые XDG/HOME/files/keyring/SSH-agent/IPC/geolocation boundaries с учётом необходимых функций и подтверждённых packaging adapters.",
+          "depends_on": [
+            "I15.T01"
+          ],
+          "status": "PLANNED"
+        },
+        {
+          "id": "I15.T03",
+          "description": "Реализовать BrowserIdentityProfile на профиль данных: липкая согласованная личность, явная смена устройства, история и version policy после проверки параметров I15-R.",
+          "depends_on": [
+            "I15.T02"
+          ],
+          "status": "PLANNED"
+        },
+        {
+          "id": "I15.T04",
+          "description": "Интегрировать выбранный механизм до первого наблюдаемого запроса и для frames/workers/restarts. Device identity не принадлежит tunnel и не меняется в живом процессе.",
+          "depends_on": [
+            "I15.T03"
+          ],
+          "status": "PLANNED"
+        },
+        {
+          "id": "I15.T05",
+          "description": "Проверить реальные surfaces и сохранение данных/аккаунта; показать частичные и unsupported свойства. Для native apps применять только доказанные generic/app controls.",
+          "depends_on": [
+            "I15.T04"
+          ],
+          "status": "PLANNED"
+        }
+      ],
+      "output": "Environment adapters; identity runtime; surface and state report; unsupported guarantees.",
+      "done": "APP evidence относится к конкретной программе/версии; логин не превращается в анонимный аккаунт; неизвестная app не получает APP verified автоматически.",
+      "blocked": "При conditional/no-go scope сужается явно по свойствам, не подменяет пользовательское желание и не вводит обязательную VM без отдельного решения."
+    },
+    {
+      "id": "I16",
+      "direction": "I16",
+      "title": "Качество и автоматический выбор",
+      "priority": "P1",
+      "status": "PLANNED",
+      "depends_on": [
+        "I03",
+        "I04",
+        "I05",
+        "I09",
+        "I10",
+        "I12",
+        "I14"
+      ],
+      "questions": "Q13, Q18, Q19",
+      "acceptance": "A08, A10, A13, A15",
+      "tasks": [
+        {
+          "id": "I16.T01",
+          "description": "Определить constraints-before-score: capabilities, source allowlist, country, NET/DNS, provider limits и stable-IP policy.",
+          "depends_on": [
+            "I03.T05",
+            "I04.T05",
+            "I05.T05",
+            "I09.T05",
+            "I10.T05",
+            "I12.T05",
+            "I14.T05"
+          ],
+          "status": "PLANNED"
+        },
+        {
+          "id": "I16.T02",
+          "description": "Задать pinned/failover/adaptive, набор метрик success/latency/TTFB/jitter/обрывы/CPU/RAM, budget probes, freshness и privacy cost.",
+          "depends_on": [
+            "I16.T01"
+          ],
+          "status": "PLANNED"
+        },
+        {
+          "id": "I16.T03",
+          "description": "Провести matched A/B/A pilot на эквивалентных endpoints; 30 проб не считать окончательной статистикой. Размер выборки и допуски вывести из пилота.",
+          "depends_on": [
+            "I16.T02"
+          ],
+          "status": "PLANNED"
+        },
+        {
+          "id": "I16.T04",
+          "description": "Реализовать score, cooldown/hysteresis, session pinning и reconnect/drain policy; не обещать перенос открытого stream на другое ядро/сервер.",
+          "depends_on": [
+            "I16.T03"
+          ],
+          "status": "PLANNED"
+        },
+        {
+          "id": "I16.T05",
+          "description": "Проверить флаппинг, деградацию, unavailable endpoint, metered/battery mode и смену country. Сохранить объяснимую причину каждого выбора.",
+          "depends_on": [
+            "I16.T04"
+          ],
+          "status": "PLANNED"
+        }
+      ],
+      "output": "Selection ADR; benchmark report; adaptive runtime; fault evidence.",
+      "done": "Лучший ping не нарушает constraints; отключённые probes не success; смена IP объяснена и имеет явный impact.",
+      "blocked": "При нехватке совместимых candidates приложение остаётся blocked, если policy не разрешила другой проверенный вариант."
+    },
+    {
+      "id": "I17-D",
+      "direction": "I17",
+      "title": "Ранний проект TUI внутри I17",
+      "priority": "P1",
+      "status": "PLANNED",
+      "depends_on": [
+        "I02"
+      ],
+      "questions": "Q01, Q22",
+      "acceptance": "A20",
+      "tasks": [
+        {
+          "id": "I17-D.T01",
+          "description": "Подготовить fixtures host off/proxy/tunnel, separate/shared apps, blocked/degraded/unknown и active core/node.",
+          "depends_on": [
+            "I02.T05"
+          ],
+          "status": "PLANNED"
+        },
+        {
+          "id": "I17-D.T02",
+          "description": "Сравнить расширение VPN экрана и отдельную страницу apps/tunnels; задать navigation, keyboard actions, отмену и подтверждения влияния stop.",
+          "depends_on": [
+            "I17-D.T01"
+          ],
+          "status": "PLANNED"
+        },
+        {
+          "id": "I17-D.T03",
+          "description": "Спроектировать NET/REGION/STATE/APP, возраст evidence и last failure; не сводить их к единой зелёной VPN лампе.",
+          "depends_on": [
+            "I17-D.T02"
+          ],
+          "status": "PLANNED"
+        },
+        {
+          "id": "I17-D.T04",
+          "description": "Подготовить варианты SVG апплета для host off + app active, partial failure и blocked; сохранить терминальное назначение и поддержку тем.",
+          "depends_on": [
+            "I17-D.T03"
+          ],
+          "status": "PLANNED"
+        },
+        {
+          "id": "I17-D.T05",
+          "description": "Проверить макеты на 40×12, 60×18, 80×24, 120×32 и локализации; записать provisional поля, ожидающие runtime contracts.",
+          "depends_on": [
+            "I17-D.T04"
+          ],
+          "status": "PLANNED"
+        }
+      ],
+      "output": "TUI mockups; status contract; icon variants; layout review.",
+      "done": "Макеты различают host и apps; simulated fixtures подписаны; UI не обещает неподтверждённую защиту.",
+      "blocked": "Это проектирование, а не готовность runtime I17; ранний макет не закрывает A20."
+    },
+    {
+      "id": "I17",
+      "direction": "I17",
+      "title": "TUI, апплет и диагностика",
+      "priority": "P1",
+      "status": "PLANNED",
+      "depends_on": [
+        "I15",
+        "I16",
+        "I17-D"
+      ],
+      "questions": "Q01, Q22",
+      "acceptance": "A20",
+      "tasks": [
+        {
+          "id": "I17.T01",
+          "description": "Согласовать макеты I17-D с окончательными contracts источников, workers, sessions и verification; добавить назначение own/group tunnel.",
+          "depends_on": [
+            "I15.T05",
+            "I16.T05",
+            "I17-D.T05"
+          ],
+          "status": "PLANNED"
+        },
+        {
+          "id": "I17.T02",
+          "description": "Реализовать неблокирующие actions и отдельные host/app статусы, NET/REGION/STATE/APP, freshness, selected core/node и причину block/failover.",
+          "depends_on": [
+            "I17.T01"
+          ],
+          "status": "PLANNED"
+        },
+        {
+          "id": "I17.T03",
+          "description": "Реализовать диагностический экспорт с instance/generation/time и редакцией credentials, полных argv и приватных путей.",
+          "depends_on": [
+            "I17.T02"
+          ],
+          "status": "PLANNED"
+        },
+        {
+          "id": "I17.T04",
+          "description": "Интегрировать апплет и resource monitor: host/app sessions, ошибки, CPU/RAM workers; физический и TUN трафик не суммировать как уникальный.",
+          "depends_on": [
+            "I17.T03"
+          ],
+          "status": "PLANNED"
+        },
+        {
+          "id": "I17.T05",
+          "description": "Проверить реальные states, long actions, локали, темы и terminal sizes; сопоставить snapshots с capture/evidence, проверить секреты в exports.",
+          "depends_on": [
+            "I17.T04"
+          ],
+          "status": "PLANNED"
+        }
+      ],
+      "output": "TUI/app runtime; applet icons; sanitized diagnostics; accessibility evidence.",
+      "done": "API/ping не превращается в зелёную защиту; host off не скрывает app tunnels; ошибки видны без блокировки интерфейса.",
+      "blocked": "Экспорт с credentials или ложный verified — blocker приёмки."
+    },
+    {
+      "id": "I18",
+      "direction": "I18",
+      "title": "Сквозная приёмка и готовность выпуска",
+      "priority": "P0",
+      "status": "PLANNED",
+      "depends_on": [
+        "I17"
+      ],
+      "questions": "Q01–Q27 по применимости",
+      "acceptance": "A01–A20",
+      "tasks": [
+        {
+          "id": "I18.T01",
+          "description": "Сопоставить W01–W11 с выполненными задачами и evidence; проверить обязательные результаты всех I01–I17 и открытые P0/conditional/no-go.",
+          "depends_on": [
+            "I17.T05"
+          ],
+          "status": "PLANNED"
+        },
+        {
+          "id": "I18.T02",
+          "description": "Пройти A01–A20 на реальных apps/test endpoints с captures, fault injection и actual executor evidence; fixture tests не заменяют сеть.",
+          "depends_on": [
+            "I18.T01"
+          ],
+          "status": "PLANNED"
+        },
+        {
+          "id": "I18.T03",
+          "description": "Повторить необходимые regressions CM, UPD→CM, ownership, core update/rollback, interrupted upgrade, resource ceilings и долгие sessions.",
+          "depends_on": [
+            "I18.T02"
+          ],
+          "status": "PLANNED"
+        },
+        {
+          "id": "I18.T04",
+          "description": "Зафиксировать поддержанные ядра/версии/Linux упаковки, release scope, известные ограничения и rollback/runbooks; отвергнуть неподтверждённые гарантии.",
+          "depends_on": [
+            "I18.T03"
+          ],
+          "status": "PLANNED"
+        },
+        {
+          "id": "I18.T05",
+          "description": "Выпустить acceptance-report и решение ready/blocked. Сборка/установка пакета исключена до отдельного задания, снимающего текущий запрет; готовность не означает публикацию.",
+          "depends_on": [
+            "I18.T04"
+          ],
+          "status": "PLANNED"
+        }
+      ],
+      "output": "Acceptance report; coverage matrix; release blockers; эксплуатационные runbooks.",
+      "done": "Все обязательные сценарии доказаны на нужном уровне; открытые P0 блокируют release; unsupported явно видны пользователю.",
+      "blocked": "При провале возвращаться к владельцу дефекта и повторять затронутые downstream проверки; граф новых зависимостей пересматривать без циклов."
+    }
+  ],
+  "authorized_directions": [
+    "I01",
+    "I02",
+    "I03",
+    "I04",
+    "I05",
+    "I06",
+    "I07",
+    "I08",
+    "I09",
+    "I10",
+    "I11",
+    "I12",
+    "I13",
+    "I14",
+    "I15-R",
+    "I15",
+    "I16",
+    "I17-D",
+    "I17",
+    "I18"
+  ],
+  "test_execution": "Runtime checks only at installation of the built binary; compile-only checks allowed during coding. Actual acceptance remains separate from coding completion.",
+  "coding_authorization_note": "2026-10-04: все возможные задачи кодера строго последовательно; реальные проверки при установке собранного binary. I01 code completion разрешает следующий кодовый этап I02; acceptance не подменяется. По миграционному вопросу Sol работает без дальнейшего делегирования. Для остальных рутинных задач Luna xhigh/Sol review, Astra/Opus только после отдельного решения пользователя.",
+  "authorization_scope": "Sequential coding and compile/build preparation; runtime/service/network acceptance deferred until installation. No package build/install or publication authorization."
+}

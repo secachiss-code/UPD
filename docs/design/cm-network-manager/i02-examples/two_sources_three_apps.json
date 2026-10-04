@@ -1,0 +1,365 @@
+{
+  "application_groups": {
+    "group": {
+      "autostart": false,
+      "id": "group",
+      "mutual_network_access": false,
+      "schema_version": 1,
+      "tunnel_instance_id": "tunnel-group"
+    }
+  },
+  "applications": {
+    "app-1": {
+      "argv": [],
+      "assignment": {
+        "assignment": "group",
+        "group_id": "group"
+      },
+      "autostart": false,
+      "cwd": null,
+      "data_profile_id": "data-1",
+      "environment": [],
+      "environment_preset_id": "preset",
+      "executable": "/usr/bin/example-1",
+      "id": "app-1",
+      "schema_version": 1
+    },
+    "app-2": {
+      "argv": [],
+      "assignment": {
+        "assignment": "group",
+        "group_id": "group"
+      },
+      "autostart": false,
+      "cwd": null,
+      "data_profile_id": "data-2",
+      "environment": [],
+      "environment_preset_id": "preset",
+      "executable": "/usr/bin/example-2",
+      "id": "app-2",
+      "schema_version": 1
+    },
+    "app-3": {
+      "argv": [],
+      "assignment": {
+        "assignment": "own_tunnel",
+        "tunnel_instance_id": "tunnel-own"
+      },
+      "autostart": false,
+      "cwd": null,
+      "data_profile_id": "data-3",
+      "environment": [],
+      "environment_preset_id": "preset",
+      "executable": "/usr/bin/example-3",
+      "id": "app-3",
+      "schema_version": 1
+    }
+  },
+  "browser_identity_profiles": {
+    "browser-1": {
+      "data_profile_id": "data-1",
+      "id": "browser-1",
+      "label": null,
+      "schema_version": 1
+    },
+    "browser-2": {
+      "data_profile_id": "data-2",
+      "id": "browser-2",
+      "label": null,
+      "schema_version": 1
+    },
+    "browser-3": {
+      "data_profile_id": "data-3",
+      "id": "browser-3",
+      "label": null,
+      "schema_version": 1
+    }
+  },
+  "connection_profiles": {
+    "profile-a": {
+      "dns": {
+        "fake_ip": "forbidden",
+        "ipv6": "block"
+      },
+      "id": "profile-a",
+      "kernel": "mihomo",
+      "node_selection": {
+        "node": {
+          "node_id": "node-a-1",
+          "source_generation": 1,
+          "source_id": "source-a"
+        },
+        "selection": "pinned"
+      },
+      "schema_version": 1,
+      "source_id": "source-a"
+    },
+    "profile-b": {
+      "dns": {
+        "fake_ip": "forbidden",
+        "ipv6": "block"
+      },
+      "id": "profile-b",
+      "kernel": "mihomo",
+      "node_selection": {
+        "node": {
+          "node_id": "node-b-1",
+          "source_generation": 1,
+          "source_id": "source-b"
+        },
+        "selection": "pinned"
+      },
+      "schema_version": 1,
+      "source_id": "source-b"
+    }
+  },
+  "credentials": {
+    "credential-a": {
+      "credential_ref": "credential-a",
+      "digest_sha256": "4ede3d757b22baa5f3f92659aa1ed33a95c4d118ed9d0b4cf469b6cc448d10fe",
+      "owner_source_id": "source-a",
+      "schema_version": 1,
+      "size_bytes": 19
+    },
+    "credential-b": {
+      "credential_ref": "credential-b",
+      "digest_sha256": "5afaf8ae10226a69c81d3e560152c1aa98ca3c113ed1118c6295a25eeb83abbf",
+      "owner_source_id": "source-b",
+      "schema_version": 1,
+      "size_bytes": 19
+    }
+  },
+  "data_profiles": {
+    "data-1": {
+      "id": "data-1",
+      "schema_version": 1
+    },
+    "data-2": {
+      "id": "data-2",
+      "schema_version": 1
+    },
+    "data-3": {
+      "id": "data-3",
+      "schema_version": 1
+    }
+  },
+  "environment_presets": {
+    "preset": {
+      "id": "preset",
+      "languages": [
+        "en"
+      ],
+      "locale": "en_US.UTF-8",
+      "schema_version": 1,
+      "timezone": "UTC"
+    }
+  },
+  "environment_profiles": {
+    "environment-1": {
+      "id": "environment-1",
+      "languages": [
+        "en"
+      ],
+      "locale": "en_US.UTF-8",
+      "preset_id": "preset",
+      "schema_version": 1,
+      "session_id": "session-1",
+      "timezone": "UTC"
+    },
+    "environment-2": {
+      "id": "environment-2",
+      "languages": [
+        "en"
+      ],
+      "locale": "en_US.UTF-8",
+      "preset_id": "preset",
+      "schema_version": 1,
+      "session_id": "session-2",
+      "timezone": "UTC"
+    }
+  },
+  "host_policy": {
+    "autostart": false,
+    "connection_profile_id": null,
+    "id": "host",
+    "mode": "off",
+    "schema_version": 1,
+    "tunnel_instance_id": null
+  },
+  "issued_id_kinds": {
+    "app-1": "application",
+    "app-2": "application",
+    "app-3": "application",
+    "browser-1": "browser_identity_profile",
+    "browser-2": "browser_identity_profile",
+    "browser-3": "browser_identity_profile",
+    "credential-a": "credential_ref",
+    "credential-b": "credential_ref",
+    "data-1": "data_profile",
+    "data-2": "data_profile",
+    "data-3": "data_profile",
+    "environment-1": "environment_profile",
+    "environment-2": "environment_profile",
+    "group": "application_group",
+    "host": "host_policy",
+    "node-a-1": "node",
+    "node-b-1": "node",
+    "preset": "environment_preset",
+    "profile-a": "connection_profile",
+    "profile-b": "connection_profile",
+    "session-1": "session",
+    "session-2": "session",
+    "source-a": "source",
+    "source-b": "source",
+    "tunnel-group": "tunnel_instance",
+    "tunnel-own": "tunnel_instance"
+  },
+  "issued_ids": [
+    "app-1",
+    "app-2",
+    "app-3",
+    "browser-1",
+    "browser-2",
+    "browser-3",
+    "credential-a",
+    "credential-b",
+    "data-1",
+    "data-2",
+    "data-3",
+    "environment-1",
+    "environment-2",
+    "group",
+    "host",
+    "node-a-1",
+    "node-b-1",
+    "preset",
+    "profile-a",
+    "profile-b",
+    "session-1",
+    "session-2",
+    "source-a",
+    "source-b",
+    "tunnel-group",
+    "tunnel-own"
+  ],
+  "nodes": {
+    "node-a-1": {
+      "credential_refs": [
+        "credential-a"
+      ],
+      "definition_digest_sha256": "f64633d2b1505e3498ea24dfe5be3533a047c391f51989b719dc7a2f013e6a85",
+      "id": "node-a-1",
+      "protocol": "vless",
+      "schema_version": 1,
+      "source_generation": 1,
+      "source_id": "source-a"
+    },
+    "node-b-1": {
+      "credential_refs": [
+        "credential-b"
+      ],
+      "definition_digest_sha256": "e71fde374b25e346cb098590061c14f3dfb00894540652db541c1ca162165413",
+      "id": "node-b-1",
+      "protocol": "vless",
+      "schema_version": 1,
+      "source_generation": 1,
+      "source_id": "source-b"
+    }
+  },
+  "revision": 0,
+  "schema_version": 1,
+  "sessions": {
+    "session-1": {
+      "application_id": "app-1",
+      "created_at_unix_ms": 1000,
+      "data_profile_id": "data-1",
+      "ended_at_unix_ms": null,
+      "environment_profile_id": "environment-1",
+      "id": "session-1",
+      "lifecycle": "active",
+      "node_id": "node-a-1",
+      "schema_version": 1,
+      "source_generation": 1,
+      "source_id": "source-a",
+      "tunnel_generation": 1,
+      "tunnel_instance_id": "tunnel-group"
+    },
+    "session-2": {
+      "application_id": "app-2",
+      "created_at_unix_ms": 1000,
+      "data_profile_id": "data-2",
+      "ended_at_unix_ms": null,
+      "environment_profile_id": "environment-2",
+      "id": "session-2",
+      "lifecycle": "active",
+      "node_id": "node-a-1",
+      "schema_version": 1,
+      "source_generation": 1,
+      "source_id": "source-a",
+      "tunnel_generation": 1,
+      "tunnel_instance_id": "tunnel-group"
+    }
+  },
+  "sources": {
+    "source-a": {
+      "content_digest_sha256": "cbd11699ea32540763473e640adc324b03f7ea09ad2272bc20244a25fd28f6e5",
+      "credential": {
+        "credential_ref": "credential-a",
+        "digest_sha256": "4ede3d757b22baa5f3f92659aa1ed33a95c4d118ed9d0b4cf469b6cc448d10fe",
+        "owner_source_id": "source-a",
+        "schema_version": 1,
+        "size_bytes": 19
+      },
+      "current_node_ids": [
+        "node-a-1"
+      ],
+      "generation": 1,
+      "id": "source-a",
+      "kind": "subscription",
+      "schema_version": 1
+    },
+    "source-b": {
+      "content_digest_sha256": "fd76cd243ac274dfaaab96a6caf39fa88bee2dbead87a77598127bb5d46dcd2b",
+      "credential": {
+        "credential_ref": "credential-b",
+        "digest_sha256": "5afaf8ae10226a69c81d3e560152c1aa98ca3c113ed1118c6295a25eeb83abbf",
+        "owner_source_id": "source-b",
+        "schema_version": 1,
+        "size_bytes": 19
+      },
+      "current_node_ids": [
+        "node-b-1"
+      ],
+      "generation": 1,
+      "id": "source-b",
+      "kind": "subscription",
+      "schema_version": 1
+    }
+  },
+  "staged_removals": {},
+  "tunnel_instances": {
+    "tunnel-group": {
+      "connection_profile_id": "profile-a",
+      "generation": 1,
+      "id": "tunnel-group",
+      "lifecycle": "running",
+      "owner": {
+        "group_id": "group",
+        "owner": "group"
+      },
+      "schema_version": 1
+    },
+    "tunnel-own": {
+      "connection_profile_id": "profile-b",
+      "generation": 1,
+      "id": "tunnel-own",
+      "lifecycle": "running",
+      "owner": {
+        "application_id": "app-3",
+        "owner": "application"
+      },
+      "schema_version": 1
+    }
+  },
+  "verifications": {}
+}
