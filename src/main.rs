@@ -1,48 +1,56 @@
 #[macro_use]
-extern crate upd;
+extern crate cm;
 
 mod tui;
 
-use upd::backend::{self, Backend};
-use upd::common::*;
-use upd::mirrors::*;
-use upd::{extras, helper, i18n, vpn, VERSION};
-use upd::{gather_status, sub_info, vpn_line};
+use cm::backend::{self, Backend};
+use cm::common::*;
+use cm::mirrors::*;
+use cm::{extras, helper, i18n, migration, vpn, VERSION};
+use cm::{gather_status, sub_info, vpn_line};
 use std::collections::BTreeMap;
 use std::fs;
 use std::os::unix::process::CommandExt;
 use std::path::Path;
 
-const USAGE: &str = "upd — обновление Linux с автоподбором зеркал
+const USAGE: &str = "CM (Console Manager) — управление Linux из консоли
 
-  upd                     интерфейс (TUI)
-  upd update              обновить всё: зеркала → проверка → загрузка → снапшот → установка → службы
-  upd check [--no-download]   проверить обновления и скачать заранее
-  upd list                что доступно (по последней проверке)
-  upd status              состояние системы
-  upd mirrors [status|check|rescan|apply|add URL|del URL]
-  upd news [--all]        новости Arch с прошлого обновления (--all — последние)
-  upd snapshots           снапшоты и как откатиться
-  upd restart             перезапустить службы со старыми библиотеками
-  upd clean               очистить кэш и ненужные пакеты
-  upd merge               слить новые файлы настроек (.pacnew)
-  upd vpn [...]           VPN (mihomo): upd vpn help
-  upd aur search ЗАПРОС   найти пакет в AUR (Arch и производные)
-  upd aur install ПАКЕТ…  собрать и установить из AUR через paru/yay
-  upd lang [КОД]          язык интерфейса: ru en de it zh ar auto
-  upd install | uninstall установить в систему / удалить
-  upd reconcile           сверить список обновлений с установленным (без сети; вызывается хуком pacman/apt)
-  upd version
+  cm                     интерфейс (TUI)
+  cm update              обновить всё: зеркала → проверка → загрузка → снапшот → установка → службы
+  cm check [--no-download]   проверить обновления и скачать заранее
+  cm list                что доступно (по последней проверке)
+  cm status              состояние системы
+  cm mirrors [status|check|rescan|apply|add URL|del URL]
+  cm news [--all]        новости Arch с прошлого обновления (--all — последние)
+  cm snapshots           снапшоты и как откатиться
+  cm restart             перезапустить службы со старыми библиотеками
+  cm clean               очистить кэш и ненужные пакеты
+  cm merge               слить новые файлы настроек (.pacnew)
+  cm vpn [...]           VPN (mihomo): cm vpn help
+  cm aur search ЗАПРОС   найти пакет в AUR (Arch и производные)
+  cm aur install ПАКЕТ…  собрать и установить из AUR через paru/yay
+  cm lang [КОД]          язык интерфейса: ru en de it zh ar auto
+  cm install | uninstall установить в систему / удалить
+  cm reconcile           сверить список обновлений с установленным (без сети; вызывается хуком pacman/apt)
+  cm version
 
-Служебные (их запускают таймеры): upd auto, upd net, upd notify
+Служебные (их запускают таймеры): cm auto, cm net, cm notify
 ";
+
+const MIGRATION_NOTICE: &str = "Переход UPD → CM выполняется явно: cm migration apply.
+Поддерживается проверенная ручная установка UPD 0.2.7 с остановленными операциями.
+Обычные install и команды от root при старых путях UPD прекращаются до записи.
+cm migration plan проверяет условия, cm migration recover восстанавливает незавершённую операцию.
+";
+
+const MIGRATION_USAGE: &str = "  cm migration plan|apply|recover  проверить, выполнить или восстановить миграцию UPD\n  cm install --migrate-upd         явная миграция поддержанной ручной установки UPD\n";
 
 fn stdlog(s: &str) {
     println!("{s}");
 }
 
 fn main() {
-    // `upd list | head` не должен падать с паникой на закрытом канале
+    // `cm list | head` не должен падать с паникой на закрытом канале
     unsafe {
         libc::signal(libc::SIGPIPE, libc::SIG_DFL);
     }
@@ -52,6 +60,7 @@ fn main() {
     let no_download = args.iter().any(|a| a == "--no-download");
     let all = args.iter().any(|a| a == "--all");
     let pkg_mode = args.iter().any(|a| a == "--package");
+    let migrate_upd_requested = args.iter().any(|a| a == "--migrate-upd");
     if let Some(a) = args.first().filter(|a| matches!(a.as_str(), "--version" | "-V" | "--help")) {
         args[0] = if a == "--help" { "help" } else { "version" }.into();
     }
@@ -60,14 +69,43 @@ fn main() {
     let pos: Vec<String> = args.iter().skip(1).cloned().collect();
 
     match cmd.as_str() {
-        "-h" | "help" => return print!("{}", t!(USAGE)),
-        "version" => return println!("upd {VERSION}"),
+        "-h" | "help" => return print!("{}\n{}\n{}", t!(USAGE), t!(MIGRATION_NOTICE), t!(MIGRATION_USAGE)),
+        "version" => return println!("cm {VERSION}"),
         _ => {}
+    }
+    if cmd == "migration" || (cmd == "install" && migrate_upd_requested) {
+        if (cmd == "migration" && pos.len() > 1) || (cmd == "install" && !pos.is_empty()) {
+            eprintln!("cm: cm migration plan|apply|recover; cm install --migrate-upd");
+            std::process::exit(2);
+        }
+        become_root();
+        if !is_root() {
+            eprintln!("cm: migration requires actual root; test environment is not a privilege boundary");
+            std::process::exit(1);
+        }
+        if pkg_mode {
+            eprintln!("cm: package-managed migration is unsupported");
+            std::process::exit(1);
+        }
+        let action = if cmd == "install" { "apply" } else { pos.first().map(String::as_str).unwrap_or("plan") };
+        std::process::exit(cmd_migration(action));
+    }
+    if is_root() {
+        if let Err(error) = migration::transaction::Executor::new(Path::new("/")).and_then(|e| e.startup_allowed()) {
+            eprintln!("cm: {error}");
+            std::process::exit(1);
+        }
+    }
+    // Root status/invalid commands also used to save defaults before dispatch.
+    // Refuse before backend detection or privilege escalation can do any work.
+    if let Err(error) = migration::preflight_startup(Path::new("/"), &cmd, is_root()) {
+        eprintln!("cm: {error}");
+        std::process::exit(1);
     }
     let b = match backend::detect() {
         Ok(b) => b,
         Err(e) => {
-            eprintln!("upd: {e}");
+            eprintln!("cm: {e}");
             std::process::exit(1)
         }
     };
@@ -76,10 +114,16 @@ fn main() {
     if !user_cmd {
         become_root();
     }
+    // Recheck after escalation (which normally execs a new process). Test-mode
+    // variables must never bypass this boundary for an actual root process.
+    if let Err(error) = migration::preflight_startup(Path::new("/"), &cmd, is_root()) {
+        eprintln!("cm: {error}");
+        std::process::exit(1);
+    }
     let mut c = match Config::load(b.default_mirrors()) {
         Ok(c) => c,
         Err(e) => {
-            eprintln!("upd: {e}");
+            eprintln!("cm: {e}");
             std::process::exit(1);
         }
     };
@@ -170,6 +214,74 @@ fn main() {
     std::process::exit(code);
 }
 
+/// The opt-in installer materializes a complete current manual layout in one
+/// journaled transaction, rather than performing a rename then calling the old
+/// non-transactional install path. No mirror probes or subscription refresh run.
+fn cmd_migration(action: &str) -> i32 {
+    use migration::transaction::{Executor, Observer};
+    let mut services = migration::manual::Systemd;
+    let result = (|| {
+        let executor = Executor::new(Path::new("/"))?;
+        if action == "recover" { return executor.recover(&mut services); }
+        if !matches!(action, "plan" | "apply") { return Err("cm migration plan|apply|recover".into()); }
+        if action == "apply" && executor.already_committed(&mut services)? {
+            println!("CM: migration already committed; credentials were not copied again.");
+            return Ok(());
+        }
+        if !Path::new("/run/systemd/system").is_dir() {
+            return Err("transactional manual migration currently requires systemd".into());
+        }
+        let backend = backend::detect()?;
+        let exe = std::env::current_exe().and_then(fs::canonicalize).map_err(|e| e.to_string())?;
+        let mut replacements = BTreeMap::new();
+        replacements.insert(Path::new(LOCAL_BIN).to_owned(), (fs::read(&exe).map_err(|e|e.to_string())?, 0o755));
+        if let Some(gui) = gui_source(&exe) {
+            replacements.insert(Path::new(GUI_BIN).to_owned(), (fs::read(gui).map_err(|e|e.to_string())?, 0o755));
+            for (path, body) in GUI_FILES { replacements.insert(Path::new(path).to_owned(), (body.as_bytes().to_vec(), 0o644)); }
+        }
+        let watch = backend.watch_path().filter(|_| backend.mirrors_managed());
+        for (name, body) in system_units(LOCAL_BIN, watch.as_deref()) {
+            replacements.insert(Path::new(MANUAL.units).join(name), (format!("# Managed by cm\n{body}").into_bytes(), 0o644));
+        }
+        for (name, body) in user_units(LOCAL_BIN) {
+            replacements.insert(Path::new(MANUAL.user_units).join(name), (format!("# Managed by cm\n{body}").into_bytes(), 0o644));
+        }
+        if have("pacman") { replacements.insert(Path::new(MANUAL.pacman_hook).to_owned(), (pacman_hook(LOCAL_BIN).into_bytes(),0o644)); }
+        if Path::new("/etc/apt/apt.conf.d").is_dir() { replacements.insert(Path::new(MANUAL.apt_hook).to_owned(), (apt_hook(LOCAL_BIN).into_bytes(),0o644)); }
+        if Path::new("/etc/NetworkManager").is_dir() { replacements.insert(Path::new(MANUAL.nm).to_owned(), (nm_dispatcher().as_bytes().to_vec(),0o755)); }
+        if Path::new("/usr/share/polkit-1").is_dir() { replacements.insert(Path::new(MANUAL.polkit).to_owned(), (polkit_policy().into_bytes(),0o644)); }
+        if Path::new(CRON_PATH).exists() { return Err("split cron layout".into()); }
+        if Path::new("/etc/cron.d/upd").exists() { replacements.insert(Path::new(CRON_PATH).to_owned(), (format!("# cm\n*/15 * * * * root {LOCAL_BIN} net\n17 */6 * * * root {LOCAL_BIN} auto\n").into_bytes(),0o644)); }
+        let plan = migration::manual::plan(Path::new("/"), replacements, &mut services, watch.as_deref())?;
+        migration::manual::no_legacy_process(Path::new("/"))?;
+        if action == "plan" {
+            println!("CM: supported manual UPD 0.2.7; {} filesystem steps, {} service steps. No files or services changed.",plan.changes.len(),plan.services.len());
+            return Ok(());
+        }
+        struct ProductionObserver { admission: Vec<migration::transaction::Service> }
+        impl Observer for ProductionObserver {
+            fn boundary(&mut self, name: &str) -> Result<(), String> {
+                if name == "locked" {
+                    use migration::transaction::Services;
+                    let mut controller=migration::manual::Systemd;
+                    for service in &self.admission {
+                        if (service.unit.ends_with(".service") || service.unit=="upd-helper.socket") && controller.inspect(service)?.active {
+                            return Err("legacy operation/helper became active while preparing migration".into());
+                        }
+                    }
+                }
+                if matches!(name,"locked"|"quiesced") { migration::manual::no_legacy_process(Path::new("/"))?; }
+                Ok(())
+            }
+        }
+        let admission=plan.services.iter().filter(|s|s.before_files).map(|s|s.service.clone()).collect();
+        executor.execute(&plan, &mut services, &mut ProductionObserver {admission})?;
+        println!("CM: migration committed. Private backup retained at /var/lib/cm-migration. No subscription refresh or mirror probes were run.");
+        Ok(())
+    })();
+    err_code(result)
+}
+
 fn err_code(r: Result<(), String>) -> i32 {
     match r {
         Ok(()) => 0,
@@ -212,14 +324,14 @@ fn become_root() {
     if is_root() || test_mode() {
         return;
     }
-    let exe = std::env::current_exe().unwrap_or_else(|_| "upd".into());
+    let exe = std::env::current_exe().unwrap_or_else(|_| "cm".into());
     for s in ["sudo", "doas", "run0", "pkexec"] {
         if have(s) {
             let err = std::process::Command::new(s).arg(&exe).args(std::env::args().skip(1)).exec();
-            eprintln!("upd: {s}: {err}");
+            eprintln!("cm: {s}: {err}");
         }
     }
-    eprintln!("{}", t!("upd: нужны права root (sudo/doas не найдены)"));
+    eprintln!("{}", t!("cm: нужны права root (sudo/doas не найдены)"));
     std::process::exit(1);
 }
 
@@ -227,17 +339,17 @@ fn with_lock(block: bool, f: impl FnOnce() -> i32) -> i32 {
     let l = match lock(false) {
         Ok(l) => l,
         Err(_) if block => {
-            println!("{}", t!("идёт фоновая задача upd, жду завершения..."));
+            println!("{}", t!("идёт фоновая задача cm, жду завершения..."));
             match lock(true) {
                 Ok(l) => l,
                 Err(e) => {
-                    println!("upd: {e}");
+                    println!("cm: {e}");
                     return 1;
                 }
             }
         }
         Err(_) => {
-            println!("{}", t!("upd: занято другой задачей upd"));
+            println!("{}", t!("cm: занято другой задачей cm"));
             return 0;
         }
     };
@@ -260,7 +372,7 @@ fn cmd_auto(b: &dyn Backend, c: &Config) -> i32 {
         return match save_json("updates.json", &st) {
             Ok(()) => 0,
             Err(e) => {
-                eprintln!("{}", t!("upd auto: не удалось сохранить updates.json: {0}", e));
+                eprintln!("{}", t!("cm auto: не удалось сохранить updates.json: {0}", e));
                 1
             }
         };
@@ -296,15 +408,15 @@ fn cmd_auto(b: &dyn Backend, c: &Config) -> i32 {
         st.skipped = st.error.clone();
     }
     if let Err(e) = save_json("updates.json", &st) {
-        eprintln!("{}", t!("upd auto: не удалось сохранить updates.json: {0}", e));
+        eprintln!("{}", t!("cm auto: не удалось сохранить updates.json: {0}", e));
         return 1;
     }
     if let Some(error) = auto_state_failure(&st) {
-        eprintln!("{}", t!("upd auto: проверка или предзагрузка завершилась с ошибкой: {0}", error));
+        eprintln!("{}", t!("cm auto: проверка или предзагрузка завершилась с ошибкой: {0}", error));
         return 1;
     }
     if let Some(error) = mirror_error {
-        eprintln!("{}", t!("upd auto: зеркала не применены: {0}", error));
+        eprintln!("{}", t!("cm auto: зеркала не применены: {0}", error));
         return 1;
     }
     0
@@ -332,14 +444,14 @@ fn cmd_aur(b: &dyn Backend, pos: &[String]) -> i32 {
                     }
                     println!("\x1b[1m{}\x1b[0m {}  \x1b[2m{}\x1b[0m\n    {}", p.name, p.version, tags.join(" · "), p.desc);
                 }
-                println!("{}", t!("\nустановить: upd aur install ИМЯ"));
+                println!("{}", t!("\nустановить: cm aur install ИМЯ"));
                 0
             }
             Err(e) => err_code(Err(e)),
         },
         (Some("install" | "i"), pkgs) if !pkgs.is_empty() => err_code(extras::aur_install(invoking_user().as_deref(), pkgs)),
         _ => {
-            eprintln!("{}", t!("upd aur search ЗАПРОС | upd aur install ПАКЕТ…"));
+            eprintln!("{}", t!("cm aur search ЗАПРОС | cm aur install ПАКЕТ…"));
             2
         }
     }
@@ -401,7 +513,7 @@ fn cmd_update(b: &dyn Backend, c: &Config) -> i32 {
                 }
             },
             (None, true) => {
-                println!("{}", t!("\x1b[31mAUR: для проверки нужен обычный пользователь; запусти upd через sudo или doas\x1b[0m"));
+                println!("{}", t!("\x1b[31mAUR: для проверки нужен обычный пользователь; запусти cm через sudo или doas\x1b[0m"));
                 return 1;
             }
             _ => vec![],
@@ -570,10 +682,10 @@ fn cmd_update(b: &dyn Backend, c: &Config) -> i32 {
         }
         let p = b.pending_configs();
         if !p.is_empty() {
-            println!("{}", t!("\x1b[33m⚙ Новых файлов настроек: {} — upd merge\x1b[0m", p.len()));
+            println!("{}", t!("\x1b[33m⚙ Новых файлов настроек: {} — cm merge\x1b[0m", p.len()));
         }
         if result.is_ok() && (pre.is_some() || b.auto_snapshots()) {
-            println!("{}", t!("\x1b[2mЕсли что-то сломалось: upd snapshots — как откатиться\x1b[0m"));
+            println!("{}", t!("\x1b[2mЕсли что-то сломалось: cm snapshots — как откатиться\x1b[0m"));
         }
         result.is_err() as i32
     })
@@ -605,7 +717,7 @@ fn cmd_list() -> i32 {
     0
 }
 
-/// Систему обновили в обход upd (garuda-update, pacman, pamac…): убрать из списка то, что уже установлено.
+/// Систему обновили в обход cm (garuda-update, pacman, pamac…): убрать из списка то, что уже установлено.
 /// Без сети: pacman сравнивает с уже скачанной временной базой, apt — с локальными списками.
 fn cmd_reconcile(b: &dyn Backend) -> i32 {
     let mut st: UpdState = load_json("updates.json");
@@ -614,7 +726,7 @@ fn cmd_reconcile(b: &dyn Backend) -> i32 {
     }
     let Ok(list) = b.updates() else { return 0 };
     if list != st.list {
-        println!("{}", t!("upd: доступных обновлений было {}, стало {}", st.list.len(), list.len()));
+        println!("{}", t!("cm: доступных обновлений было {}, стало {}", st.list.len(), list.len()));
         if list.is_empty() {
             st.downloaded = false;
             st.download_size = None;
@@ -707,20 +819,20 @@ fn cmd_mirrors(b: &dyn Backend, c: &Config, pos: &[String]) -> i32 {
 
 // ---------- VPN ----------
 
-const VPN_USAGE: &str = "upd vpn — VPN на ядре mihomo (как в FlClash)
+const VPN_USAGE: &str = "cm vpn — VPN на ядре mihomo (как в FlClash)
 
-  upd vpn                 состояние
-  upd vpn add [URL]       добавить подписку (без URL — спросит; так адрес не попадёт в историю шелла)
-  upd vpn subs            подписки
-  upd vpn use N | del N   сделать активной / удалить подписку номер N (или id:ИД)
-  upd vpn update          обновить подписки сейчас
-  upd vpn start | stop | restart
-  upd vpn tun | proxy     режим: вся система (TUN) / только прокси на vpn_port
-  upd vpn rule | global | direct   маршрутизация: по правилам / всё через VPN / всё напрямую
-  upd vpn servers         группы и серверы с задержками
-  upd vpn core [check|update|reinstall]  ядро mihomo (обновляется по релизам FlClash)
-  upd vpn geo             обновить геофайлы
-  upd vpn rules           править свои правила
+  cm vpn                 состояние
+  cm vpn add [URL]       добавить подписку (без URL — спросит; так адрес не попадёт в историю шелла)
+  cm vpn subs            подписки
+  cm vpn use N | del N   сделать активной / удалить подписку номер N (или id:ИД)
+  cm vpn update          обновить подписки сейчас
+  cm vpn start | stop | restart
+  cm vpn tun | proxy     режим: вся система (TUN) / только прокси на vpn_port
+  cm vpn rule | global | direct   маршрутизация: по правилам / всё через VPN / всё напрямую
+  cm vpn servers         группы и серверы с задержками
+  cm vpn core [check|update|reinstall]  ядро mihomo (обновляется по релизам FlClash)
+  cm vpn geo             обновить геофайлы
+  cm vpn rules           править свои правила
 ";
 
 fn core_update_exit(changed: bool, active: bool, restart: Result<(), String>) -> Result<(), String> {
@@ -751,11 +863,38 @@ fn cmd_vpn(c: &Config, pos: &[String]) -> i32 {
     match sub {
         "help" => {
             print!("{}", t!(VPN_USAGE));
+            println!("{}", t!("  cm vpn doctor [N]    проверить профили без переключения VPN"));
             0
+        }
+        "doctor" => {
+            let reference = match arg {
+                Some(arg) => match vpn::SubRef::parse(arg) { Some(r) => Some(r), None => return err_code(Err(t!("нет такой подписки").into())) },
+                None => None,
+            };
+            match vpn::doctor(&c, reference.as_ref()) {
+                Ok(checks) => {
+                    for check in &checks {
+                        println!("{}: {}", check.name, check.error.as_deref().unwrap_or("OK"));
+                    }
+                    checks.iter().any(|c| c.error.is_some()) as i32
+                }
+                Err(error) => err_code(Err(error)),
+            }
+        }
+        "user-agent" => {
+            let reference = match arg.and_then(vpn::SubRef::parse) { Some(r) => r, None => return err_code(Err(t!("нет такой подписки").into())) };
+            match pos.get(2) {
+                Some(agent) => err_code(vpn::set_user_agent(&reference, agent)),
+                None => { eprintln!("cm vpn user-agent N USER_AGENT"); 2 },
+            }
         }
         "status" => {
             let s = vpn::snapshot();
             println!("VPN: {}", vpn_line());
+            println!("{}", s.health_line());
+            if let Some(error) = vpn::last_failure() {
+                println!("{}", t!("Последняя ошибка VPN: {} · {} · «{}»: {}{}", fmt_time(error.time), error.stage, error.subscription, error.reason, error.resolved.map(|time| t!(" · устранена {}", fmt_time(time))).unwrap_or_default()));
+            }
             if s.running {
                 println!("{}", t!("ядро {} · {} · маршрутизация: {}", s.version, if s.tun { t!("TUN (вся система)") } else { t!("только прокси") }, s.mode));
                 println!("{}", t!("цепочка: {}", s.chain().iter().map(|n| vpn::label(n)).collect::<Vec<_>>().join(" → ")));
@@ -785,7 +924,7 @@ fn cmd_vpn(c: &Config, pos: &[String]) -> i32 {
             if vpn::service_active() {
                 apply(&c)
             } else {
-                println!("{}", t!("подписка добавлена. Запуск VPN: upd vpn start"));
+                println!("{}", t!("подписка добавлена. Запуск VPN: cm vpn start"));
                 0
             }
         }
@@ -795,7 +934,7 @@ fn cmd_vpn(c: &Config, pos: &[String]) -> i32 {
                 Err(e) => return err_code(Err(e)),
             };
             if s.list.is_empty() {
-                println!("{}", t!("подписок нет — upd vpn add"));
+                println!("{}", t!("подписок нет — cm vpn add"));
             }
             for (i, x) in s.list.iter().enumerate() {
                 let mark = if x.id == s.active { "●" } else { " " };
@@ -807,13 +946,16 @@ fn cmd_vpn(c: &Config, pos: &[String]) -> i32 {
         }
         "use" | "del" => {
             let Some(target) = arg.and_then(vpn::SubRef::parse) else {
-                println!("{}", t!("укажи номер подписки (upd vpn subs)"));
+                println!("{}", t!("укажи номер подписки (cm vpn subs)"));
                 return 2;
             };
-            let r = if sub == "use" { vpn::use_sub(&target) } else { vpn::delete_sub(&target) };
+            let r = if sub == "use" { vpn::use_sub(&target, &c) } else { vpn::delete_sub(&target) };
             match r {
                 Ok(name) => {
                     println!("{}: «{name}»", if sub == "use" { t!("активна") } else { t!("удалена") });
+                    if sub == "use" {
+                        return err_code(Config::load(c.mirrors.clone()).and_then(|latest| vpn::sysproxy(&latest, user.as_ref()).map(|_| ())).map_err(|error| { vpn::record_failure("user-proxy", &error); error }));
+                    }
                     if sub == "del" {
                         match vpn::load_subs() {
                             Ok(subs) if subs.list.is_empty() => {
@@ -866,6 +1008,7 @@ fn cmd_vpn(c: &Config, pos: &[String]) -> i32 {
             // делает ExecStartPre, а `systemctl start` висит без единой строки до конца загрузки
             // пока FlClash работает, качаем через него — напрямую GitHub бывает недоступен
             if let Err(e) = vpn::fetch_missing(&c, &stdlog) {
+                vpn::record_failure("download", &e);
                 return err_code(Err(e));
             }
             while let Some(w) = vpn::conflict(&c) {
@@ -882,18 +1025,17 @@ fn cmd_vpn(c: &Config, pos: &[String]) -> i32 {
             println!("{}", t!("запускаю службу..."));
             let mut r = vpn::start(&c);
             if r.is_ok() {
-                std::thread::sleep(std::time::Duration::from_secs(2));
-                if let Err(error) = vpn::sysproxy(&c, user.as_ref()) { r = Err(format!("VPN started, but user proxy failed: {error}; retry: upd vpn restart")); }
+                if let Err(error) = vpn::sysproxy(&c, user.as_ref()) { vpn::record_failure("user-proxy", &error); r = Err(format!("VPN started, but user proxy failed: {error}; retry: cm vpn restart")); }
                 println!("VPN: {}", vpn_line());
             }
             err_code(r)
         }
         "stop" => {
             let r = vpn::stop();
-            let proxy = vpn::sysproxy(&c, user.as_ref()).map(|_| ()).map_err(|error| format!("VPN stopped, but user proxy failed: {error}; retry: upd vpn stop"));
+            let proxy = vpn::sysproxy(&c, user.as_ref()).map(|_| ()).map_err(|error| format!("VPN stopped, but user proxy failed: {error}; retry: cm vpn stop"));
             err_code(r.and(proxy))
         }
-        "restart" => err_code(vpn::restart(&c).and_then(|_| vpn::sysproxy(&c, user.as_ref()).map(|_| ()).map_err(|error| format!("VPN restarted, but user proxy failed: {error}; retry: upd vpn restart")))),
+        "restart" => err_code(vpn::restart(&c).and_then(|_| vpn::sysproxy(&c, user.as_ref()).map(|_| ()).map_err(|error| format!("VPN restarted, but user proxy failed: {error}; retry: cm vpn restart")))),
         "tun" | "proxy" => {
             c.vpn_tun = sub == "tun";
             if let Err(e) = c.save() {
@@ -952,45 +1094,45 @@ fn cmd_vpn(c: &Config, pos: &[String]) -> i32 {
 
 fn print_status(b: &dyn Backend) {
     let s = gather_status(b);
-    let u = &s.upd;
-    let mut upd = t!("пакетов {}", u.list.len());
+    let u = &s.cm;
+    let mut cm = t!("пакетов {}", u.list.len());
     if u.downloaded && !u.list.is_empty() {
-        upd += t!(" (скачаны)");
+        cm += t!(" (скачаны)");
     }
     if !u.list.is_empty() {
-        upd += &match u.download_size {
+        cm += &match u.download_size {
             Some(bytes) => format!(" ({})", fmt_bytes(bytes)),
             None => t!(" (размер неизвестен)").into(),
         };
     }
     if !u.flatpak.is_empty() {
-        upd += &format!(", Flatpak {}", u.flatpak.len());
+        cm += &format!(", Flatpak {}", u.flatpak.len());
     }
     if !u.flatpak_error.is_empty() {
-        upd += &t!(", ошибка проверки Flatpak: {}", u.flatpak_error);
+        cm += &t!(", ошибка проверки Flatpak: {}", u.flatpak_error);
     }
     if !u.firmware_error.is_empty() {
-        upd += &t!(", ошибка проверки прошивок: {}", u.firmware_error);
+        cm += &t!(", ошибка проверки прошивок: {}", u.firmware_error);
     }
     if !u.firmware.is_empty() {
-        upd += &t!(", прошивок {}", u.firmware.len());
+        cm += &t!(", прошивок {}", u.firmware.len());
     }
     if !u.error.is_empty() {
-        upd += &format!(" — {}", u.error);
+        cm += &format!(" — {}", u.error);
     }
     if !u.skipped.is_empty() {
-        upd += &format!(" — {}", u.skipped);
+        cm += &format!(" — {}", u.skipped);
     }
     println!("{}", t!("Система:      {}", s.name));
-    println!("{}", t!("Обновления:   {1} · проверка {}", fmt_ago(u.checked), upd));
+    println!("{}", t!("Обновления:   {1} · проверка {}", fmt_ago(u.checked), cm));
     if !u.news.is_empty() {
-        println!("{}", t!("Новости Arch: {} непрочитанных — upd list", u.news.len()));
+        println!("{}", t!("Новости Arch: {} непрочитанных — cm list", u.news.len()));
     }
     println!("{}", t!("Последнее:    {}", fmt_time(s.last_tx)));
     println!("{}", t!("Перезагрузка: {}", if s.reboot { t!("НУЖНА") } else { t!("не нужна") }));
     let rs = &s.restart;
     if !rs.services.is_empty() || !rs.critical.is_empty() || !rs.unknown.is_empty() {
-        println!("{}", t!("Перезапуск:   служб {} (upd restart), требуют перезагрузки {}, cgroup не распознан для {} процессов", rs.services.len(), rs.critical.len(), rs.unknown.len()));
+        println!("{}", t!("Перезапуск:   служб {} (cm restart), требуют перезагрузки {}, cgroup не распознан для {} процессов", rs.services.len(), rs.critical.len(), rs.unknown.len()));
     }
     println!("{}", t!("Сеть:         {}{}{}", s.net_label, if s.metered { t!(" · лимитная") } else { "" }, if s.battery { t!(" · от батареи") } else { "" }));
     if s.managed {
@@ -1013,7 +1155,7 @@ fn print_status(b: &dyn Backend) {
 fn notify_once(seen: &mut BTreeMap<String, String>, key: &str, val: String, title: &str, body: &str) -> Result<(), String> {
     if seen.get(key) == Some(&val) { return Ok(()); }
     let mut command = std::process::Command::new("notify-send");
-    command.args(["-a", "upd", "-i", "system-software-update", title, body]);
+    command.args(["-a", "cm", "-i", "system-software-update", title, body]);
     let mut policy = CapturePolicy::background(Some(256)); policy.stderr_max = 8192;
     let output = capture_with_policy(&mut command, policy).map_err(String::from)?;
     if !output.status.success() { return Err(format!("notify-send exited with {}", output.status)); }
@@ -1021,21 +1163,21 @@ fn notify_once(seen: &mut BTreeMap<String, String>, key: &str, val: String, titl
 }
 
 fn cmd_notify() {
-    if !have("notify-send") || upd::summary::applet_running() {
+    if !have("notify-send") || cm::summary::applet_running() {
         // апплет COSMIC сам показывает уведомления, с кнопками действий
         return;
     }
     let home = std::env::var("HOME").unwrap_or_default();
-    let cache = format!("{home}/.cache/upd-notified.json");
+    let cache = format!("{home}/.cache/cm-notified.json");
     let mut seen: BTreeMap<String, String> = fs::read(&cache).ok().and_then(|b| serde_json::from_slice(&b).ok()).unwrap_or_default();
     let mut send = |key: &str, val: String, title: &str, body: &str| {
-        if let Err(error) = notify_once(&mut seen, key, val, title, body) { eprintln!("upd notify: {error}"); }
+        if let Err(error) = notify_once(&mut seen, key, val, title, body) { eprintln!("cm notify: {error}"); }
     };
     let u: UpdState = load_json("updates.json");
     let total = u.list.len() + u.flatpak.len();
     if total > 0 {
         let h = sha1_smol::Sha1::from((u.list.join("\n") + &u.flatpak.join("\n")).as_bytes()).digest().to_string();
-        let body = if u.downloaded { t!("Уже скачаны. Запусти в терминале: upd") } else { t!("Запусти в терминале: upd") };
+        let body = if u.downloaded { t!("Уже скачаны. Запусти в терминале: cm") } else { t!("Запусти в терминале: cm") };
         send("updates", h, &t!("Доступно обновлений: {0}", total), body);
     }
     if !u.news.is_empty() {
@@ -1073,22 +1215,22 @@ fn cmd_notify() {
 
 // ---------- установка ----------
 
-const LOCAL_BIN: &str = "/usr/local/bin/upd";
-const PKG_BIN: &str = "/usr/bin/upd";
-const CRON_PATH: &str = "/etc/cron.d/upd";
+const LOCAL_BIN: &str = "/usr/local/bin/cm";
+const PKG_BIN: &str = "/usr/bin/cm";
+const CRON_PATH: &str = "/etc/cron.d/cm";
 const GARUDA_CONF: &str = "/etc/garuda/garuda-update/config";
-const GARUDA_MARK: &str = "# upd: mirrors are managed by upd, garuda-update must not overwrite them";
+const GARUDA_MARK: &str = "# cm: mirrors are managed by cm, garuda-update must not overwrite them";
 /// Метка до 0.2.5 — узнаём и заменяем
-const GARUDA_MARK_OLD: &str = "# upd: зеркалами управляет upd — garuda-update их не перезаписывает";
-const PACKAGE_SCRIPT_ENV: &str = "UPD_PACKAGE_SCRIPT";
+const GARUDA_MARK_OLD: &str = "# cm: зеркалами управляет cm — garuda-update их не перезаписывает";
+const PACKAGE_SCRIPT_ENV: &str = "CM_PACKAGE_SCRIPT";
 
-/// Пакетный layout разрешён только для вызова канонического /usr/bin/upd из наших хуков.
+/// Пакетный layout разрешён только для вызова канонического /usr/bin/cm из наших хуков.
 fn package_script_context(exe: &Path) -> bool {
     std::env::var(PACKAGE_SCRIPT_ENV).map(|v| v == "1").unwrap_or(false)
         && fs::canonicalize(PKG_BIN).map(|path| path.as_path() == exe).unwrap_or(false)
 }
 
-/// Куда кладутся системные файлы: ручная установка (upd install) — в /etc; пакет — в /usr/lib и /usr/share.
+/// Куда кладутся системные файлы: ручная установка (cm install) — в /etc; пакет — в /usr/lib и /usr/share.
 struct Layout {
     bin: &'static str,
     units: &'static str,
@@ -1103,9 +1245,9 @@ const MANUAL: Layout = Layout {
     bin: LOCAL_BIN,
     units: "/etc/systemd/system",
     user_units: "/etc/systemd/user",
-    pacman_hook: "/etc/pacman.d/hooks/zz-upd.hook",
-    apt_hook: "/etc/apt/apt.conf.d/99upd",
-    nm: "/etc/NetworkManager/dispatcher.d/90-upd",
+    pacman_hook: "/etc/pacman.d/hooks/zz-cm.hook",
+    apt_hook: "/etc/apt/apt.conf.d/99cm",
+    nm: "/etc/NetworkManager/dispatcher.d/90-cm",
     // действия polkit читаются только из /usr/share
     polkit: POLKIT_POLICY,
 };
@@ -1114,27 +1256,27 @@ const PACKAGE: Layout = Layout {
     bin: PKG_BIN,
     units: "/usr/lib/systemd/system",
     user_units: "/usr/lib/systemd/user",
-    pacman_hook: "/usr/share/libalpm/hooks/zz-upd.hook",
-    apt_hook: "/etc/apt/apt.conf.d/99upd",
-    nm: "/usr/lib/NetworkManager/dispatcher.d/90-upd",
+    pacman_hook: "/usr/share/libalpm/hooks/zz-cm.hook",
+    apt_hook: "/etc/apt/apt.conf.d/99cm",
+    nm: "/usr/lib/NetworkManager/dispatcher.d/90-cm",
     polkit: POLKIT_POLICY,
 };
 
-const POLKIT_POLICY: &str = "/usr/share/polkit-1/actions/io.github.upd.policy";
+const POLKIT_POLICY: &str = "/usr/share/polkit-1/actions/io.github.cm.policy";
 
-/// Интерфейс COSMIC при ручной установке: ставится, если `upd-cosmic` лежит рядом с upd (dist/).
-const GUI_BIN: &str = "/usr/local/bin/upd-cosmic";
+/// Интерфейс COSMIC при ручной установке: ставится, если `cm-cosmic` лежит рядом с cm (dist/).
+const GUI_BIN: &str = "/usr/local/bin/cm-cosmic";
 const GUI_FILES: [(&str, &str); 4] = [
-    ("/usr/local/share/applications/io.github.upd.desktop", include_str!("../cosmic/res/io.github.upd.desktop")),
-    ("/usr/local/share/applications/io.github.upd.Applet.desktop", include_str!("../cosmic/res/io.github.upd.Applet.desktop")),
-    ("/usr/local/share/icons/hicolor/scalable/apps/io.github.upd.svg", include_str!("../cosmic/res/icons/io.github.upd.svg")),
-    ("/usr/local/share/icons/hicolor/symbolic/apps/io.github.upd-symbolic.svg", include_str!("../cosmic/res/icons/io.github.upd-symbolic.svg")),
+    ("/usr/local/share/applications/io.github.cm.desktop", include_str!("../cosmic/res/io.github.cm.desktop")),
+    ("/usr/local/share/applications/io.github.cm.Applet.desktop", include_str!("../cosmic/res/io.github.cm.Applet.desktop")),
+    ("/usr/local/share/icons/hicolor/scalable/apps/io.github.cm.svg", include_str!("../cosmic/res/icons/io.github.cm.svg")),
+    ("/usr/local/share/icons/hicolor/symbolic/apps/io.github.cm-symbolic.svg", include_str!("../cosmic/res/icons/io.github.cm-symbolic.svg")),
 ];
 
-/// Бинарник интерфейса рядом с устанавливаемым upd.
+/// Бинарник интерфейса рядом с устанавливаемым cm.
 fn gui_source(exe: &Path) -> Option<std::path::PathBuf> {
     let dir = exe.parent()?;
-    ["upd-cosmic", "upd-cosmic-linux-amd64"].iter().map(|n| dir.join(n)).find(|p| p.is_file())
+    ["cm-cosmic", "cm-cosmic-linux-amd64"].iter().map(|n| dir.join(n)).find(|p| p.is_file())
 }
 
 fn install_binary(src: &Path, target: &Path) -> Result<(), String> {
@@ -1160,53 +1302,53 @@ fn remove_gui() {
 fn system_units(bin: &str, watch: Option<&str>) -> Vec<(&'static str, String)> {
     let mut u = vec![
         (
-            "upd-auto.service",
-            format!("[Unit]\nDescription=upd: network change, mirrors, VPN, update check and prefetch\nWants=network-online.target\nAfter=network-online.target\n\n[Service]\nType=oneshot\nExecStart={bin} auto\nNice=10\nIOSchedulingClass=idle\n"),
+            "cm-auto.service",
+            format!("[Unit]\nDescription=cm: network change, mirrors, VPN, update check and prefetch\nWants=network-online.target\nAfter=network-online.target\n\n[Service]\nType=oneshot\nExecStart={bin} auto\nNice=10\nIOSchedulingClass=idle\n"),
         ),
         (
-            "upd-auto.timer",
-            "[Unit]\nDescription=upd: periodic update check\n\n[Timer]\nOnBootSec=10min\nOnUnitActiveSec=6h\nRandomizedDelaySec=10min\nPersistent=true\n\n[Install]\nWantedBy=timers.target\n".to_string(),
+            "cm-auto.timer",
+            "[Unit]\nDescription=cm: periodic update check\n\n[Timer]\nOnBootSec=10min\nOnUnitActiveSec=6h\nRandomizedDelaySec=10min\nPersistent=true\n\n[Install]\nWantedBy=timers.target\n".to_string(),
         ),
         (
-            "upd-net.service",
-            format!("[Unit]\nDescription=upd: mirror selection on network change\nAfter=network-online.target\n\n[Service]\nType=oneshot\nExecStart={bin} net\nNice=10\n"),
+            "cm-net.service",
+            format!("[Unit]\nDescription=cm: mirror selection on network change\nAfter=network-online.target\n\n[Service]\nType=oneshot\nExecStart={bin} net\nNice=10\n"),
         ),
         (
-            "upd-net.timer",
-            "[Unit]\nDescription=upd: network change check (cheap, no network requests)\n\n[Timer]\nOnBootSec=2min\nOnUnitActiveSec=15min\n\n[Install]\nWantedBy=timers.target\n".to_string(),
+            "cm-net.timer",
+            "[Unit]\nDescription=cm: network change check (cheap, no network requests)\n\n[Timer]\nOnBootSec=2min\nOnUnitActiveSec=15min\n\n[Install]\nWantedBy=timers.target\n".to_string(),
         ),
         (
             vpn::SERVICE,
             format!(
-                "[Unit]\nDescription=upd: VPN (mihomo core)\nWants=network-online.target\nAfter=network-online.target\n\
+                "[Unit]\nDescription=cm: VPN (mihomo core)\nWants=network-online.target\nAfter=network-online.target\n\
                  StartLimitIntervalSec=10min\nStartLimitBurst=5\n\n[Service]\nType=simple\n\
-                 ExecStartPre={bin} vpn prepare\nExecStart=/var/lib/upd/vpn/bin/mihomo -d /var/lib/upd/vpn -f /var/lib/upd/vpn/config.yaml\n\
+                 ExecStartPre={bin} vpn prepare\nExecStart=/var/lib/cm/vpn/bin/mihomo -d /var/lib/cm/vpn -f /var/lib/cm/vpn/config.yaml\n\
                  Restart=on-failure\nRestartSec=5\nTimeoutStartSec=5min\nLimitNOFILE=1048576\n\
                  UMask=0077\nNoNewPrivileges=yes\n\
                  CapabilityBoundingSet=CAP_NET_ADMIN CAP_NET_RAW CAP_NET_BIND_SERVICE\n\
                  AmbientCapabilities=CAP_NET_ADMIN CAP_NET_RAW CAP_NET_BIND_SERVICE\n\
-                 ProtectSystem=strict\nReadWritePaths=-/var/lib/upd/vpn\nProtectHome=yes\nPrivateTmp=yes\n\
+                 ProtectSystem=strict\nReadWritePaths=-/var/lib/cm/vpn\nProtectHome=yes\nPrivateTmp=yes\n\
                  ProtectKernelModules=yes\nProtectControlGroups=yes\n\n[Install]\nWantedBy=multi-user.target\n"
             ),
         ),
     ];
     // помощник графического интерфейса: запускается по обращению к сокету, права проверяет через polkit
     u.push((
-        "upd-helper.socket",
-        "[Unit]\nDescription=upd: helper socket for the graphical interface\n\n[Socket]\nListenStream=/run/upd/helper.sock\nSocketMode=0666\nDirectoryMode=0755\nRemoveOnStop=yes\n\n[Install]\nWantedBy=sockets.target\n".to_string(),
+        "cm-helper.socket",
+        "[Unit]\nDescription=cm: helper socket for the graphical interface\n\n[Socket]\nListenStream=/run/cm/helper.sock\nSocketMode=0666\nDirectoryMode=0755\nRemoveOnStop=yes\n\n[Install]\nWantedBy=sockets.target\n".to_string(),
     ));
     u.push((
-        "upd-helper.service",
-        format!("[Unit]\nDescription=upd: privileged helper for the graphical interface\nRequires=upd-helper.socket\nAfter=upd-helper.socket\n\n[Service]\nType=simple\nExecStart={bin} helper\nKillMode=process\n"),
+        "cm-helper.service",
+        format!("[Unit]\nDescription=cm: privileged helper for the graphical interface\nRequires=cm-helper.socket\nAfter=cm-helper.socket\n\n[Service]\nType=simple\nExecStart={bin} helper\nKillMode=process\n"),
     ));
     if let Some(w) = watch {
         u.push((
-            "upd-mirrors.path",
-            format!("[Unit]\nDescription=upd: restore pinned mirrors if the list is overwritten\n\n[Path]\nPathChanged={w}\nUnit=upd-mirrors-apply.service\n\n[Install]\nWantedBy=paths.target\n"),
+            "cm-mirrors.path",
+            format!("[Unit]\nDescription=cm: restore pinned mirrors if the list is overwritten\n\n[Path]\nPathChanged={w}\nUnit=cm-mirrors-apply.service\n\n[Install]\nWantedBy=paths.target\n"),
         ));
         u.push((
-            "upd-mirrors-apply.service",
-            format!("[Unit]\nDescription=upd: put pinned mirrors back on top\n\n[Service]\nType=oneshot\nExecStart={bin} mirrors apply\n"),
+            "cm-mirrors-apply.service",
+            format!("[Unit]\nDescription=cm: put pinned mirrors back on top\n\n[Service]\nType=oneshot\nExecStart={bin} mirrors apply\n"),
         ));
     }
     u
@@ -1214,8 +1356,8 @@ fn system_units(bin: &str, watch: Option<&str>) -> Vec<(&'static str, String)> {
 
 fn user_units(bin: &str) -> Vec<(&'static str, String)> {
     vec![
-        ("upd-notify.service", format!("[Unit]\nDescription=upd: notifications\n\n[Service]\nType=oneshot\nExecStart={bin} notify\n")),
-        ("upd-notify.timer", "[Unit]\nDescription=upd: notifications\n\n[Timer]\nOnActiveSec=3min\nOnUnitActiveSec=30min\n\n[Install]\nWantedBy=timers.target\n".to_string()),
+        ("cm-notify.service", format!("[Unit]\nDescription=cm: notifications\n\n[Service]\nType=oneshot\nExecStart={bin} notify\n")),
+        ("cm-notify.timer", "[Unit]\nDescription=cm: notifications\n\n[Timer]\nOnActiveSec=3min\nOnUnitActiveSec=30min\n\n[Install]\nWantedBy=timers.target\n".to_string()),
     ]
 }
 
@@ -1250,7 +1392,7 @@ fn polkit_policy() -> String {
             msg("Install updates and manage mirrors and VPN", &[("ru", "Установка обновлений, управление зеркалами и VPN"), ("de", "Updates installieren sowie Spiegelserver und VPN verwalten"), ("it", "Installare aggiornamenti e gestire mirror e VPN"), ("zh", "安装更新并管理镜像和 VPN"), ("ar", "تثبيت التحديثات وإدارة المرايا والشبكة الافتراضية")]),
         ),
     ];
-    let mut s = String::from("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<!DOCTYPE policyconfig PUBLIC \"-//freedesktop//DTD PolicyKit Policy Configuration 1.0//EN\"\n \"http://www.freedesktop.org/standards/PolicyKit/1/policyconfig.dtd\">\n<!-- Managed by upd -->\n<policyconfig>\n  <vendor>upd</vendor>\n  <icon_name>system-software-update</icon_name>\n");
+    let mut s = String::from("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<!DOCTYPE policyconfig PUBLIC \"-//freedesktop//DTD PolicyKit Policy Configuration 1.0//EN\"\n \"http://www.freedesktop.org/standards/PolicyKit/1/policyconfig.dtd\">\n<!-- Managed by cm -->\n<policyconfig>\n  <vendor>cm</vendor>\n  <icon_name>system-software-update</icon_name>\n");
     for (id, active, message) in actions {
         // вне активного сеанса (ssh, другой пользователь за экраном) — только с паролем администратора
         let other = if active == "yes" { "auth_admin" } else { active.trim_end_matches("_keep") };
@@ -1260,22 +1402,24 @@ fn polkit_policy() -> String {
 }
 
 fn pacman_hook(bin: &str) -> String {
-    format!("# upd: reconcile the list of available updates after any transaction (offline)\n[Trigger]\nOperation = Install\nOperation = Upgrade\nOperation = Remove\nType = Package\nTarget = *\n\n[Action]\nDescription = upd: reconciling the update list...\nWhen = PostTransaction\nExec = {bin} reconcile\n")
+    format!("# cm: reconcile the list of available updates after any transaction (offline)\n[Trigger]\nOperation = Install\nOperation = Upgrade\nOperation = Remove\nType = Package\nTarget = *\n\n[Action]\nDescription = cm: reconciling the update list...\nWhen = PostTransaction\nExec = {bin} reconcile\n")
 }
 
 fn apt_hook(bin: &str) -> String {
-    format!("// upd: reconcile the list of available updates after any install (offline)\nDPkg::Post-Invoke {{ \"{bin} reconcile >/dev/null 2>&1 || true\"; }};\n")
+    format!("// cm: reconcile the list of available updates after any install (offline)\nDPkg::Post-Invoke {{ \"{bin} reconcile >/dev/null 2>&1 || true\"; }};\n")
 }
 
 fn nm_dispatcher() -> &'static str {
-    "#!/bin/sh\n# upd: on network change, check whether other mirrors should be selected\ncase \"$2\" in\n  up|down|vpn-up|vpn-down|connectivity-change) systemctl start --no-block upd-net.service ;;\nesac\n"
+    "#!/bin/sh\n# cm: on network change, check whether other mirrors should be selected\ncase \"$2\" in\n  up|down|vpn-up|vpn-down|connectivity-change) systemctl start --no-block cm-net.service ;;\nesac\n"
 }
 
-/// garuda-update, запущенный напрямую, пересобирает зеркала через rate-mirrors — запрещаем, пока стоит upd.
+/// garuda-update, запущенный напрямую, пересобирает зеркала через rate-mirrors — запрещаем, пока стоит cm.
 fn garuda_skip_mirrors(on: bool) -> Option<String> {
     let text = fs::read_to_string(GARUDA_CONF).ok()?;
-    let ours = text.contains(GARUDA_MARK) || text.contains(GARUDA_MARK_OLD);
-    let cleaned: Vec<&str> = text.lines().filter(|l| *l != GARUDA_MARK && *l != GARUDA_MARK_OLD && !(l.trim() == "SKIP_MIRRORLIST=1" && ours)).collect();
+    let legacy = GARUDA_MARK.replace("cm", "upd");
+    let legacy_old = GARUDA_MARK_OLD.replace("cm", "upd");
+    let ours = text.contains(GARUDA_MARK) || text.contains(GARUDA_MARK_OLD) || text.contains(&legacy) || text.contains(&legacy_old);
+    let cleaned: Vec<&str> = text.lines().filter(|l| *l != GARUDA_MARK && *l != GARUDA_MARK_OLD && *l != legacy && *l != legacy_old && !(l.trim() == "SKIP_MIRRORLIST=1" && ours)).collect();
     let mut body = cleaned.join("\n") + "\n";
     if on {
         body += &format!("{GARUDA_MARK}\nSKIP_MIRRORLIST=1\n");
@@ -1286,7 +1430,7 @@ fn garuda_skip_mirrors(on: bool) -> Option<String> {
     })
 }
 
-// Garuda: в стандартных настройках fish/bash есть alias upd → garuda-update, он перехватывает команду.
+// Garuda: в стандартных настройках fish/bash есть alias cm → garuda-update, он перехватывает команду.
 // Пользовательский конфиг подключает их строкой source — сразу после неё снимаем алиас.
 const UNALIAS_MARK: &str = "# upd: drop the Garuda alias upd -> garuda-update";
 /// Метка до 0.2.5 — узнаём и заменяем
@@ -1295,12 +1439,6 @@ const GARUDA_SHELLS: [(&str, &str, &str); 2] = [
     (".config/fish/config.fish", "/usr/share/garuda/garuda-fish-config/config.fish", "functions -e upd"),
     (".bashrc", "/usr/share/garuda/garuda-bash-config/bashrc", "unalias upd 2>/dev/null"),
 ];
-
-fn garuda_alias_defined() -> bool {
-    GARUDA_SHELLS
-        .iter()
-        .any(|(_, sys, _)| fs::read_to_string(sys).map(|t| t.lines().any(|l| l.trim_start().starts_with("alias upd"))).unwrap_or(false))
-}
 
 /// Конфиги обычных пользователей, которые подключают настройки Garuda: (путь, текст, строка-снятие).
 /// Ссылки и чужие файлы пропускаем — пишем от root в домашние каталоги.
@@ -1366,32 +1504,6 @@ fn unalias_body(text: &str, cmd: &str, on: bool) -> String {
     body
 }
 
-fn garuda_unalias_install(pkg: bool, bin: &str) {
-    use std::io::IsTerminal;
-    if !garuda_alias_defined() {
-        return;
-    }
-    let todo: Vec<String> = garuda_user_configs()
-        .into_iter()
-        .filter(|(_, text, cmd)| !has_unalias(text, cmd))
-        .map(|(p, _, _)| p.display().to_string())
-        .collect();
-    if todo.is_empty() {
-        return;
-    }
-    // из пакетного менеджера не спрашиваем и в домашние каталоги не пишем
-    let ask = !pkg && std::io::stdin().is_terminal();
-    println!("{}", t!("\n\x1b[33m⚠ В Garuda команда `upd` занята алиасом на garuda-update:\x1b[0m {}", todo.join(", ")));
-    if ask && confirm(t!("Снять алиас, чтобы `upd` запускал эту утилиту?"), true) {
-        for f in garuda_unalias(true) {
-            println!("{}", t!("✓ алиас снят: {0}", f));
-        }
-        println!("{}", t!("   в уже открытых терминалах: exec fish (или exec bash), новые — сразу"));
-        return;
-    }
-    println!("{}", t!("   сними сам: fish — `functions -e upd`, bash — `unalias upd` в строке после source …garuda…, или запускай полным путём: {0}", bin));
-}
-
 fn write_file(path: &str, body: &str, mode: u32) -> Result<(), String> {
     if let Some(d) = Path::new(path).parent() {
         fs::create_dir_all(d).map_err(|e| format!("{}: {e}", d.display()))?;
@@ -1409,11 +1521,11 @@ fn write_system_files(root: &str, l: &Layout, target: &str, b: &dyn Backend) -> 
     };
     let mut done = vec![];
     for (n, body) in system_units(l.bin, watch.as_deref()) {
-        write_file(&format!("{root}{}/{n}", l.units), &format!("# Managed by upd\n{body}"), 0o644)?;
+        write_file(&format!("{root}{}/{n}", l.units), &format!("# Managed by cm\n{body}"), 0o644)?;
         done.push(n.to_string());
     }
     for (n, body) in user_units(l.bin) {
-        write_file(&format!("{root}{}/{n}", l.user_units), &format!("# Managed by upd\n{body}"), 0o644)?;
+        write_file(&format!("{root}{}/{n}", l.user_units), &format!("# Managed by cm\n{body}"), 0o644)?;
     }
     let pacman = target == "arch" || (target == "host" && have("pacman"));
     let apt = target == "deb" || (target == "host" && !pacman && Path::new("/etc/apt/apt.conf.d").is_dir());
@@ -1432,10 +1544,10 @@ fn write_system_files(root: &str, l: &Layout, target: &str, b: &dyn Backend) -> 
     Ok(done)
 }
 
-/// Для сборки пакетов: upd gen-files <каталог> <arch|deb|rpm>
+/// Для сборки пакетов: cm gen-files <каталог> <arch|deb|rpm>
 fn cmd_gen_files(b: &dyn Backend, pos: &[String]) -> i32 {
     let (Some(root), Some(target)) = (pos.first(), pos.get(1)) else {
-        eprintln!("{}", t!("upd gen-files <каталог> <arch|deb|rpm>"));
+        eprintln!("{}", t!("cm gen-files <каталог> <arch|deb|rpm>"));
         return 2;
     };
     match write_system_files(root.trim_end_matches('/'), &PACKAGE, target, b) {
@@ -1457,10 +1569,10 @@ fn owned_unit_files(dir: &str, names: &[&str]) -> Result<Vec<(String, std::path:
             return Err(t!("{}: не обычный unit-файл, миграция остановлена", path.display()));
         }
         let body = fs::read_to_string(&path).map_err(|e| format!("{}: {e}", path.display()))?;
-        let owned = body.lines().any(|line| line.trim() == "# Managed by upd")
-            || body.lines().any(|line| line.trim_start().starts_with("Description=upd:"));
+        let owned = body.lines().any(|line| line.trim() == "# Managed by cm")
+            || body.lines().any(|line| line.trim_start().starts_with("Description=cm:"));
         if !owned {
-            return Err(t!("{}: нет маркера upd, файл оставлен и миграция остановлена", path.display()));
+            return Err(t!("{}: нет маркера cm, файл оставлен и миграция остановлена", path.display()));
         }
         files.push(((*name).to_string(), path));
     }
@@ -1479,7 +1591,7 @@ fn disable_and_remove_units(dir: &str, files: &[(String, std::path::PathBuf)], g
         if !enabled_names.is_empty() {
             let mut args = if global { vec!["--global", "disable"] } else { vec!["disable"] };
             args.extend(enabled_names);
-            run(true, &[], "systemctl", &args).map_err(|e| t!("{0}: не удалось отключить unit-файлы upd: {1}", dir, e))?;
+            run(true, &[], "systemctl", &args).map_err(|e| t!("{0}: не удалось отключить unit-файлы cm: {1}", dir, e))?;
         }
     }
     for (name, path) in files {
@@ -1489,7 +1601,7 @@ fn disable_and_remove_units(dir: &str, files: &[(String, std::path::PathBuf)], g
 }
 
 fn remove_manual_files() -> Result<(), String> {
-    // Имена берутся из генераторов, а не из префикса: сторонние upd-* units не трогаем.
+    // Имена берутся из генераторов, а не из префикса: сторонние cm-* units не трогаем.
     let system_names: Vec<&str> = system_units(MANUAL.bin, Some("")).into_iter().map(|(name, _)| name).collect();
     let user_names: Vec<&str> = user_units(MANUAL.bin).into_iter().map(|(name, _)| name).collect();
     let system_files = owned_unit_files(MANUAL.units, &system_names)?;
@@ -1502,8 +1614,8 @@ fn remove_manual_files() -> Result<(), String> {
         .map_err(|e| format!("{LOCAL_BIN}: {e}"))?;
     let _ = fs::remove_file(MANUAL.pacman_hook);
     let _ = fs::remove_file(MANUAL.nm);
-    // политику polkit удаляем, только если её записал upd (при пакетной установке она принадлежит пакету)
-    if fs::read_to_string(MANUAL.polkit).is_ok_and(|t| t.contains("<!-- Managed by upd -->")) && !Path::new(PKG_BIN).exists() {
+    // политику polkit удаляем, только если её записал cm (при пакетной установке она принадлежит пакету)
+    if fs::read_to_string(MANUAL.polkit).is_ok_and(|t| t.contains("<!-- Managed by cm -->")) && !Path::new(PKG_BIN).exists() {
         let _ = fs::remove_file(MANUAL.polkit);
     }
     Ok(())
@@ -1522,9 +1634,9 @@ fn logged_in_users() -> Vec<String> {
 
 fn enable_units(b: &dyn Backend, c: &Config, ok: &dyn Fn(String)) -> Result<(), String> {
     let _ = run(true, &[], "systemctl", &["daemon-reload"]);
-    let mut enable = vec!["upd-auto.timer", "upd-net.timer", "upd-helper.socket"];
+    let mut enable = vec!["cm-auto.timer", "cm-net.timer", "cm-helper.socket"];
     if b.mirrors_managed() && b.watch_path().is_some() {
-        enable.push("upd-mirrors.path");
+        enable.push("cm-mirrors.path");
     }
     let mut args = vec!["enable", "--now"];
     args.extend(enable.iter().copied());
@@ -1532,29 +1644,29 @@ fn enable_units(b: &dyn Backend, c: &Config, ok: &dyn Fn(String)) -> Result<(), 
     // Enabling an already active socket does not reload the helper executable.
     // Stop the old protocol process after replacing the installed binaries.
     if helper::available() && helper::running_for_install()? {
-        println!("{}", t!("Помощник выполняет операцию; после завершения перезапустите его: sudo systemctl restart upd-helper.service"));
+        println!("{}", t!("Помощник выполняет операцию; после завершения перезапустите его: sudo systemctl restart cm-helper.service"));
     } else {
-        run(true, &[], "systemctl", &["try-restart", "upd-helper.service"])?;
+        run(true, &[], "systemctl", &["try-restart", "cm-helper.service"])?;
     }
-    let _ = run(true, &[], "systemctl", &["--global", "enable", "upd-notify.timer"]);
+    let _ = run(true, &[], "systemctl", &["--global", "enable", "cm-notify.timer"]);
     // --global действует со следующего входа; тем, кто уже вошёл, перечитываем юниты и запускаем таймер сразу
     for user in logged_in_users() {
         let m = format!("{user}@");
         let _ = run(true, &[], "systemctl", &["--user", "-M", &m, "daemon-reload"]);
-        let _ = run(true, &[], "systemctl", &["--user", "-M", &m, "start", "upd-notify.timer"]);
+        let _ = run(true, &[], "systemctl", &["--user", "-M", &m, "start", "cm-notify.timer"]);
     }
     ok(t!("службы: {}", enable.join(", ")));
-    // работающий VPN после обновления upd подхватывает новый unit и конфиг (API через сокет); неработающий не трогаем
+    // работающий VPN после обновления cm подхватывает новый unit и конфиг (API через сокет); неработающий не трогаем
     if vpn::service_active() && run(true, &[], "systemctl", &["try-restart", "--no-block", vpn::SERVICE]).is_ok() {
         ok(t!("VPN: служба перезапускается с новыми настройками").into());
     }
-    ok(t!("уведомления: upd-notify.timer (для всех пользователей, после входа)").into());
+    ok(t!("уведомления: cm-notify.timer (для всех пользователей, после входа)").into());
     match vpn::load_subs() {
         Ok(subs) if !subs.list.is_empty() && c.vpn_autostart => {
             let _ = vpn::autostart(true);
             ok(t!("VPN: автозапуск включён").into());
         }
-        Ok(_) => ok(t!("VPN: добавь подписку — upd → VPN (или upd vpn add), дальше он будет стартовать сам").into()),
+        Ok(_) => ok(t!("VPN: добавь подписку — cm → VPN (или cm vpn add), дальше он будет стартовать сам").into()),
         Err(e) => println!("{}", t!("⚠ VPN: не удалось прочитать подписки: {0}", e)),
     }
     Ok(())
@@ -1590,7 +1702,7 @@ fn cmd_lang(c: &Config, pos: &[String]) -> i32 {
         for l in i18n::ALL {
             println!("  {}  {}", l.code(), l.name());
         }
-        println!("{}", t!("сменить: upd lang КОД (auto — по локали системы)"));
+        println!("{}", t!("сменить: cm lang КОД (auto — по локали системы)"));
         return 0;
     };
     let mut c = c.clone();
@@ -1612,16 +1724,27 @@ fn cmd_lang(c: &Config, pos: &[String]) -> i32 {
     }
 }
 
+/// Compatibility entry point: migration remains read-only until recovery is verified.
+/// Direct callers receive the same production guard; fixture env cannot bypass it.
+fn migrate_upd() -> Result<bool, String> {
+    migration::preflight_install(Path::new("/"))?;
+    Ok(false)
+}
+
 fn cmd_install(b: &dyn Backend, c: &Config, pkg: bool) -> i32 {
+    // Guard direct callers as well as main(), before any install side effect.
+    if let Err(error) = migrate_upd() {
+        return err_code(Err(error));
+    }
     let ok = |s: String| println!("\x1b[32m✓\x1b[0m {s}");
     let exe = std::env::current_exe().and_then(fs::canonicalize).unwrap_or_default();
     let l = if pkg { &PACKAGE } else { &MANUAL };
     if pkg && !package_script_context(&exe) {
-        eprintln!("{}", t!("upd install --package доступен только из установочного сценария пакета."));
+        eprintln!("{}", t!("cm install --package доступен только из установочного сценария пакета."));
         return 1;
     }
     if !pkg && fs::symlink_metadata(PKG_BIN).is_ok() {
-        eprintln!("{}", t!("upd уже установлен пакетом ({0}) — обновляй его через пакетный менеджер.", PKG_BIN));
+        eprintln!("{}", t!("cm уже установлен пакетом ({0}) — обновляй его через пакетный менеджер.", PKG_BIN));
         return 1;
     }
     if pkg {
@@ -1671,17 +1794,17 @@ fn cmd_install(b: &dyn Backend, c: &Config, pkg: bool) -> i32 {
             return err_code(Err(e));
         }
     } else if Path::new("/etc/cron.d").is_dir() {
-        let _ = fs::write(CRON_PATH, format!("# upd\n*/15 * * * * root {0} net\n17 */6 * * * root {0} auto\n", l.bin));
-        ok(t!("systemd нет — задания в {0} (VPN запускай вручную: upd vpn start)", CRON_PATH));
+        let _ = fs::write(CRON_PATH, format!("# cm\n*/15 * * * * root {0} net\n17 */6 * * * root {0} auto\n", l.bin));
+        ok(t!("systemd нет — задания в {0} (VPN запускай вручную: cm vpn start)", CRON_PATH));
     } else {
-        println!("{}", t!("⚠ нет ни systemd, ни cron: автоматика не установлена, запускай upd вручную"));
+        println!("{}", t!("⚠ нет ни systemd, ни cron: автоматика не установлена, запускай cm вручную"));
     }
     if b.mirrors_managed() && Path::new(GARUDA_CONF).exists() {
         garuda_skip_mirrors(true);
         ok(t!("garuda-update больше не перезаписывает зеркала ({0})", GARUDA_CONF));
     }
 
-    // из пакетного менеджера — без долгого подбора зеркал (он держит блокировку); это сделает upd-auto
+    // из пакетного менеджера — без долгого подбора зеркал (он держит блокировку); это сделает cm-auto
     if b.mirrors_managed() && !pkg {
         println!("{}", t!("\nПервый подбор зеркал для текущей сети:"));
         with_lock(true, || {
@@ -1689,11 +1812,11 @@ fn cmd_install(b: &dyn Backend, c: &Config, pkg: bool) -> i32 {
         });
     }
     if systemd() {
-        let _ = run(true, &[], "systemctl", &["start", "--no-block", "upd-auto.service"]);
-        println!("{}", t!("\nПервая проверка обновлений{} запущена в фоне: journalctl -u upd-auto -f", if pkg { t!(" и подбор зеркал") } else { "" }));
+        let _ = run(true, &[], "systemctl", &["start", "--no-block", "cm-auto.service"]);
+        println!("{}", t!("\nПервая проверка обновлений{} запущена в фоне: journalctl -u cm-auto -f", if pkg { t!(" и подбор зеркал") } else { "" }));
     }
-    garuda_unalias_install(pkg, l.bin);
-    println!("{}", t!("\nГотово. Запуск интерфейса: upd"));
+    // CM has no conflict with Garuda's upd alias.
+    println!("{}", t!("\nГотово. Запуск интерфейса: cm"));
     0
 }
 
@@ -1701,7 +1824,7 @@ fn cmd_uninstall(b: &dyn Backend, pkg: bool) -> i32 {
     if pkg {
         let exe = std::env::current_exe().and_then(fs::canonicalize).unwrap_or_default();
         if !package_script_context(&exe) {
-            eprintln!("{}", t!("upd uninstall --package доступен только из сценария пакетного менеджера."));
+            eprintln!("{}", t!("cm uninstall --package доступен только из сценария пакетного менеджера."));
             return 1;
         }
     }
@@ -1714,10 +1837,10 @@ fn cmd_uninstall(b: &dyn Backend, pkg: bool) -> i32 {
     }
     if systemd() {
         let mut names: Vec<&str> = system_units(PKG_BIN, Some("-")).iter().map(|x| x.0).collect();
-        names.retain(|n| !n.ends_with(".service") || *n == vpn::SERVICE || *n == "upd-helper.service");
-        let _ = run(true, &[], "systemctl", &["--global", "disable", "upd-notify.timer"]);
+        names.retain(|n| !n.ends_with(".service") || *n == vpn::SERVICE || *n == "cm-helper.service");
+        let _ = run(true, &[], "systemctl", &["--global", "disable", "cm-notify.timer"]);
         for user in logged_in_users() {
-            let _ = run(true, &[], "systemctl", &["--user", "-M", &format!("{user}@"), "stop", "upd-notify.timer"]);
+            let _ = run(true, &[], "systemctl", &["--user", "-M", &format!("{user}@"), "stop", "cm-notify.timer"]);
         }
         let mut args = vec!["disable", "--now"];
         args.extend(names.iter().copied());
@@ -1737,9 +1860,9 @@ fn cmd_uninstall(b: &dyn Backend, pkg: bool) -> i32 {
     let _ = fs::remove_file(CRON_PATH);
     garuda_skip_mirrors(false);
     for f in garuda_unalias(false) {
-        println!("{}", t!("убрано снятие алиаса upd: {0}", f));
+        println!("{}", t!("убрано снятие алиаса cm: {0}", f));
     }
-    println!("{}", t!("upd удалён. Оставлены настройки и данные: {}, {} (подписки VPN), {} — удали вручную, если не нужны.", conf_path(), vpn::etc(), state_dir()));
+    println!("{}", t!("cm удалён. Оставлены настройки и данные: {}, {} (подписки VPN), {} — удали вручную, если не нужны.", conf_path(), vpn::etc(), state_dir()));
     err_code(proxy_result)
 }
 
@@ -1750,23 +1873,23 @@ mod contract_tests {
 
     #[test]
     fn install_reloads_helper_and_reports_restart_failure() {
-        use upd::common::contract_fixtures::{isolation_lock, TempDirGuard, EnvGuard};
+        use cm::common::contract_fixtures::{isolation_lock, TempDirGuard, EnvGuard};
         let _isolation = isolation_lock();
-        let dir = TempDirGuard::new("upd-install-helper-reload").unwrap();
+        let dir = TempDirGuard::new("cm-install-helper-reload").unwrap();
         let log = dir.path().join("systemctl.log");
         let mut env = EnvGuard::new();
         env.set("PATH", dir.path());
-        env.set("UPD_VPN_ETC", dir.path());
-        env.set("UPD_HELPER_SOCK", dir.path().join("helper.sock"));
-        env.set("UPD_TEST_SYSTEMCTL_LOG", &log);
+        env.set("CM_VPN_ETC", dir.path());
+        env.set("CM_HELPER_SOCK", dir.path().join("helper.sock"));
+        env.set("CM_TEST_SYSTEMCTL_LOG", &log);
         write_stub(dir.path(), "apt-get", "#!/bin/sh\nexit 0\n");
         write_stub(dir.path(), "loginctl", "#!/bin/sh\nexit 0\n");
-        write_stub(dir.path(), "systemctl", "#!/bin/sh\necho \"$*\" >> \"$UPD_TEST_SYSTEMCTL_LOG\"\nexit 0\n");
+        write_stub(dir.path(), "systemctl", "#!/bin/sh\necho \"$*\" >> \"$CM_TEST_SYSTEMCTL_LOG\"\nexit 0\n");
         let backend = backend::detect().unwrap();
         enable_units(backend.as_ref(), &Config::defaults(vec![]), &|_| {}).unwrap();
         let calls = fs::read_to_string(&log).unwrap();
         let enable = calls.find("enable --now").unwrap();
-        let reload = calls.find("try-restart upd-helper.service").unwrap();
+        let reload = calls.find("try-restart cm-helper.service").unwrap();
         assert!(reload > enable, "{calls}");
         // A package post-install can run inside the helper's current operation.
         // A legacy Status reply must suffice to avoid restarting its parent.
@@ -1795,9 +1918,9 @@ mod contract_tests {
         fs::write(&log, "").unwrap();
         enable_units(backend.as_ref(), &Config::defaults(vec![]), &|_| {}).unwrap();
         server.join().unwrap();
-        assert!(!fs::read_to_string(&log).unwrap().contains("try-restart upd-helper.service"));
+        assert!(!fs::read_to_string(&log).unwrap().contains("try-restart cm-helper.service"));
         fs::remove_file(dir.path().join("helper.sock")).unwrap();
-        write_stub(dir.path(), "systemctl", "#!/bin/sh\nif [ \"$1 $2\" = 'try-restart upd-helper.service' ]; then echo helper-restart-failed >&2; exit 1; fi\nexit 0\n");
+        write_stub(dir.path(), "systemctl", "#!/bin/sh\nif [ \"$1 $2\" = 'try-restart cm-helper.service' ]; then echo helper-restart-failed >&2; exit 1; fi\nexit 0\n");
         let error = enable_units(backend.as_ref(), &Config::defaults(vec![]), &|_| {}).unwrap_err();
         assert!(error.contains("helper-restart-failed"), "{error}");
     }
@@ -1805,9 +1928,9 @@ mod contract_tests {
     // --- INSTALL-01 ---
     #[test]
     fn review_binary_install_concurrency_never_mixes_files() {
-        use upd::common::contract_fixtures::TempDirGuard;
+        use cm::common::contract_fixtures::TempDirGuard;
         use std::os::unix::fs::PermissionsExt;
-        let dir = TempDirGuard::new("upd-binary-install").unwrap();
+        let dir = TempDirGuard::new("cm-binary-install").unwrap();
         let source_a = dir.path().join("a"); let source_b = dir.path().join("b");
         std::fs::write(&source_a, vec![b'a'; 65536]).unwrap();
         std::fs::write(&source_b, vec![b'b'; 65536]).unwrap();
@@ -1826,9 +1949,9 @@ mod contract_tests {
 
     #[test]
     fn review_failed_notification_is_not_marked_seen_and_can_retry() {
-        use upd::common::contract_fixtures::{isolation_lock, TempDirGuard, EnvGuard};
+        use cm::common::contract_fixtures::{isolation_lock, TempDirGuard, EnvGuard};
         use std::os::unix::fs::PermissionsExt;
-        let _isolation = isolation_lock(); let dir = TempDirGuard::new("upd-notification-fail").unwrap();
+        let _isolation = isolation_lock(); let dir = TempDirGuard::new("cm-notification-fail").unwrap();
         let notify = dir.path().join("notify-send");
         std::fs::write(&notify, "#!/bin/sh\nexit 1\n").unwrap();
         std::fs::set_permissions(&notify, std::fs::Permissions::from_mode(0o755)).unwrap();
@@ -1843,7 +1966,7 @@ mod contract_tests {
 
     #[test]
     fn install01_package_install_requires_package_script_env() {
-        let _isolation = upd::common::contract_fixtures::isolation_lock();
+        let _isolation = cm::common::contract_fixtures::isolation_lock();
         let exe = Path::new(PKG_BIN);
         let previous = std::env::var_os(PACKAGE_SCRIPT_ENV);
         unsafe { std::env::remove_var(PACKAGE_SCRIPT_ENV); }
@@ -1869,16 +1992,16 @@ mod contract_tests {
     // --- INSTALL-02 ---
     #[test]
     fn install02_rejects_foreign_unit_file() {
-        let dir = std::env::temp_dir().join(format!("upd-units-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("cm-units-{}", std::process::id()));
         fs::create_dir_all(&dir).unwrap();
-        let unit = dir.join("upd-auto.timer");
+        let unit = dir.join("cm-auto.timer");
         fs::write(&unit, "[Timer]\nOnBootSec=1min\n").unwrap();
-        let err = owned_unit_files(dir.to_str().unwrap(), &["upd-auto.timer"]).unwrap_err();
-        assert!(err.contains("маркера upd"), "{err}");
+        let err = owned_unit_files(dir.to_str().unwrap(), &["cm-auto.timer"]).unwrap_err();
+        assert!(err.contains("маркера cm"), "{err}");
         let _ = fs::remove_dir_all(&dir);
     }
 
-    // --- UPD-03 ---
+    // --- CM-03 ---
     #[test]
     fn upd03_auto_failure_exit_code() {
         let st = UpdState {
@@ -1889,7 +2012,7 @@ mod contract_tests {
         assert_eq!(auto_state_failure(&st), Some("не удалось обновить базы пакетов"));
     }
 
-    // --- UPD-02A ---
+    // --- CM-02A ---
     #[test]
     fn upd04a_flatpak_check_failure_affects_exit() {
         let st = UpdState { flatpak_error: "flatpak: код 9".into(), ..Default::default() };
@@ -1904,7 +2027,7 @@ mod contract_tests {
         assert_eq!(result.unwrap_err(), "flatpak: код 9");
     }
 
-    // --- UPD-02B ---
+    // --- CM-02B ---
     #[test]
     fn upd04b_firmware_check_failure_affects_exit() {
         let st = UpdState { firmware_error: "fwupd: код 7".into(), ..Default::default() };
@@ -1940,9 +2063,9 @@ mod contract_tests {
 
     #[test]
     fn install04_system_identifiers_do_not_depend_on_language() {
-        let mut texts: Vec<String> = system_units("/usr/bin/upd", Some("/etc/pacman.d/mirrorlist")).into_iter().map(|u| u.1).collect();
-        texts.extend(user_units("/usr/bin/upd").into_iter().map(|u| u.1));
-        texts.extend([pacman_hook("/usr/bin/upd"), apt_hook("/usr/bin/upd"), nm_dispatcher().to_string()]);
+        let mut texts: Vec<String> = system_units("/usr/bin/cm", Some("/etc/pacman.d/mirrorlist")).into_iter().map(|u| u.1).collect();
+        texts.extend(user_units("/usr/bin/cm").into_iter().map(|u| u.1));
+        texts.extend([pacman_hook("/usr/bin/cm"), apt_hook("/usr/bin/cm"), nm_dispatcher().to_string()]);
         // в политике polkit русский есть только в переводах (xml:lang), основной текст — английский
         texts.extend(polkit_policy().lines().filter(|l| !l.contains("xml:lang")).map(String::from));
         texts.extend([GARUDA_MARK, UNALIAS_MARK, backend::PIN_BEGIN, backend::PIN_END, vpn::AUTO_GROUP, extras::SNAP_PRE_DESC, extras::SNAP_POST_DESC].map(String::from));
@@ -1954,7 +2077,7 @@ mod contract_tests {
     #[test]
     fn gui01_polkit_policy_limits_passwordless_actions() {
         let p = polkit_policy();
-        assert!(!p.contains("exec.path"), "pkexec upd не должен работать без пароля");
+        assert!(!p.contains("exec.path"), "pkexec cm не должен работать без пароля");
         let action = |id: &str| {
             let start = p.find(&format!("<action id=\"{id}\">")).unwrap();
             p[start..start + p[start..].find("</action>").unwrap()].to_string()
@@ -1965,20 +2088,20 @@ mod contract_tests {
         }
         let m = action(helper::ACTION_MANAGE);
         assert!(m.contains("<allow_active>auth_admin_keep</allow_active>") && m.contains("<allow_inactive>auth_admin</allow_inactive>"), "{m}");
-        assert!(p.contains("xml:lang=\"ru\"") && p.contains("<!-- Managed by upd -->"));
+        assert!(p.contains("xml:lang=\"ru\"") && p.contains("<!-- Managed by cm -->"));
     }
 
     #[test]
     fn gui02_helper_socket_units_and_desktop_files() {
-        let units = system_units("/usr/bin/upd", None);
-        let socket = &units.iter().find(|u| u.0 == "upd-helper.socket").unwrap().1;
-        assert!(socket.contains("ListenStream=/run/upd/helper.sock") && socket.contains("SocketMode=0666"));
-        let service = &units.iter().find(|u| u.0 == "upd-helper.service").unwrap().1;
-        assert!(service.contains("ExecStart=/usr/bin/upd helper") && !service.contains("[Install]"), "запускается только по сокету");
-        let applet = GUI_FILES.iter().find(|f| f.0.ends_with("io.github.upd.Applet.desktop")).unwrap().1;
-        assert!(applet.contains("X-CosmicApplet=true") && applet.contains("Exec=upd-cosmic applet") && applet.contains("NoDisplay=true"));
-        let app = GUI_FILES.iter().find(|f| f.0.ends_with("io.github.upd.desktop")).unwrap().1;
-        assert!(app.contains("Exec=upd-cosmic\n") && app.contains("Icon=io.github.upd\n"));
+        let units = system_units("/usr/bin/cm", None);
+        let socket = &units.iter().find(|u| u.0 == "cm-helper.socket").unwrap().1;
+        assert!(socket.contains("ListenStream=/run/cm/helper.sock") && socket.contains("SocketMode=0666"));
+        let service = &units.iter().find(|u| u.0 == "cm-helper.service").unwrap().1;
+        assert!(service.contains("ExecStart=/usr/bin/cm helper") && !service.contains("[Install]"), "запускается только по сокету");
+        let applet = GUI_FILES.iter().find(|f| f.0.ends_with("io.github.cm.Applet.desktop")).unwrap().1;
+        assert!(applet.contains("X-CosmicApplet=true") && applet.contains("Exec=cm-cosmic applet") && applet.contains("NoDisplay=true"));
+        let app = GUI_FILES.iter().find(|f| f.0.ends_with("io.github.cm.desktop")).unwrap().1;
+        assert!(app.contains("Exec=cm-cosmic\n") && app.contains("Icon=io.github.cm\n"));
     }
 
     #[test]
@@ -2000,28 +2123,28 @@ mod contract_tests {
 
     #[test]
     fn install02_removes_owned_units_and_keeps_foreign() {
-        let base = std::env::temp_dir().join(format!("upd-units-own-{}", std::process::id()));
+        let base = std::env::temp_dir().join(format!("cm-units-own-{}", std::process::id()));
         let units = base.join("units");
         let bin = base.join("bin");
         fs::create_dir_all(&units).unwrap();
         fs::create_dir_all(&bin).unwrap();
-        let timer = units.join("upd-auto.timer");
-        fs::write(&timer, "# Managed by upd\n[Timer]\nOnBootSec=1min\n").unwrap();
-        let foreign = units.join("upd-custom.service");
+        let timer = units.join("cm-auto.timer");
+        fs::write(&timer, "# Managed by cm\n[Timer]\nOnBootSec=1min\n").unwrap();
+        let foreign = units.join("cm-custom.service");
         fs::write(&foreign, "[Unit]\nDescription=foreign\n[Service]\nExecStart=/bin/true\n").unwrap();
-        let err = owned_unit_files(units.to_str().unwrap(), &["upd-custom.service"]).unwrap_err();
-        assert!(err.contains("маркера upd"), "{err}");
+        let err = owned_unit_files(units.to_str().unwrap(), &["cm-custom.service"]).unwrap_err();
+        assert!(err.contains("маркера cm"), "{err}");
         assert!(foreign.exists());
         write_stub(&bin, "systemctl", "#!/bin/sh\nexit 0\n");
-        let owned = owned_unit_files(units.to_str().unwrap(), &["upd-auto.timer"]).unwrap();
-        upd::common::contract_fixtures::with_prepend_path(&bin, || disable_and_remove_units(units.to_str().unwrap(), &owned, false).unwrap());
+        let owned = owned_unit_files(units.to_str().unwrap(), &["cm-auto.timer"]).unwrap();
+        cm::common::contract_fixtures::with_prepend_path(&bin, || disable_and_remove_units(units.to_str().unwrap(), &owned, false).unwrap());
         assert!(!timer.exists());
         assert!(foreign.exists());
         let _ = fs::remove_dir_all(&base);
     }
 
     fn vpn_fixture(name: &str) -> (std::path::PathBuf, std::path::PathBuf, std::path::PathBuf, std::path::PathBuf, std::path::PathBuf) {
-        let base = std::env::temp_dir().join(format!("upd-{name}-{}", std::process::id()));
+        let base = std::env::temp_dir().join(format!("cm-{name}-{}", std::process::id()));
         let bin = base.join("bin");
         let etc = base.join("etc");
         let home = base.join("home");
@@ -2035,7 +2158,7 @@ mod contract_tests {
 
     #[test]
     fn vpn01_last_subscription_stops_service() {
-        let _iso = upd::common::contract_fixtures::isolation_lock();
+        let _iso = cm::common::contract_fixtures::isolation_lock();
         let (base, bin, etc, home, state) = vpn_fixture("vpn01-stop");
         let log = base.join("cmd.log");
         let log_s = log.to_str().unwrap().replace('\'', "");
@@ -2050,25 +2173,25 @@ mod contract_tests {
         fs::write(etc.join("subs.json"), subs.to_string()).unwrap();
         fs::write(home.join("profiles").join("a1.yaml"), "proxies: []\n").unwrap();
         unsafe {
-            std::env::set_var("UPD_VPN_ETC", etc.to_str().unwrap());
-            std::env::set_var("UPD_VPN_HOME", home.to_str().unwrap());
-            std::env::set_var("UPD_STATE_DIR", state.to_str().unwrap());
+            std::env::set_var("CM_VPN_ETC", etc.to_str().unwrap());
+            std::env::set_var("CM_VPN_HOME", home.to_str().unwrap());
+            std::env::set_var("CM_STATE_DIR", state.to_str().unwrap());
             std::env::set_var("SUDO_USER", UserContext::from_uid(libc::geteuid()).unwrap().name);
         }
         let code = {
-            let _path = upd::common::contract_fixtures::prepend_path(&bin);
+            let _path = cm::common::contract_fixtures::prepend_path(&bin);
             cmd_vpn(&Config::defaults(vec![]), &["del".into(), "1".into()])
         };
         let recorded = fs::read_to_string(&log).unwrap_or_default();
         unsafe {
-            std::env::remove_var("UPD_VPN_ETC");
-            std::env::remove_var("UPD_VPN_HOME");
-            std::env::remove_var("UPD_STATE_DIR");
+            std::env::remove_var("CM_VPN_ETC");
+            std::env::remove_var("CM_VPN_HOME");
+            std::env::remove_var("CM_STATE_DIR");
             std::env::remove_var("SUDO_USER");
         }
         assert_eq!(code, 0, "{recorded}");
-        assert!(recorded.contains("stop upd-vpn.service"), "{recorded}");
-        assert!(recorded.contains("disable upd-vpn.service"), "{recorded}");
+        assert!(recorded.contains("stop cm-vpn.service"), "{recorded}");
+        assert!(recorded.contains("disable cm-vpn.service"), "{recorded}");
         assert!(recorded.contains("mode") && recorded.contains("none"), "{recorded}");
         let left = fs::read_to_string(etc.join("subs.json")).unwrap();
         assert!(left.contains("\"list\":[]") || left.contains("\"list\": []"), "{left}");
@@ -2077,7 +2200,7 @@ mod contract_tests {
 
     #[test]
     fn vpn01_stop_failure_is_an_error_after_delete() {
-        let _iso = upd::common::contract_fixtures::isolation_lock();
+        let _iso = cm::common::contract_fixtures::isolation_lock();
         let (base, bin, etc, home, state) = vpn_fixture("vpn01-fail");
         write_stub(&bin, "systemctl", "#!/bin/sh\nif [ \"$1\" = is-active ]; then echo active; exit 0; fi\nif [ \"$1\" = stop ]; then echo fail 1>&2; exit 1; fi\nexit 0\n");
         write_stub(&bin, "id", "#!/bin/sh\nexit 0\n");
@@ -2085,19 +2208,19 @@ mod contract_tests {
         write_stub(&bin, "runuser", "#!/bin/sh\nexit 0\n");
         fs::write(etc.join("subs.json"), r#"{"active":"a1","list":[{"id":"a1","name":"one","url":"https://example.com/sub","interval_h":24,"updated":0,"nodes":0,"kind":"yaml"}]}"#).unwrap();
         unsafe {
-            std::env::set_var("UPD_VPN_ETC", etc.to_str().unwrap());
-            std::env::set_var("UPD_VPN_HOME", home.to_str().unwrap());
-            std::env::set_var("UPD_STATE_DIR", state.to_str().unwrap());
+            std::env::set_var("CM_VPN_ETC", etc.to_str().unwrap());
+            std::env::set_var("CM_VPN_HOME", home.to_str().unwrap());
+            std::env::set_var("CM_STATE_DIR", state.to_str().unwrap());
             std::env::remove_var("SUDO_USER");
         }
         let code = {
-            let _path = upd::common::contract_fixtures::prepend_path(&bin);
+            let _path = cm::common::contract_fixtures::prepend_path(&bin);
             cmd_vpn(&Config::defaults(vec![]), &["del".into(), "1".into()])
         };
         unsafe {
-            std::env::remove_var("UPD_VPN_ETC");
-            std::env::remove_var("UPD_VPN_HOME");
-            std::env::remove_var("UPD_STATE_DIR");
+            std::env::remove_var("CM_VPN_ETC");
+            std::env::remove_var("CM_VPN_HOME");
+            std::env::remove_var("CM_STATE_DIR");
         }
         assert_eq!(code, 1);
         let left = fs::read_to_string(etc.join("subs.json")).unwrap();

@@ -6,8 +6,8 @@ use std::process::{Command, Stdio};
 use std::sync::mpsc;
 use std::thread;
 use std::time::{Duration, Instant};
-use upd::common::contract_fixtures::{self as fixtures, ChildGuard, EnvGuard, TempDirGuard};
-use upd::helper::{self, Event, PromptKind, Request};
+use cm::common::contract_fixtures::{self as fixtures, ChildGuard, EnvGuard, TempDirGuard};
+use cm::helper::{self, Event, PromptKind, Request};
 
 const FIXTURE_TIMEOUT: Duration = Duration::from_secs(8);
 
@@ -25,13 +25,13 @@ fn wait_for_socket(child: &mut ChildGuard, socket: &Path) {
     panic!("local helper did not bind its fixture socket before timeout");
 }
 
-fn spawn_helper(dir: &TempDirGuard, socket: &Path, fake_upd: Option<&Path>) -> ChildGuard {
-    let mut command = Command::new(env!("CARGO_BIN_EXE_upd"));
+fn spawn_helper(dir: &TempDirGuard, socket: &Path, fake_cm: Option<&Path>) -> ChildGuard {
+    let mut command = Command::new(env!("CARGO_BIN_EXE_cm"));
     command
         .arg("helper")
-        .env("UPD_STATE_DIR", dir.path())
-        .env("UPD_HELPER_SOCK", socket)
-        .env("UPD_HELPER_ALLOW", "1")
+        .env("CM_STATE_DIR", dir.path())
+        .env("CM_HELPER_SOCK", socket)
+        .env("CM_HELPER_ALLOW", "1")
         .stdin(Stdio::null())
         .stdout(Stdio::from(
             std::fs::File::create(dir.path().join("helper.stdout")).unwrap(),
@@ -39,8 +39,8 @@ fn spawn_helper(dir: &TempDirGuard, socket: &Path, fake_upd: Option<&Path>) -> C
         .stderr(Stdio::from(
             std::fs::File::create(dir.path().join("helper.stderr")).unwrap(),
         ));
-    if let Some(path) = fake_upd {
-        command.env("UPD_HELPER_EXE", path);
+    if let Some(path) = fake_cm {
+        command.env("CM_HELPER_EXE", path);
     }
     let mut child = ChildGuard::spawn(&mut command).expect("spawn local helper fixture");
     wait_for_socket(&mut child, socket);
@@ -50,10 +50,10 @@ fn spawn_helper(dir: &TempDirGuard, socket: &Path, fake_upd: Option<&Path>) -> C
 fn wait_for_finished(
     operation_id: &helper::OperationId,
     timeout: Duration,
-) -> upd::summary::OpStatus {
+) -> cm::summary::OpStatus {
     let deadline = Instant::now() + timeout;
     loop {
-        let status: upd::summary::OpStatus =
+        let status: cm::summary::OpStatus =
             helper::call_as(&Request::Status).expect("helper status reply");
         if status.operation_id.as_ref() == Some(operation_id) && !status.running {
             return status;
@@ -142,10 +142,10 @@ fn with_mock_reply_and_events(
 #[test]
 fn helper_framing_preserves_events_coalesced_with_reply() {
     let _isolation = fixtures::isolation_lock();
-    let dir = TempDirGuard::new("upd-audit-framing").unwrap();
+    let dir = TempDirGuard::new("cm-audit-framing").unwrap();
     let socket = dir.path().join("mock.sock");
     let mut env = EnvGuard::new();
-    env.set("UPD_HELPER_SOCK", &socket);
+    env.set("CM_HELPER_SOCK", &socket);
     let server = with_mock_reply_and_events(
         &socket,
         b"{\"protocol_version\":2,\"ok\":true}\n{\"protocol_version\":2,\"operation_id\":\"fixture-op\",\"event\":{\"ev\":\"reset\",\"command\":\"check\",\"started\":1}}\n{\"protocol_version\":2,\"operation_id\":\"fixture-op\",\"event\":{\"ev\":\"exit\",\"code\":0}}\n{\"protocol_version\":2,\"operation_id\":\"fixture-op\",\"event\":{\"ev\":\"replay_complete\"}}\n",
@@ -182,10 +182,10 @@ fn helper_framing_preserves_events_coalesced_with_reply() {
 #[test]
 fn helper_framing_reports_malformed_event_json() {
     let _isolation = fixtures::isolation_lock();
-    let dir = TempDirGuard::new("upd-audit-malformed").unwrap();
+    let dir = TempDirGuard::new("cm-audit-malformed").unwrap();
     let socket = dir.path().join("mock.sock");
     let mut env = EnvGuard::new();
-    env.set("UPD_HELPER_SOCK", &socket);
+    env.set("CM_HELPER_SOCK", &socket);
     let server = with_mock_reply_and_events(
         &socket,
         b"{\"protocol_version\":2,\"ok\":true}\n{\"protocol_version\":2,\"operation_id\":\"fixture-op\",\"event\":\n",
@@ -206,10 +206,10 @@ fn helper_framing_reports_malformed_event_json() {
 #[test]
 fn helper_client_rejects_old_server_before_mutation() {
     let _isolation = fixtures::isolation_lock();
-    let dir = TempDirGuard::new("upd-audit-old-server").unwrap();
+    let dir = TempDirGuard::new("cm-audit-old-server").unwrap();
     let socket = dir.path().join("mock.sock");
     let mut env = EnvGuard::new();
-    env.set("UPD_HELPER_SOCK", &socket);
+    env.set("CM_HELPER_SOCK", &socket);
     let listener = UnixListener::bind(&socket).unwrap();
     let server = thread::spawn(move || {
         let (mut stream, _) = listener.accept().unwrap();
@@ -237,19 +237,19 @@ fn helper_client_rejects_old_server_before_mutation() {
 #[test]
 fn new_helper_rejects_legacy_mutation_without_protocol_version() {
     let _isolation = fixtures::isolation_lock();
-    let dir = TempDirGuard::new("upd-audit-legacy-client").unwrap();
+    let dir = TempDirGuard::new("cm-audit-legacy-client").unwrap();
     let socket = dir.path().join("helper.sock");
     let marker = dir.path().join("should-not-run");
-    let fake_upd = dir.path().join("fake-upd");
+    let fake_cm = dir.path().join("fake-cm");
     std::fs::write(
-        &fake_upd,
+        &fake_cm,
         format!("#!/bin/sh\ntouch {}\n", marker.display()),
     )
     .unwrap();
-    std::fs::set_permissions(&fake_upd, std::fs::Permissions::from_mode(0o755)).unwrap();
+    std::fs::set_permissions(&fake_cm, std::fs::Permissions::from_mode(0o755)).unwrap();
     let mut env = EnvGuard::new();
-    env.set("UPD_HELPER_SOCK", &socket);
-    let mut child = spawn_helper(&dir, &socket, Some(&fake_upd));
+    env.set("CM_HELPER_SOCK", &socket);
+    let mut child = spawn_helper(&dir, &socket, Some(&fake_cm));
 
     let mut stream = UnixStream::connect(&socket).unwrap();
     stream.set_read_timeout(Some(FIXTURE_TIMEOUT)).unwrap();
@@ -290,7 +290,7 @@ fn new_helper_rejects_legacy_mutation_without_protocol_version() {
         reply.error
     );
 
-    let status: upd::summary::OpStatus = helper::call_as(&Request::Status).unwrap();
+    let status: cm::summary::OpStatus = helper::call_as(&Request::Status).unwrap();
     assert!(status.operation_id.is_none());
     child.terminate().unwrap();
 }
@@ -337,10 +337,10 @@ fn proc_counts(pid: u32) -> (usize, usize) {
 #[test]
 fn audit_closed_attach_releases_helper_thread_and_fd() {
     let _isolation = fixtures::isolation_lock();
-    let dir = TempDirGuard::new("upd-audit-attach").unwrap();
+    let dir = TempDirGuard::new("cm-audit-attach").unwrap();
     let socket = dir.path().join("helper.sock");
     let mut env = EnvGuard::new();
-    env.set("UPD_HELPER_SOCK", &socket);
+    env.set("CM_HELPER_SOCK", &socket);
     let mut child = spawn_helper(&dir, &socket, None);
     // Socket creation precedes backend detection, which briefly opens os-release.
     // This fixture owns only stdin/stdout/stderr and the listener when idle.
@@ -388,22 +388,22 @@ fn audit_closed_attach_releases_helper_thread_and_fd() {
 #[test]
 fn helper_fixture_runs_fake_child_and_reaps_helper() {
     let _isolation = fixtures::isolation_lock();
-    let dir = TempDirGuard::new("upd-audit-e2e").unwrap();
-    let fake_upd = dir.path().join("fake-upd");
+    let dir = TempDirGuard::new("cm-audit-e2e").unwrap();
+    let fake_cm = dir.path().join("fake-cm");
     std::fs::write(
-        &fake_upd,
+        &fake_cm,
         "#!/bin/sh\necho \"[1/2] Start $*\"\nprintf 'Go on? [Y/n] '\nread answer\necho \"answer=$answer\"\necho '[2/2] Done'\nexit 3\n",
     )
     .unwrap();
-    std::fs::set_permissions(&fake_upd, std::fs::Permissions::from_mode(0o755)).unwrap();
+    std::fs::set_permissions(&fake_cm, std::fs::Permissions::from_mode(0o755)).unwrap();
     let socket = dir.path().join("helper.sock");
     let mut env = EnvGuard::new();
-    env.set("UPD_HELPER_SOCK", &socket);
-    let mut child = spawn_helper(&dir, &socket, Some(&fake_upd));
+    env.set("CM_HELPER_SOCK", &socket);
+    let mut child = spawn_helper(&dir, &socket, Some(&fake_cm));
 
     let (tx, rx) = mpsc::sync_channel(1);
     let worker = thread::spawn(move || {
-        let result = (|| -> Result<(i32, Vec<Event>, helper::StartReply, upd::summary::OpStatus), String> {
+        let result = (|| -> Result<(i32, Vec<Event>, helper::StartReply, cm::summary::OpStatus), String> {
             // Subscribe before starting so this contract fixture does not depend on packet coalescing.
             let events = helper::attach_events()?;
             if helper::call(&Request::Start {
@@ -438,7 +438,7 @@ fn helper_fixture_runs_fake_child_and_reaps_helper() {
                 seen.push(event);
             }
             let code = code.ok_or_else(|| "fake operation ended without Exit".to_string())?;
-            let status: upd::summary::OpStatus = helper::call_as(&Request::Status)?;
+            let status: cm::summary::OpStatus = helper::call_as(&Request::Status)?;
             Ok((code, seen, started, status))
         })();
         let _ = tx.send(result);
@@ -489,32 +489,32 @@ fn helper_fixture_runs_fake_child_and_reaps_helper() {
 fn helper_runner_launch_failures_finish_and_clean_up() {
     let _isolation = fixtures::isolation_lock();
     for (case, injection) in [
-        ("child", "UPD_HELPER_FAIL_CHILD"),
-        ("clone", "UPD_HELPER_FAIL_CLONE"),
-        ("reader", "UPD_HELPER_FAIL_WORKER"),
-        ("runner", "UPD_HELPER_FAIL_WORKER"),
-        ("inline", "UPD_HELPER_FAIL_WORKER"),
+        ("child", "CM_HELPER_FAIL_CHILD"),
+        ("clone", "CM_HELPER_FAIL_CLONE"),
+        ("reader", "CM_HELPER_FAIL_WORKER"),
+        ("runner", "CM_HELPER_FAIL_WORKER"),
+        ("inline", "CM_HELPER_FAIL_WORKER"),
     ] {
-        let dir = TempDirGuard::new(&format!("upd-audit-launch-{case}")).unwrap();
-        let fake_upd = dir.path().join("fake-upd");
+        let dir = TempDirGuard::new(&format!("cm-audit-launch-{case}")).unwrap();
+        let fake_cm = dir.path().join("fake-cm");
         std::fs::write(
-            &fake_upd,
+            &fake_cm,
             "#!/bin/sh\nbase=${0%/*}\n( sleep 0.25; : > \"$base/late-marker\" ) &\nwait\n",
         )
         .unwrap();
-        std::fs::set_permissions(&fake_upd, std::fs::Permissions::from_mode(0o755)).unwrap();
+        std::fs::set_permissions(&fake_cm, std::fs::Permissions::from_mode(0o755)).unwrap();
         let socket = dir.path().join("helper.sock");
         let mut env = EnvGuard::new();
-        env.remove("UPD_HELPER_FAIL_CHILD");
-        env.remove("UPD_HELPER_FAIL_CLONE");
-        env.remove("UPD_HELPER_FAIL_WORKER");
+        env.remove("CM_HELPER_FAIL_CHILD");
+        env.remove("CM_HELPER_FAIL_CLONE");
+        env.remove("CM_HELPER_FAIL_WORKER");
         match injection {
-            "UPD_HELPER_FAIL_CHILD" => env.set(injection, "1"),
-            "UPD_HELPER_FAIL_CLONE" => env.set(injection, "1"),
+            "CM_HELPER_FAIL_CHILD" => env.set(injection, "1"),
+            "CM_HELPER_FAIL_CLONE" => env.set(injection, "1"),
             _ => env.set(injection, case),
         }
-        env.set("UPD_HELPER_SOCK", &socket);
-        let mut child = spawn_helper(&dir, &socket, Some(&fake_upd));
+        env.set("CM_HELPER_SOCK", &socket);
+        let mut child = spawn_helper(&dir, &socket, Some(&fake_cm));
 
         let start_result = if case == "inline" {
             helper::call(&Request::VpnAdd {
@@ -531,7 +531,7 @@ fn helper_runner_launch_failures_finish_and_clean_up() {
             start_result.is_err(),
             "{case} failure injection should reject the launch"
         );
-        let initial_status: upd::summary::OpStatus =
+        let initial_status: cm::summary::OpStatus =
             helper::call_as(&Request::Status).expect("status after launch failure");
         let operation_id = initial_status
             .operation_id
@@ -556,18 +556,18 @@ fn helper_runner_launch_failures_finish_and_clean_up() {
 #[test]
 fn helper_runner_drains_descendant_and_switches_without_stale_output() {
     let _isolation = fixtures::isolation_lock();
-    let dir = TempDirGuard::new("upd-audit-runner-descendant").unwrap();
-    let fake_upd = dir.path().join("fake-upd");
+    let dir = TempDirGuard::new("cm-audit-runner-descendant").unwrap();
+    let fake_cm = dir.path().join("fake-cm");
     std::fs::write(
-        &fake_upd,
+        &fake_cm,
         "#!/bin/sh\nbase=${0%/*}\nif [ ! -e \"$base/started\" ]; then\n  : > \"$base/started\"\n  setsid sh -c 'echo $$ > \"$1/descendant.pid\"; while :; do printf \"OLD\\n\"; done' sh \"$base\" &\n  while [ ! -s \"$base/descendant.pid\" ]; do sleep 0.01; done\n  exit 0\nfi\nprintf 'NEW\\n'\nexit 0\n",
     )
     .unwrap();
-    std::fs::set_permissions(&fake_upd, std::fs::Permissions::from_mode(0o755)).unwrap();
+    std::fs::set_permissions(&fake_cm, std::fs::Permissions::from_mode(0o755)).unwrap();
     let socket = dir.path().join("helper.sock");
     let mut env = EnvGuard::new();
-    env.set("UPD_HELPER_SOCK", &socket);
-    let mut child = spawn_helper(&dir, &socket, Some(&fake_upd));
+    env.set("CM_HELPER_SOCK", &socket);
+    let mut child = spawn_helper(&dir, &socket, Some(&fake_cm));
 
     let first = helper::call_as::<helper::StartReply>(&Request::Start {
         args: vec!["check".into()],
@@ -642,18 +642,18 @@ fn helper_runner_drains_descendant_and_switches_without_stale_output() {
 #[test]
 fn helper_runner_cancel_stops_continuous_output() {
     let _isolation = fixtures::isolation_lock();
-    let dir = TempDirGuard::new("upd-audit-runner-cancel").unwrap();
-    let fake_upd = dir.path().join("fake-upd");
+    let dir = TempDirGuard::new("cm-audit-runner-cancel").unwrap();
+    let fake_cm = dir.path().join("fake-cm");
     std::fs::write(
-        &fake_upd,
+        &fake_cm,
         "#!/bin/sh\ntrap '' INT TERM\nwhile :; do printf 'OLD\\n'; done\n",
     )
     .unwrap();
-    std::fs::set_permissions(&fake_upd, std::fs::Permissions::from_mode(0o755)).unwrap();
+    std::fs::set_permissions(&fake_cm, std::fs::Permissions::from_mode(0o755)).unwrap();
     let socket = dir.path().join("helper.sock");
     let mut env = EnvGuard::new();
-    env.set("UPD_HELPER_SOCK", &socket);
-    let mut child = spawn_helper(&dir, &socket, Some(&fake_upd));
+    env.set("CM_HELPER_SOCK", &socket);
+    let mut child = spawn_helper(&dir, &socket, Some(&fake_cm));
 
     let started = helper::call_as::<helper::StartReply>(&Request::Start {
         args: vec!["check".into()],
@@ -662,7 +662,7 @@ fn helper_runner_cancel_stops_continuous_output() {
     let _cancel_on_drop = OperationCancelGuard(started.operation_id.clone());
     drop(helper::attach_events().unwrap());
     thread::sleep(Duration::from_millis(50));
-    let still_running: upd::summary::OpStatus = helper::call_as(&Request::Status).unwrap();
+    let still_running: cm::summary::OpStatus = helper::call_as(&Request::Status).unwrap();
     assert!(
         still_running.running,
         "closing the event stream must not cancel the operation"
@@ -685,11 +685,11 @@ fn helper_runner_cancel_stops_continuous_output() {
 #[test]
 fn helper_idle_exit_after_last_subscription() {
     let _isolation = fixtures::isolation_lock();
-    let dir = TempDirGuard::new("upd-audit-idle").unwrap();
+    let dir = TempDirGuard::new("cm-audit-idle").unwrap();
     let socket = dir.path().join("helper.sock");
     let mut env = EnvGuard::new();
-    env.set("UPD_HELPER_SOCK", &socket);
-    env.set("UPD_HELPER_IDLE_MS", "100");
+    env.set("CM_HELPER_SOCK", &socket);
+    env.set("CM_HELPER_IDLE_MS", "100");
     let mut child = spawn_helper(&dir, &socket, None);
     let events = helper::attach_events().unwrap();
     thread::sleep(Duration::from_millis(1200));
@@ -712,13 +712,13 @@ fn helper_idle_exit_after_last_subscription() {
 #[test]
 fn helper_secret_answer_is_not_echoed_or_replayed() {
     let _isolation = fixtures::isolation_lock();
-    let dir = TempDirGuard::new("upd-audit-secret").unwrap();
-    let fake = dir.path().join("fake-upd");
+    let dir = TempDirGuard::new("cm-audit-secret").unwrap();
+    let fake = dir.path().join("fake-cm");
     std::fs::write(&fake, "#!/bin/sh\nprintf '[sudo] password for fixture: '\nread answer\nprintf '\\naccepted\\n'\nexit 0\n").unwrap();
     std::fs::set_permissions(&fake, std::fs::Permissions::from_mode(0o755)).unwrap();
     let socket = dir.path().join("helper.sock");
     let mut env = EnvGuard::new();
-    env.set("UPD_HELPER_SOCK", &socket);
+    env.set("CM_HELPER_SOCK", &socket);
     let mut child = spawn_helper(&dir, &socket, Some(&fake));
     let events = helper::attach_events().unwrap();
     let started: helper::StartReply = helper::call_as(&Request::Start {
@@ -804,29 +804,29 @@ fn raw_helper_call(socket: &Path, req: Request) -> helper::Reply {
 }
 
 fn config_fixture_env(dir: &TempDirGuard, env: &mut EnvGuard) {
-    env.set("UPD_STATE_DIR", dir.path());
-    env.set("UPD_CONF", dir.path().join("upd.conf"));
-    env.set("UPD_VPN_ETC", dir.path().join("vpn-etc"));
-    env.set("UPD_VPN_HOME", dir.path().join("vpn-home"));
+    env.set("CM_STATE_DIR", dir.path());
+    env.set("CM_CONF", dir.path().join("cm.conf"));
+    env.set("CM_VPN_ETC", dir.path().join("vpn-etc"));
+    env.set("CM_VPN_HOME", dir.path().join("vpn-home"));
 }
 
 #[test]
 fn config_save_merges_stale_fields_and_mirror_changes() {
     let _isolation = fixtures::isolation_lock();
-    let dir = TempDirGuard::new("upd-audit-config-merge").unwrap();
+    let dir = TempDirGuard::new("cm-audit-config-merge").unwrap();
     let mut env = EnvGuard::new();
     config_fixture_env(&dir, &mut env);
-    let mut initial = upd::common::Config::defaults(vec![]);
+    let mut initial = cm::common::Config::defaults(vec![]);
     initial.save().unwrap();
-    let mut first = upd::common::Config::load(vec![]).unwrap();
-    let mut second = upd::common::Config::load(vec![]).unwrap();
+    let mut first = cm::common::Config::load(vec![]).unwrap();
+    let mut second = cm::common::Config::load(vec![]).unwrap();
     first.timeout = 30;
     first.mirrors.push("https://a.example/".into());
     first.save().unwrap();
     second.keep = 7;
     second.mirrors.push("https://b.example/".into());
     second.save().unwrap();
-    let saved = upd::common::Config::load(vec![]).unwrap();
+    let saved = cm::common::Config::load(vec![]).unwrap();
     assert_eq!((saved.timeout, saved.keep), (30, 7));
     assert_eq!(saved.mirrors, ["https://a.example/", "https://b.example/"]);
     assert_eq!(second.revision(), saved.revision());
@@ -835,7 +835,7 @@ fn config_save_merges_stale_fields_and_mirror_changes() {
 #[test]
 fn two_helper_processes_preserve_distinct_config_fields() {
     let _isolation = fixtures::isolation_lock();
-    let dir = TempDirGuard::new("upd-audit-config-processes").unwrap();
+    let dir = TempDirGuard::new("cm-audit-config-processes").unwrap();
     let mut env = EnvGuard::new();
     config_fixture_env(&dir, &mut env);
     let socket_one = dir.path().join("one.sock");
@@ -866,7 +866,7 @@ fn two_helper_processes_preserve_distinct_config_fields() {
     });
     assert!(first.join().unwrap().ok);
     assert!(second.join().unwrap().ok);
-    let saved = upd::common::Config::load(vec![]).unwrap();
+    let saved = cm::common::Config::load(vec![]).unwrap();
     assert_eq!((saved.keep, saved.timeout), (7, 30));
     one.terminate().unwrap();
     two.terminate().unwrap();
@@ -875,7 +875,7 @@ fn two_helper_processes_preserve_distinct_config_fields() {
 #[test]
 fn config_rejects_dns_collision_and_reports_pending_then_apply_failure() {
     let _isolation = fixtures::isolation_lock();
-    let dir = TempDirGuard::new("upd-audit-config-status").unwrap();
+    let dir = TempDirGuard::new("cm-audit-config-status").unwrap();
     let mut env = EnvGuard::new();
     config_fixture_env(&dir, &mut env);
     let socket = dir.path().join("helper.sock");
@@ -894,7 +894,7 @@ fn config_rejects_dns_collision_and_reports_pending_then_apply_failure() {
         helper::SettingsRuntime::Pending { .. }
     ));
     assert_eq!(pending.config.vpn_port, 7899);
-    let before = std::fs::read(dir.path().join("upd.conf")).unwrap();
+    let before = std::fs::read(dir.path().join("cm.conf")).unwrap();
     let invalid = raw_helper_call(
         &socket,
         Request::ConfigSet {
@@ -903,7 +903,7 @@ fn config_rejects_dns_collision_and_reports_pending_then_apply_failure() {
         },
     );
     assert!(!invalid.ok);
-    assert_eq!(std::fs::read(dir.path().join("upd.conf")).unwrap(), before);
+    assert_eq!(std::fs::read(dir.path().join("cm.conf")).unwrap(), before);
     let etc = dir.path().join("vpn-etc");
     let home = dir.path().join("vpn-home");
     std::fs::create_dir_all(&etc).unwrap();
@@ -925,7 +925,7 @@ fn config_rejects_dns_collision_and_reports_pending_then_apply_failure() {
         helper::SettingsRuntime::SavedButNotApplied { .. }
     ));
     assert!(result.runtime_error().unwrap().contains("saved"));
-    let disk = upd::common::Config::load(vec![]).unwrap();
+    let disk = cm::common::Config::load(vec![]).unwrap();
     assert_eq!(disk.vpn_port, 7900);
     assert_eq!(disk.revision(), result.revision);
     child.terminate().unwrap();
@@ -934,13 +934,13 @@ fn config_rejects_dns_collision_and_reports_pending_then_apply_failure() {
 #[test]
 fn waiting_config_file_lock_does_not_block_status_or_cancel() {
     let _isolation = fixtures::isolation_lock();
-    let dir = TempDirGuard::new("upd-audit-config-lock").unwrap();
+    let dir = TempDirGuard::new("cm-audit-config-lock").unwrap();
     let mut env = EnvGuard::new();
     config_fixture_env(&dir, &mut env);
     let socket = dir.path().join("helper.sock");
-    env.set("UPD_HELPER_SOCK", &socket);
+    env.set("CM_HELPER_SOCK", &socket);
     let mut child = spawn_helper(&dir, &socket, None);
-    let file_lock = upd::common::vpn_config_lock(true).unwrap();
+    let file_lock = cm::common::vpn_config_lock(true).unwrap();
     let worker_socket = socket.clone();
     let worker = thread::spawn(move || {
         raw_helper_call(
@@ -953,7 +953,7 @@ fn waiting_config_file_lock_does_not_block_status_or_cancel() {
     });
     let deadline = Instant::now() + Duration::from_secs(2);
     let status = loop {
-        let status: upd::summary::OpStatus = helper::call_as(&Request::Status).unwrap();
+        let status: cm::summary::OpStatus = helper::call_as(&Request::Status).unwrap();
         if status.running {
             break status;
         }
@@ -980,7 +980,7 @@ fn waiting_config_file_lock_does_not_block_status_or_cancel() {
 #[test]
 fn concurrent_cli_and_helper_write_complete_latest_vpn_yaml() {
     let _isolation = fixtures::isolation_lock();
-    let dir = TempDirGuard::new("upd-audit-cli-helper-yaml").unwrap();
+    let dir = TempDirGuard::new("cm-audit-cli-helper-yaml").unwrap();
     let mut env = EnvGuard::new();
     config_fixture_env(&dir, &mut env);
     let etc = dir.path().join("vpn-etc");
@@ -1026,7 +1026,7 @@ fn concurrent_cli_and_helper_write_complete_latest_vpn_yaml() {
         )
     });
     other_barrier.wait();
-    let mut cli = Command::new(env!("CARGO_BIN_EXE_upd"));
+    let mut cli = Command::new(env!("CARGO_BIN_EXE_cm"));
     cli.args(["vpn", "proxy"])
         .stdout(Stdio::null())
         .stderr(Stdio::null());
@@ -1041,7 +1041,7 @@ fn concurrent_cli_and_helper_write_complete_latest_vpn_yaml() {
         thread::sleep(Duration::from_millis(10));
     }
     assert!(writer.join().unwrap().ok);
-    let disk = upd::common::Config::load(vec![]).unwrap();
+    let disk = cm::common::Config::load(vec![]).unwrap();
     assert_eq!(disk.vpn_port, 7901);
     assert!(!disk.vpn_tun);
     let yaml: serde_yaml::Value =
@@ -1054,16 +1054,16 @@ fn concurrent_cli_and_helper_write_complete_latest_vpn_yaml() {
 #[test]
 fn explicit_user_context_keeps_proxy_uids_and_environment_separate() {
     let _isolation = fixtures::isolation_lock();
-    let dir = TempDirGuard::new("upd-audit-user-context").unwrap();
+    let dir = TempDirGuard::new("cm-audit-user-context").unwrap();
     let bin = dir.path().join("bin");
     std::fs::create_dir(&bin).unwrap();
     let log = dir.path().join("users.log");
     std::fs::write(
         bin.join("runuser"),
-        "#!/bin/sh\nprintf '%s\\n' \"$*\" >> \"$UPD_PROXY_TEST_LOG\"\nexit 0\n",
+        "#!/bin/sh\nprintf '%s\\n' \"$*\" >> \"$CM_PROXY_TEST_LOG\"\nexit 0\n",
     )
     .unwrap();
-    std::fs::write(bin.join("gsettings"), "#!/bin/sh\nprintf '%s|%s|%s\\n' \"$XDG_RUNTIME_DIR\" \"$DBUS_SESSION_BUS_ADDRESS\" \"$*\" >> \"$UPD_PROXY_TEST_LOG\"\nexit 0\n").unwrap();
+    std::fs::write(bin.join("gsettings"), "#!/bin/sh\nprintf '%s|%s|%s\\n' \"$XDG_RUNTIME_DIR\" \"$DBUS_SESSION_BUS_ADDRESS\" \"$*\" >> \"$CM_PROXY_TEST_LOG\"\nexit 0\n").unwrap();
     std::fs::write(
         bin.join("systemctl"),
         "#!/bin/sh\nprintf 'inactive\\n'\nexit 0\n",
@@ -1073,7 +1073,7 @@ fn explicit_user_context_keeps_proxy_uids_and_environment_separate() {
         std::fs::set_permissions(bin.join(name), std::fs::Permissions::from_mode(0o755)).unwrap();
     }
     let mut env = EnvGuard::new();
-    env.set("UPD_PROXY_TEST_LOG", &log);
+    env.set("CM_PROXY_TEST_LOG", &log);
     env.set(
         "PATH",
         format!("{}:{}", bin.display(), std::env::var("PATH").unwrap()),
@@ -1088,12 +1088,12 @@ fn explicit_user_context_keeps_proxy_uids_and_environment_separate() {
     ]
     .map(|key| (key, std::env::var_os(key)))
     .into();
-    let first = upd::common::UserContext::from_uid(unsafe { libc::geteuid() }).unwrap();
-    let second = upd::common::UserContext::from_uid(65534).unwrap();
-    let config = upd::common::Config::defaults(vec![]);
+    let first = cm::common::UserContext::from_uid(unsafe { libc::geteuid() }).unwrap();
+    let second = cm::common::UserContext::from_uid(65534).unwrap();
+    let config = cm::common::Config::defaults(vec![]);
     for user in [&first, &second] {
         assert!(
-            matches!(upd::vpn::sysproxy(&config, Some(user)).unwrap(), upd::vpn::SysproxyStatus::Applied { uid, .. } if uid == user.uid)
+            matches!(cm::vpn::sysproxy(&config, Some(user)).unwrap(), cm::vpn::SysproxyStatus::Applied { uid, .. } if uid == user.uid)
         );
     }
     let recorded = std::fs::read_to_string(&log).unwrap();
@@ -1106,8 +1106,8 @@ fn explicit_user_context_keeps_proxy_uids_and_environment_separate() {
     }
     let before_log = std::fs::read(&log).unwrap();
     assert_eq!(
-        upd::vpn::sysproxy(&config, None).unwrap(),
-        upd::vpn::SysproxyStatus::BackgroundSkipped
+        cm::vpn::sysproxy(&config, None).unwrap(),
+        cm::vpn::SysproxyStatus::BackgroundSkipped
     );
     assert_eq!(std::fs::read(&log).unwrap(), before_log);
 }
@@ -1115,7 +1115,7 @@ fn explicit_user_context_keeps_proxy_uids_and_environment_separate() {
 #[test]
 fn cli_and_inline_configset_use_same_peer_proxy_context_and_report_errors() {
     let _isolation = fixtures::isolation_lock();
-    let dir = TempDirGuard::new("upd-audit-peer-proxy").unwrap();
+    let dir = TempDirGuard::new("cm-audit-peer-proxy").unwrap();
     let mut env = EnvGuard::new();
     config_fixture_env(&dir, &mut env);
     let etc = dir.path().join("vpn-etc");
@@ -1127,8 +1127,8 @@ fn cli_and_inline_configset_use_same_peer_proxy_context_and_report_errors() {
     let bin = dir.path().join("bin");
     std::fs::create_dir(&bin).unwrap();
     let log = dir.path().join("proxy.log");
-    env.set("UPD_PROXY_TEST_LOG", &log);
-    std::fs::write(bin.join("gsettings"), "#!/bin/sh\nprintf '%s|%s|%s\\n' \"$XDG_RUNTIME_DIR\" \"$DBUS_SESSION_BUS_ADDRESS\" \"$*\" >> \"$UPD_PROXY_TEST_LOG\"\nif [ -f \"$UPD_PROXY_TEST_LOG.fail\" ]; then echo fixture-dconf-failure >&2; exit 1; fi\nexit 0\n").unwrap();
+    env.set("CM_PROXY_TEST_LOG", &log);
+    std::fs::write(bin.join("gsettings"), "#!/bin/sh\nprintf '%s|%s|%s\\n' \"$XDG_RUNTIME_DIR\" \"$DBUS_SESSION_BUS_ADDRESS\" \"$*\" >> \"$CM_PROXY_TEST_LOG\"\nif [ -f \"$CM_PROXY_TEST_LOG.fail\" ]; then echo fixture-dconf-failure >&2; exit 1; fi\nexit 0\n").unwrap();
     std::fs::write(
         bin.join("systemctl"),
         "#!/bin/sh\nprintf 'inactive\\n'\nexit 0\n",
@@ -1155,7 +1155,7 @@ fn cli_and_inline_configset_use_same_peer_proxy_context_and_report_errors() {
     assert!(result.ok);
     let inline = std::fs::read_to_string(&log).unwrap();
     std::fs::write(&log, "").unwrap();
-    let mut cli = Command::new(env!("CARGO_BIN_EXE_upd"));
+    let mut cli = Command::new(env!("CARGO_BIN_EXE_cm"));
     cli.args(["vpn", "proxy"])
         .stdout(Stdio::null())
         .stderr(Stdio::null());
@@ -1198,8 +1198,8 @@ fn cli_and_inline_configset_use_same_peer_proxy_context_and_report_errors() {
 #[test]
 fn helper_subprocess_receives_peer_identity_without_ambient_daemon_user() {
     let _isolation = fixtures::isolation_lock();
-    let dir = TempDirGuard::new("upd-audit-subprocess-context").unwrap();
-    let fake = dir.path().join("fake-upd");
+    let dir = TempDirGuard::new("cm-audit-subprocess-context").unwrap();
+    let fake = dir.path().join("fake-cm");
     std::fs::write(&fake, "#!/bin/sh\nprintf '%s|%s|%s|%s\\n' \"$SUDO_UID\" \"$SUDO_USER\" \"$XDG_RUNTIME_DIR\" \"$DBUS_SESSION_BUS_ADDRESS\"\nexit 0\n").unwrap();
     std::fs::set_permissions(&fake, std::fs::Permissions::from_mode(0o755)).unwrap();
     let mut env = EnvGuard::new();
@@ -1208,7 +1208,7 @@ fn helper_subprocess_receives_peer_identity_without_ambient_daemon_user() {
     env.set("XDG_RUNTIME_DIR", "/fixture/ambient");
     env.set("DBUS_SESSION_BUS_ADDRESS", "fixture:ambient");
     let socket = dir.path().join("helper.sock");
-    env.set("UPD_HELPER_SOCK", &socket);
+    env.set("CM_HELPER_SOCK", &socket);
     let mut child = spawn_helper(&dir, &socket, Some(&fake));
     let started: helper::StartReply = helper::call_as(&Request::Start {
         args: vec!["check".into()],
@@ -1223,7 +1223,7 @@ fn helper_subprocess_receives_peer_identity_without_ambient_daemon_user() {
         .map(|frame| frame.unwrap())
         .take_while(|frame| !matches!(frame.event, Event::ReplayComplete))
         .collect();
-    let user = upd::common::UserContext::from_uid(unsafe { libc::geteuid() }).unwrap();
+    let user = cm::common::UserContext::from_uid(unsafe { libc::geteuid() }).unwrap();
     let expected = format!(
         "{}|{}|/run/user/{}|unix:path=/run/user/{}/bus",
         user.uid, user.name, user.uid, user.uid
@@ -1301,14 +1301,14 @@ fn helper_overload_has_resource_plateau_and_returns_fds_threads_children() {
     use std::io::Read;
     use std::os::fd::AsRawFd;
     let _isolation = fixtures::isolation_lock();
-    let dir = TempDirGuard::new("upd-audit-resource-gate").unwrap();
+    let dir = TempDirGuard::new("cm-audit-resource-gate").unwrap();
     let socket = dir.path().join("helper.sock");
-    let fake = dir.path().join("fake-upd");
+    let fake = dir.path().join("fake-cm");
     let line = "x".repeat(1024);
     std::fs::write(&fake, format!("#!/bin/sh\ntrap '' INT TERM\nwhile [ ! -e \"${{0%/*}}/go\" ]; do sleep 0.01; done\ni=0\nwhile [ $i -lt 8000 ]; do printf '%s\\n' '{line}'; i=$((i+1)); done\n: > \"${{0%/*}}/ready\"\nwhile :; do sleep 0.01; done\n")).unwrap();
     std::fs::set_permissions(&fake, std::fs::Permissions::from_mode(0o755)).unwrap();
     let mut env = EnvGuard::new();
-    env.set("UPD_HELPER_SOCK", &socket);
+    env.set("CM_HELPER_SOCK", &socket);
     let mut child = spawn_helper(&dir, &socket, Some(&fake));
     drop(helper::attach_events().unwrap());
     let initial = proc_counts(child.id());
@@ -1457,7 +1457,7 @@ fn helper_overload_has_resource_plateau_and_returns_fds_threads_children() {
 #[test]
 fn concurrent_cli_language_and_helper_field_preserve_separate_state_files() {
     let _isolation = fixtures::isolation_lock();
-    let dir = TempDirGuard::new("upd-audit-cli-helper-fields").unwrap();
+    let dir = TempDirGuard::new("cm-audit-cli-helper-fields").unwrap();
     let mut env = EnvGuard::new();
     config_fixture_env(&dir, &mut env);
     let untouched = dir.path().join("unrelated-state.json");
@@ -1479,7 +1479,7 @@ fn concurrent_cli_language_and_helper_field_preserve_separate_state_files() {
             )
         });
         let code = if round % 2 == 0 { "ar" } else { "en" };
-        let mut cli = Command::new(env!("CARGO_BIN_EXE_upd"));
+        let mut cli = Command::new(env!("CARGO_BIN_EXE_cm"));
         cli.args(["lang", code])
             .stdout(Stdio::null())
             .stderr(Stdio::null());
@@ -1495,7 +1495,7 @@ fn concurrent_cli_language_and_helper_field_preserve_separate_state_files() {
             thread::sleep(Duration::from_millis(5));
         }
         assert!(writer.join().unwrap().ok);
-        let saved = upd::common::Config::load(vec![]).unwrap();
+        let saved = cm::common::Config::load(vec![]).unwrap();
         assert_eq!(saved.lang, code);
         assert_eq!(saved.keep, round % 10 + 1);
         assert_eq!(std::fs::read(&untouched).unwrap(), b"{\"sentinel\":17}\n");
@@ -1506,8 +1506,8 @@ fn concurrent_cli_language_and_helper_field_preserve_separate_state_files() {
 #[test]
 fn helper_restart_does_not_fabricate_success_for_untracked_operation() {
     let _isolation = fixtures::isolation_lock();
-    let dir = TempDirGuard::new("upd-audit-helper-restart").unwrap();
-    let fake = dir.path().join("fake-upd");
+    let dir = TempDirGuard::new("cm-audit-helper-restart").unwrap();
+    let fake = dir.path().join("fake-cm");
     std::fs::write(
         &fake,
         "#!/bin/sh\ntrap '' HUP\necho $$ > \"${0%/*}/operation.pid\"\nprintf 'ready\\n'\nexec /bin/sleep 60\n",
@@ -1516,7 +1516,7 @@ fn helper_restart_does_not_fabricate_success_for_untracked_operation() {
     std::fs::set_permissions(&fake, std::fs::Permissions::from_mode(0o755)).unwrap();
     let socket = dir.path().join("helper.sock");
     let mut env = EnvGuard::new();
-    env.set("UPD_HELPER_SOCK", &socket);
+    env.set("CM_HELPER_SOCK", &socket);
     let mut child = spawn_helper(&dir, &socket, Some(&fake));
     let start: helper::StartReply = helper::call_as(&Request::Start {
         args: vec!["check".into()],
@@ -1559,7 +1559,7 @@ fn helper_restart_does_not_fabricate_success_for_untracked_operation() {
     // A killed listener leaves a socket inode; existence alone is not readiness.
     std::fs::remove_file(&socket).unwrap();
     let mut restarted = spawn_helper(&dir, &socket, Some(&fake));
-    let status: upd::summary::OpStatus = helper::call_as(&Request::Status).unwrap();
+    let status: cm::summary::OpStatus = helper::call_as(&Request::Status).unwrap();
     assert!(!status.running && status.operation_id.is_none() && status.last_exit.is_none());
     let cancel = raw_helper_call(
         &socket,
