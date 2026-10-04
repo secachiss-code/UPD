@@ -1,0 +1,22 @@
+{
+  "status": "STATIC_SOURCE_REVIEW",
+  "runtime_tests": "NOT_RUN",
+  "core_version": "1.19.32",
+  "upstream_commit": "88dcbf7f1614a67c3b36b848ee3592dfa92ada36",
+  "installed_core": "NOT_VERIFIED",
+  "release_source": "https://github.com/MetaCubeX/mihomo/releases/tag/v1.19.32",
+  "primary_sources": [
+    "https://raw.githubusercontent.com/MetaCubeX/mihomo/v1.19.32/adapter/outbound/vless.go",
+    "https://raw.githubusercontent.com/MetaCubeX/mihomo/v1.19.32/adapter/outbound/vmess.go",
+    "https://raw.githubusercontent.com/MetaCubeX/mihomo/v1.19.32/adapter/outbound/trojan.go",
+    "https://raw.githubusercontent.com/MetaCubeX/mihomo/v1.19.32/adapter/outbound/shadowsocks.go",
+    "https://raw.githubusercontent.com/MetaCubeX/mihomo/v1.19.32/adapter/outbound/http.go",
+    "https://raw.githubusercontent.com/MetaCubeX/mihomo/v1.19.32/adapter/outbound/socks5.go",
+    "https://raw.githubusercontent.com/MetaCubeX/mihomo/v1.19.32/adapter/outbound/hysteria2.go",
+    "https://raw.githubusercontent.com/MetaCubeX/mihomo/v1.19.32/adapter/outbound/tuic.go",
+    "https://raw.githubusercontent.com/MetaCubeX/mihomo/v1.19.32/adapter/outbound/wireguard.go",
+    "https://raw.githubusercontent.com/MetaCubeX/mihomo/v1.19.32/adapter/outbound/base.go"
+  ],
+  "review_document": "../../I03-PINNED-SOURCE-REVIEW-2026-10-04.md",
+  "scope": "Pinned upstream fields/transports reviewed; CM import subset and host/controller ownership restrictions. No endpoint, service, core binary or runtime tests."
+}

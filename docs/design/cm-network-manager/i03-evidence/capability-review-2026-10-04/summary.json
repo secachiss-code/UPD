@@ -1,0 +1,16 @@
+{
+  "status": "COMPILE_PASS",
+  "exit_code": 0,
+  "command": "cargo check --offline --locked --tests",
+  "runtime_tests": "NOT_RUN",
+  "prepared_integration_tests": 4,
+  "stdout": "check.stdout",
+  "stderr": "check.stderr",
+  "source_sha256": {
+    "src/lib.rs": "593feb294d3471f871e67896ef9bc944e86385de8168171391e8304d9113a26b",
+    "src/sources/mod.rs": "aa6ec7bc9998f1dc09533cecbf1dd0bca4027a9cbafcb15f9211c8f626259eb9",
+    "src/sources/capabilities.rs": "011dc043fc6e1a295e1ec9ef59ef9775e848d25c29c329959840489f49a00e11",
+    "tests/audit_i03_capabilities.rs": "a5f0e1719626780b5c75226e076812aa9ec8afbc41233629126a5c12beac8a14"
+  },
+  "review": "Sol reviewed pin/protocol/transport restrictions, separate node/top-level policies, REALITY preservation and local file/inline declarations; duplicated unit suite removed. Pure capability policy, no parser/network/persistence yet."
+}

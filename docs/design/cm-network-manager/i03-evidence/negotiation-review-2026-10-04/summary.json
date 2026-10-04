@@ -1,0 +1,17 @@
+{
+  "status": "COMPILE_PASS",
+  "command": "cargo check --offline --locked --tests",
+  "exit_code": 0,
+  "runtime_tests": "NOT_RUN",
+  "prepared_integration_tests": 10,
+  "stdout": "check.stdout",
+  "stderr": "check.stderr",
+  "source_sha256": {
+    "src/lib.rs": "593feb294d3471f871e67896ef9bc944e86385de8168171391e8304d9113a26b",
+    "src/sources/mod.rs": "54d217c51f83c87cf499c75f522303f5ca6d94e35a0682a3c6a945ae4b2f4ec2",
+    "src/sources/capabilities.rs": "011dc043fc6e1a295e1ec9ef59ef9775e848d25c29c329959840489f49a00e11",
+    "src/sources/negotiation.rs": "3cdaf9d99c122180ebbeed830781eedc41fa1ebad366e948f9b698fec6aba755",
+    "tests/audit_i03_negotiation.rs": "d3162e212535fee51f64e0e8f1e7416f76648e99cd9520a9acefb1273ac34110"
+  },
+  "review": "Sol reviewed single-sample request start/deadline, per-request and total timeout rejection, monotonic clock regression, accepted timestamp through body hashing, bounded candidates and immutable cache bindings. Added future-dated cache rejection fixture. No parser/store/HTTP client execution; fetch callback must enforce timeout and bounded reads. Initial successful compile with unused_mut warning retained; final compile has no warnings. Follow-up Sol fix anchors the one Unix timestamp after clock sampling: sampling delay consumes total budget but is not added again to accepted time. Dedicated fixture prepared; final compile PASS; prior successful logs retained."
+}

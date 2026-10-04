@@ -1,5 +1,5 @@
-//! Общая логика upd: пакетные менеджеры, зеркала, VPN, состояние и помощник для графического интерфейса.
-//! Бинарник `upd` (CLI и TUI) и апплет COSMIC используют одни и те же операции и правила.
+//! Общая логика cm: пакетные менеджеры, зеркала, VPN, состояние и помощник для графического интерфейса.
+//! Бинарник `cm` (CLI и TUI) и апплет COSMIC используют одни и те же операции и правила.
 
 #[macro_use]
 pub mod i18n;
@@ -9,6 +9,9 @@ pub mod common;
 pub mod extras;
 pub mod helper;
 pub mod mirrors;
+pub mod migration;
+pub mod profiles;
+pub mod sources;
 pub mod status;
 pub mod summary;
 pub mod vpn;
