@@ -1,0 +1,11 @@
+    Checking cm v0.2.8 (/home/somovas/Проекты/upd)
+warning: unused import: `UserAgent`
+  --> src/sources/artifact.rs:12:25
+   |
+12 | use super::{Negotiated, UserAgent};
+   |                         ^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: `cm` (lib) generated 1 warning (run `cargo fix --lib -p cm` to apply 1 suggestion)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 4.94s
