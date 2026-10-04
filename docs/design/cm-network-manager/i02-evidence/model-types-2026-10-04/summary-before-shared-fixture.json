@@ -1,0 +1,19 @@
+{
+  "status": "COMPILE_PASS",
+  "command": "cargo check --offline --locked --tests",
+  "exit_code": 0,
+  "runtime_tests": "NOT_RUN",
+  "prepared_integration_tests": 10,
+  "model_review": "Sol static review; immutable Node/ID/type tombstones, source/tunnel generations, archived session pins, environment/browser snapshots, strict schema, credential metadata ownership, digest disappearance, staged removal",
+  "source_sha256": {
+    "src/lib.rs": "49832fbd9666e821f2182863e29bf906168f9ff391f13fea5f27e59e52412ae7",
+    "src/profiles/mod.rs": "8432a3c15864205474942526f9c352d1be1cdd3c2c2f7ad6fe36c9e7eb8b832c",
+    "src/profiles/model.rs": "463fa22a021a2bae1d383bcb573b8cf30fd87442c9cfc912d243bf77d560abe1",
+    "tests/audit_i02_profiles.rs": "da214e692c085b17fad8f1b45a250c14d57d9b1c8b71d51f7f52d158540ec72d"
+  },
+  "prior_attempts": [
+    "initial-check.json",
+    "attempt-2.stderr"
+  ],
+  "scope": "Types only; storage not yet implemented; no service, package build, network or application binary execution."
+}

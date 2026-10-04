@@ -1,0 +1,22 @@
+{
+  "status": "COMPILE_PASS",
+  "command": "cargo check --offline --locked --lib --test audit_i02_profiles",
+  "exit_code": 0,
+  "runtime_tests": "NOT_RUN",
+  "prepared_integration_tests": 11,
+  "model_review": "Sol static review; immutable Node/ID/type tombstones, source/tunnel generations, archived session pins, environment/browser snapshots, strict schema, credential metadata ownership, digest disappearance, staged removal",
+  "source_sha256": {
+    "src/lib.rs": "49832fbd9666e821f2182863e29bf906168f9ff391f13fea5f27e59e52412ae7",
+    "src/profiles/mod.rs": "4064c922f4532bff6d573343ae7e85b68be2a2fe096e5b2f7027c29b194c0371",
+    "src/profiles/model.rs": "1dcfa78c982583c346606d06839a8154a8ca88141a2dd3750a1f731981d5dd03",
+    "tests/audit_i02_profiles.rs": "86d0596d9f5b21739700b5c6b45adf5081e031affad416ffdb21665d173ed664",
+    "tests/support/profiles.rs": "f78f3c13ebb3245be75d128b16935cf63da28506670458f4f96a5abf44c2f948"
+  },
+  "prior_attempts": [
+    "initial-check.json",
+    "attempt-2.stderr"
+  ],
+  "scope": "Model final: shared credentials retained after origin removal and deleted by last user plan; pending refs barred; storage implementation follows. No runtime tests/app binaries/services/package builds/network operations.",
+  "stdout": "model-final.stdout",
+  "stderr": "model-final.stderr"
+}

@@ -1,0 +1,30 @@
+{
+  "status": "COMPILE_PASS",
+  "command": "cargo check --offline --locked --tests",
+  "exit_code": 0,
+  "runtime_tests": "NOT_RUN",
+  "prepared_tests": {
+    "tests/audit_i02_profiles.rs": 12,
+    "tests/audit_i02_store.rs": 12,
+    "src/profiles/store/fault_tests.rs": 6
+  },
+  "source_sha256": {
+    "src/lib.rs": "49832fbd9666e821f2182863e29bf906168f9ff391f13fea5f27e59e52412ae7",
+    "src/profiles/mod.rs": "f6abbf9d719a8cfb24a45c8c04651310d9f5d745a88c09f048f856338d412f2f",
+    "src/profiles/model.rs": "3baf40e16e9703619f51aec4d0375839a496ee06a53a68387b359dac92355a4a",
+    "src/profiles/store.rs": "de3b6cbfbea0e8e0b6e7b898480818172c649e0b462a7b95e7a7dd220d7496ce",
+    "src/profiles/store/fault_tests.rs": "53348a09e976b0c29ca0d43747c60db85aa34301c43c5084973c07120ca68d68",
+    "tests/audit_i02_profiles.rs": "07ec86f032ef42f696aeff206f21b991e77b4fa81c334cafb1a581947798a752",
+    "tests/audit_i02_store.rs": "d4ac61823f24ed547b35b64c3a36af3c3e1d5d85200c9117ff5dbf80bd6b1579",
+    "tests/support/profiles.rs": "f78f3c13ebb3245be75d128b16935cf63da28506670458f4f96a5abf44c2f948"
+  },
+  "stdout": "check.stdout",
+  "stderr": "check.stderr",
+  "review": "Sol review and six private cfg(test) fault regressions; Luna storage implementation and twelve integration regressions. Atomic state/CAS, immutable blobs, archived pins, staged removal, advisory locking and safe errors.",
+  "limitations": [
+    "Runtime only at installation; no tests executed here",
+    "Advisory flock serializes cooperating clients; same-UID out-of-protocol mutations are not atomically preventable",
+    "Initial create failure can retain private incomplete root; explicit manual inspection required",
+    "Local Linux filesystem fsync/rename semantics; actual filesystem unverified"
+  ]
+}

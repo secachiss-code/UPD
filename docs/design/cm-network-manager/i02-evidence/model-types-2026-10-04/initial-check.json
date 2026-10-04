@@ -1,0 +1,11 @@
+{
+  "command": "cargo check --offline --locked --tests",
+  "exit_code": 101,
+  "status": "COMPILE_FAIL",
+  "observed_errors": [
+    "E0106 graph-bound reference lifetime",
+    "E0308 add_records macro missing map borrow"
+  ],
+  "diagnostics": "Tool output recorded in session, truncated at 3000 tokens; not a complete raw log. Corrected before next compile.",
+  "runtime_tests": "NOT_RUN"
+}
