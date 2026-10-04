@@ -1,0 +1,69 @@
+{
+  "status": "BUILD_PASS",
+  "argv": [
+    "cargo",
+    "build",
+    "--offline",
+    "--locked",
+    "--bin",
+    "cm"
+  ],
+  "exit_code": 0,
+  "started_utc": "2026-10-04T17:03:02.579378+00:00",
+  "finished_utc": "2026-10-04T17:03:10.420316+00:00",
+  "binary": "target/x86_64-unknown-linux-musl/debug/cm",
+  "binary_sha256": "9d80a30f4eb7762255b9b45534ff49dca67c58a63f201d64f6fa01394103ade5",
+  "previous_binary_sha256": "b46c5d9381ddadc93b8a1f2b428ca71f9772ceef814795df2c44e4d179498b3b",
+  "previous_binary_archive": ".audit/build-snapshots/cm-b46c5d9381ddadc93b8a1f2b428ca71f9772ceef814795df2c44e4d179498b3b",
+  "runtime_tests": "NOT_RUN",
+  "installation_services_live_network": "NOT_RUN",
+  "source_sha256": {
+    "Cargo.toml": "7b9ff33750000605ec1099a10df2e4ba1c3f4479a1c64643e549c15b51681cd0",
+    "Cargo.lock": "9ca6db8efe7bd3acfc350dd1364d6a3219b444210c3393690c51da255851c335",
+    ".cargo/config.toml": "5a1e502ba024e987ff58e5f2a9d767848640fac7ea53513d22144456eca9bd92",
+    "src/backend.rs": "fefd4947ad05d0cce2ec85135cbe883ee8416819b8e0a71a319ff9be44f92266",
+    "src/common/probe.rs": "f4ca59c7b6496d8fb203dc444e79e82e001f8faebe12e06e2aac0a0e8b3f0aee",
+    "src/common.rs": "26d69f2cb46741102fa5e6e80c94a0d6b0689b881c19e3e0c6a63a05a3c7d420",
+    "src/extras.rs": "e5b4d4dd54fd741e0e7b2c616ae82151274d7051a0c921687da194f4ff74c9f5",
+    "src/helper.rs": "f1a4a3988f46541089c718733dbaf3dc01b094a109761e1b88ec766ab561d511",
+    "src/i18n.rs": "521a474064cd2c697248e83b36b3728e50ebb3076670d20c6c8787c3db2def99",
+    "src/i18n_table.rs": "3112ff5139b5d4b2eda3bb300810b34fbbaf6714b20e53f63aaa082ead5563ec",
+    "src/lib.rs": "a8f5f61ca35f024146cdc1d4ae476c9e52002bc353b6684b5f0cce5cc3ceaa12",
+    "src/main.rs": "9a63c421e4963d1bfe0940eda76bf743bdc2e07db0fdb6fb64ad81c7ae9f5183",
+    "src/migration/legacy_v027.rs": "3f05a0f85d7d4cd52a511f8c65e24e1945f79e09a31407929292b6709cb358a4",
+    "src/migration/manual.rs": "7c695583e8f535be209ed21c51569ab4329000c8975a09b69889de98891cc0a6",
+    "src/migration/transaction.rs": "ae4a94bfb28b858f82499618b9d6b1322b2a867652c652a2b50894843e0570f7",
+    "src/migration.rs": "c055f68d54ce98d5f98072cf8424aedd3e0eb7e78c772d53a15eab043e165faa",
+    "src/mirrors.rs": "dcd8b59cf64cbba81011f002dc52064ea7b36a84281e5305a2a2b8a6044eaa20",
+    "src/status.rs": "c50b2b5e9d929dc312a0d6bf5b06b7e92e4d4529ba37bc1e91a0dfb3ccb8def5",
+    "src/summary.rs": "6bb8398cc40f8895d3389efa485adf89c40d63d9d769128aac3f647a4dc56960",
+    "src/tui/host.rs": "c1f66217525115c5e79a2f6df9c7bc78e016403729e7b6d7a257e53b0e7c4890",
+    "src/tui/process.rs": "d38bc897851693645868787bcadefc47c9caa29dfd72ee033251122aa2ddd5fa",
+    "src/tui/progress.rs": "f34c89845f4b2042012afb9c7bebc7b3da2b4f3e8f42764f1d3c17245dd2fa4b",
+    "src/tui.rs": "e2a89f523fea71dea0d7c60faafab294970291336225f711e649109a1ab78577",
+    "src/vpn.rs": "089b3bec27f9094cfbd0d8f4f3bee1954c725e4e2c608786f3547b7b7e592d28"
+  },
+  "cosmic_compile_check": {
+    "argv": [
+      "cargo",
+      "check",
+      "--offline",
+      "--locked",
+      "--target",
+      "x86_64-unknown-linux-gnu",
+      "--tests"
+    ],
+    "exit_code": 0,
+    "status": "COMPILE_PASS",
+    "stdout": "cosmic-check.stdout",
+    "stderr": "cosmic-check.stderr"
+  },
+  "syntax_checks": {
+    "shell": "PASS",
+    "python_ast": [
+      "tests/test_tui_launcher.py",
+      "tests/test_i01_help.py",
+      "tests/check_i01_regressions.py"
+    ]
+  }
+}
