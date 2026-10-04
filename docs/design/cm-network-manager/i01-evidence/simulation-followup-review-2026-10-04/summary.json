@@ -1,0 +1,26 @@
+{
+  "started_utc": "2026-10-04T16:54:02.049057+00:00",
+  "completed_utc": "2026-10-04T16:54:03.616776+00:00",
+  "argv": [
+    "cargo",
+    "check",
+    "--offline",
+    "--locked",
+    "--tests"
+  ],
+  "exit_code": 0,
+  "status": "COMPILE_PASS",
+  "runtime_tests": "NOT_RUN",
+  "application_services_package_manager_network": "NOT_RUN",
+  "sha256": {
+    "src/main.rs": "9a63c421e4963d1bfe0940eda76bf743bdc2e07db0fdb6fb64ad81c7ae9f5183",
+    "src/migration/manual.rs": "7c695583e8f535be209ed21c51569ab4329000c8975a09b69889de98891cc0a6",
+    "src/migration/transaction.rs": "ae4a94bfb28b858f82499618b9d6b1322b2a867652c652a2b50894843e0570f7",
+    "tests/audit_i01_migration.rs": "5e9a1e9e39b0f504f2553b4f33cd758779ba204a86ee9286b207b96e8f386a6b"
+  },
+  "binary": {
+    "path": "target/x86_64-unknown-linux-musl/debug/cm",
+    "status": "OLD_NOT_REBUILT",
+    "sha256": "b46c5d9381ddadc93b8a1f2b428ca71f9772ceef814795df2c44e4d179498b3b"
+  }
+}
