@@ -1,0 +1,85 @@
+{
+  "reviewed_at_utc": "2026-10-04T12:23:40Z",
+  "scope": "fixture-level implementation review of the explicit manual UPD 0.2.7 migration path; no host migration or service operation",
+  "verdict": "PASS_WITH_SCOPE_LIMITS",
+  "commands": [
+    {
+      "argv": ["cargo", "test", "--offline", "--locked", "--test", "audit_i01_migration"],
+      "result": "PASS",
+      "passed": 15,
+      "failed": 0,
+      "stdout": "audit_i01_migration.final.stdout.log",
+      "stderr": "audit_i01_migration.final.stderr.log"
+    },
+    {
+      "argv": ["cargo", "build", "--offline", "--locked", "--bin", "cm"],
+      "result": "PASS",
+      "stdout": "build.final.stdout.log",
+      "stderr": "build.final.stderr.log"
+    },
+    {
+      "argv": ["cargo", "test", "--offline", "--locked", "--test", "audit_i01_install_guard", "c17a_"],
+      "result": "PASS",
+      "passed": 5,
+      "failed": 0,
+      "stdout": "c17a-regression.final.stdout.log",
+      "stderr": "c17a-regression.final.stderr.log"
+    },
+    {
+      "argv": ["cargo", "test", "--offline", "--locked", "--lib", "lang"],
+      "result": "PASS",
+      "passed": 4,
+      "failed": 0,
+      "stdout": "i18n-regression.final.stdout.log",
+      "stderr": "i18n-regression.final.stderr.log"
+    },
+    {
+      "driver": "transient inline Python fixture harness; private temp CM_CONF, synthetic external-command sentinels, no host writes",
+      "invocations": ["target/x86_64-unknown-linux-musl/debug/cm help", "target/x86_64-unknown-linux-musl/debug/cm --help"],
+      "locales": ["ru", "en", "de", "it", "zh", "ar"],
+      "result": "PASS",
+      "passed": 12,
+      "failed": 0,
+      "report": "help-locales.final.json",
+      "stdout": "help-locales.final.stdout.log",
+      "stderr": "help-locales.final.stderr.log"
+    }
+  ],
+  "findings_fixed_before_final_pass": [
+    "Root regular-file snapshot path previously gained a trailing slash and failed ENOTDIR; the executor now maps empty relative paths to the base file path.",
+    "Journal recovery previously deleted arbitrary bytes at a fixed temporary path; it now uses unique atomic journal writes and refuses unknown fixed-name staging content without deleting it."
+  ],
+  "sha256": {
+    "target/x86_64-unknown-linux-musl/debug/cm": "b46c5d9381ddadc93b8a1f2b428ca71f9772ceef814795df2c44e4d179498b3b",
+    "src/main.rs": "4d2b1d0a50cddd018584b1f19bb3e642c94d147d9f881481b800c499dcfe4be5",
+    "src/i18n_table.rs": "3112ff5139b5d4b2eda3bb300810b34fbbaf6714b20e53f63aaa082ead5563ec",
+    "src/migration.rs": "c055f68d54ce98d5f98072cf8424aedd3e0eb7e78c772d53a15eab043e165faa",
+    "src/migration/manual.rs": "2484f8cd6a6b90ab36a31baaed11e574c286b58d8f21066e7745391f6d19c57b",
+    "src/migration/transaction.rs": "3081eadf3c05af2ec207673daffd463fc503c0db261ae881023f4d44371709f5",
+    "tests/audit_i01_migration.rs": "c17bb276c968ce42db91df5001f12b649c47bf7b244233f18ccd4f29eada4854",
+    "dist/upd-linux-amd64": "58520fbe70796d5bd018d56ad4ebbb120cea92c8edcb2cb52f5983ea694b14c2"
+  },
+  "limitations": [
+    "Systemd Services adapter and actual package-manager ownership queries were not invoked; fixture adapters were used.",
+    "No root migration apply, live UPD helper race, host service operation, or live network operation was performed.",
+    "The pinned UPD executable was read as fixture bytes only and never executed.",
+    "C17a root CLI namespace/socket validation remains blocked by the previously recorded sandbox NETLINK restriction."
+  ],
+  "evidence": [
+    "review.md",
+    "audit_i01_migration.final.stdout.log",
+    "audit_i01_migration.final.stderr.log",
+    "build.final.stdout.log",
+    "build.final.stderr.log",
+    "c17a-regression.final.stdout.log",
+    "c17a-regression.final.stderr.log",
+    "i18n-regression.final.stdout.log",
+    "i18n-regression.final.stderr.log",
+    "help-locales.final.json",
+    "help-locales.final.stdout.log",
+    "help-locales.final.stderr.log",
+    "audit_i01_migration.stdout.log",
+    "audit_i01_migration.review-01.stdout.log",
+    "manual-policy-debug.stdout.log"
+  ]
+}

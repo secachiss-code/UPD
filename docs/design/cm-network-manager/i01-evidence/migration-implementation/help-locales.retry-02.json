@@ -1,0 +1,133 @@
+{
+  "utc": "2026-10-04T12:08:08.770885+00:00",
+  "binary_sha256": "07f65380fc669ed0d3782c58d8e34f342a5c6426cbbefa61d83eb6f21ce7116d",
+  "source_sha256": {
+    "src/main.rs": "74deed52a1c4e436cff0b7740d2cc16c9478d1f540ec65ce23528e714664c0ea",
+    "src/i18n_table.rs": "aa2ebe24c5888d555b97f65348f9e98c4b2acb92fa6683377ff3f3da13eef1e3"
+  },
+  "scope": "actual help CLI, six locales, private fixture config, synthetic command sentinels",
+  "cases": [
+    {
+      "lang": "ru",
+      "arg": "help",
+      "exit_code": 0,
+      "headline_localized": true,
+      "notice_localized": true,
+      "private_tree_unchanged": true,
+      "stderr_empty": true,
+      "status": "PASS"
+    },
+    {
+      "lang": "ru",
+      "arg": "--help",
+      "exit_code": 0,
+      "headline_localized": true,
+      "notice_localized": true,
+      "private_tree_unchanged": true,
+      "stderr_empty": true,
+      "status": "PASS"
+    },
+    {
+      "lang": "en",
+      "arg": "help",
+      "exit_code": 0,
+      "headline_localized": true,
+      "notice_localized": true,
+      "private_tree_unchanged": true,
+      "stderr_empty": true,
+      "status": "PASS"
+    },
+    {
+      "lang": "en",
+      "arg": "--help",
+      "exit_code": 0,
+      "headline_localized": true,
+      "notice_localized": true,
+      "private_tree_unchanged": true,
+      "stderr_empty": true,
+      "status": "PASS"
+    },
+    {
+      "lang": "de",
+      "arg": "help",
+      "exit_code": 0,
+      "headline_localized": true,
+      "notice_localized": true,
+      "private_tree_unchanged": true,
+      "stderr_empty": true,
+      "status": "PASS"
+    },
+    {
+      "lang": "de",
+      "arg": "--help",
+      "exit_code": 0,
+      "headline_localized": true,
+      "notice_localized": true,
+      "private_tree_unchanged": true,
+      "stderr_empty": true,
+      "status": "PASS"
+    },
+    {
+      "lang": "it",
+      "arg": "help",
+      "exit_code": 0,
+      "headline_localized": true,
+      "notice_localized": true,
+      "private_tree_unchanged": true,
+      "stderr_empty": true,
+      "status": "PASS"
+    },
+    {
+      "lang": "it",
+      "arg": "--help",
+      "exit_code": 0,
+      "headline_localized": true,
+      "notice_localized": true,
+      "private_tree_unchanged": true,
+      "stderr_empty": true,
+      "status": "PASS"
+    },
+    {
+      "lang": "zh",
+      "arg": "help",
+      "exit_code": 0,
+      "headline_localized": true,
+      "notice_localized": true,
+      "private_tree_unchanged": true,
+      "stderr_empty": true,
+      "status": "PASS"
+    },
+    {
+      "lang": "zh",
+      "arg": "--help",
+      "exit_code": 0,
+      "headline_localized": true,
+      "notice_localized": true,
+      "private_tree_unchanged": true,
+      "stderr_empty": true,
+      "status": "PASS"
+    },
+    {
+      "lang": "ar",
+      "arg": "help",
+      "exit_code": 0,
+      "headline_localized": true,
+      "notice_localized": true,
+      "private_tree_unchanged": true,
+      "stderr_empty": true,
+      "status": "PASS"
+    },
+    {
+      "lang": "ar",
+      "arg": "--help",
+      "exit_code": 0,
+      "headline_localized": true,
+      "notice_localized": true,
+      "private_tree_unchanged": true,
+      "stderr_empty": true,
+      "status": "PASS"
+    }
+  ],
+  "status": "PASS",
+  "finished_utc": "2026-10-04T12:08:08.874703+00:00"
+}

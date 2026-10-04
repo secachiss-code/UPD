@@ -1,0 +1,25 @@
+[Desktop Entry]
+Type=Application
+Name=upd
+Name[ru]=Обновления upd
+Name[de]=upd-Updates
+Name[it]=Aggiornamenti upd
+Name[zh]=upd 更新
+Name[ar]=تحديثات upd
+Comment=Updates, mirrors and VPN at a glance
+Comment[ru]=Обновления, зеркала и VPN на панели
+Comment[de]=Updates, Spiegelserver und VPN auf einen Blick
+Comment[it]=Aggiornamenti, mirror e VPN a colpo d'occhio
+Comment[zh]=一目了然的更新、镜像和 VPN
+Comment[ar]=التحديثات والمرايا والشبكة الافتراضية في لمحة
+Exec=upd-cosmic applet
+Terminal=false
+Categories=COSMIC;
+Keywords=COSMIC;Applet;Update;VPN;Mirror;
+Icon=io.github.upd-symbolic
+StartupNotify=true
+NoDisplay=true
+X-CosmicApplet=true
+X-CosmicShrinkable=true
+X-CosmicHoverPopup=Auto
+X-OverflowPriority=10
