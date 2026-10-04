@@ -1,0 +1,21 @@
+{
+  "status": "BLOCKED",
+  "case_execution": "NOT_RUN",
+  "reason": "Required user, mount and network namespaces could not be created by bubblewrap: bwrap: loopback: Failed to create NETLINK_ROUTE socket: Operation not permitted",
+  "utc": "2026-10-04T07:17:05Z",
+  "head": "07ef2381fb962fe74958c504a896c584f6a4e4be",
+  "kernel": "7.2.8-1-garuda",
+  "outer_euid": 1000,
+  "bubblewrap": "0.13.0",
+  "unshare": "util-linux 2.42.4",
+  "network_probe": "BLOCKED before binary execution; no cases run",
+  "preflight_review": "conf_lang, backend::detect and backend constructors read configuration/OS metadata or inspect PATH only; no external commands, network, systemd/D-Bus or writes were found in the startup path",
+  "build": {
+    "command": "cargo build --offline --locked --bin cm",
+    "status": "PASS",
+    "binary_sha256": "ceb34fb02997d172f81a8d708817222608bf3ae68b172083d57af965044da85e"
+  },
+  "source_tree_status_sha256": "55d399a7ff4a536bb3c343a344e5c5973027d7f440f2c1e4fce4b4bc60f003a9",
+  "dirty_diff_sha256": "54b16e9f7eef70b81877a77544b8ccef0f753deeb86c590ee9ed2ef0363b3f40",
+  "notes": "No K0–K6 process was launched. C17a remains NOT_RUN; this result does not accept I01 or migration."
+}

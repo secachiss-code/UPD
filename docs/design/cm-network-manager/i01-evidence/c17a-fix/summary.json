@@ -1,0 +1,23 @@
+{
+  "status": "PARTIAL_FIXTURE_PASS_W0_BLOCKED",
+  "utc": "2026-10-04T07:17:05Z",
+  "w0_1": "BLOCKED; K0-K6 NOT_RUN",
+  "build": "PASS: cargo build --offline --locked --bin cm",
+  "full_fixture_run": "12 passed, 1 failed: existing helper socket bind denied by sandbox (Operation not permitted)",
+  "focused_c17a_run": "5 passed, 0 failed",
+  "help_locales": "12 actual help cases across ru/en/de/it/zh/ar passed; root-policy clause checked in all six; synthetic trees unchanged",
+  "i01": "IN_PROGRESS; not accepted",
+  "files": [
+    "../w0/w0-1/status.json",
+    "commands-and-results.txt",
+    "review.md",
+    "help-locales.json"
+  ],
+  "source_sha256": {
+    "src/main.rs": "668eb535ead1ce6129977a8ff1984cc309ede7c463c2527493858b65e52f9e1c",
+    "src/migration.rs": "e85b66f90064499f0f49ada33d8fd07040c378ae80bedb0c52e0f4c5850d505f",
+    "src/i18n_table.rs": "2d077adc1f3737363bd95ccf294a6d1ae538287fcbe4966a50212b6b3b60031e",
+    "tests/audit_i01_install_guard.rs": "0eb24ca6bc8185055988da1473bb9419e388e1443c238d1124f5f36aff840a04"
+  },
+  "binary_sha256": "ceb34fb02997d172f81a8d708817222608bf3ae68b172083d57af965044da85e"
+}

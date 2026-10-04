@@ -1,0 +1,14 @@
+Execution summary recorded by the separate tester; this is not verbatim subprocess output.
+
+Command: cargo test --offline --locked --test audit_i01_install_guard
+Outcome: 12 passed, 1 failed (before the additional focused C17a cases were added).
+Failure: i01_helper_socket_is_refused_without_disconnecting_or_unlinking at tests/audit_i01_install_guard.rs:231:43
+Cause: UnixListener::bind returned PermissionDenied (OS error 1): Operation not permitted.
+
+Command: cargo test --offline --locked --test audit_i01_install_guard c17a_
+Outcome: 5 passed, 0 failed, 9 filtered out.
+
+Command: cargo build --offline --locked --bin cm
+Outcome: exit 0; dev build completed.
+
+Help localization run: 12 actual help invocations, six locales, all PASS; private synthetic config and tree unchanged; no external command sentinel fired. See help-locales.json.
