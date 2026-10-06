@@ -7,7 +7,10 @@ Rootless: user namespace + network namespaces через `unshare -rn` / `nsente
 - `smoke.sh` — два namespace (client ↔ veth ↔ remote с TCP-echo): связь есть; `policy drop`
   на выходе клиента её закрывает (fail-closed); явное `accept` открывает. Запуск:
   `unshare -rn sh tests/netharness/smoke.sh` → `SMOKE_OK`.
-- `tests/audit_h11_netharness.rs` — тот же сценарий из `cargo test`; без user namespaces —
+- `worker.sh` — три namespace: клиент → relay-worker → TCP-echo. Счётчик nftables на
+  выходе клиента видит пакеты; `ip link set w1 down` на worker обрывает путь.
+  Запуск: `unshare -rn sh tests/netharness/worker.sh` → `WORKER_OK`.
+- `tests/audit_h11_netharness.rs` — оба сценария из `cargo test`; без user namespaces —
   `SKIPPED` (в evidence так и пишется).
 
 Дальше на этой основе: тестовые серверы ядер (mihomo/xray inbound) в remote-namespace,
