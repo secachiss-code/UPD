@@ -1,5 +1,7 @@
 # Очередь Grok, 2026-10-06
 
+**Полный план всех оставшихся работ для Grok: [GROK-PLAN-FULL-2026-10-06](GROK-PLAN-FULL-2026-10-06.md). Ближайший блок — §Блок 3 ниже.**
+
 Исполнитель: **Grok 4.7, reasoning high**. Объём только этот файл. Роль — **независимый рецензент** работы Composer 2.5, автор отрицательных fixtures **до** реализации рискованных подзадач, автор ADR и материалов по первичным источникам, по [MODEL-WORKFLOW](MODEL-WORKFLOW.md) §4. Grok не пишет продуктовый код и не принимает решения пользователя.
 
 Источник требований: [REMAINING-DAG-PLAN-2026-10-06](REMAINING-DAG-PLAN-2026-10-06.md). Проверяемая очередь: [COMPOSER-QUEUE-2026-10-06](COMPOSER-QUEUE-2026-10-06.md). Контракт парсера: [I03-PARSER-IMPLEMENTATION-CONTRACT-2026-10-04](I03-PARSER-IMPLEMENTATION-CONTRACT-2026-10-04.md). Pinned ядро: mihomo `v1.19.32`, commit `88dcbf7f1614a67c3b36b848ee3592dfa92ada36`.
