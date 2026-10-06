@@ -6,6 +6,7 @@ pub mod i18n;
 pub mod i18n_table;
 pub mod backend;
 pub mod common;
+pub mod core;
 pub mod extras;
 pub mod helper;
 pub mod mirrors;

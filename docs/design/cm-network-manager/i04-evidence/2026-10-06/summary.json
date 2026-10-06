@@ -1,0 +1,22 @@
+{
+  "stage": "I04.T01.a I04.T01.b I04.T01.c I04.T02.a I04.T02.b I04.T02.c I04.T03.a",
+  "date": "2026-10-06",
+  "status": "READY_FOR_COORDINATOR_REVIEW",
+  "git_revision": "f41537ba172958e00a48c86f6626aa29e7a25805",
+  "dirty_tree": true,
+  "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)",
+  "cargo_lock_sha256": "db485e8ee68cda6cf38c8d021d0e2607d3bf806b59016612768c0915c5cd6e83",
+  "cargo_target_dir": "/home/somovas/.cache/cm-grok-target",
+  "focused": {
+    "command": "CARGO_TARGET_DIR=$HOME/.cache/cm-grok-target cargo test --offline --locked --test audit_i04_adapter --test audit_i17_states",
+    "result": "audit_i04_adapter 7 passed; audit_i17_states 1 passed; 0 failed"
+  },
+  "gate": {
+    "steps": "check_audit.sh steps: musl build+test in ~/.cache/cm-grok-target; cosmic build+test with CARGO_TARGET_DIR unset; python artifacts, shell -n, rustfmt, tui launcher, clippy of new modules",
+    "result": "GATE_OK",
+    "tests": "musl 32 suites, 453 passed, 0 failed; cosmic 15 passed, 0 failed"
+  },
+  "systemd_analyze_verify": "cm-core-host-a.service and the legacy cm-vpn text both warn only that the mihomo binary is absent. The unit was not installed.",
+  "not_guaranteed": "see ADR-CORE-ADAPTER.md",
+  "raw_logs": "not stored in git; D8 is still open"
+}
