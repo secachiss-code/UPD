@@ -1,0 +1,1 @@
+{"name":"edge-trojan","type":"trojan","server":"edge.example.invalid","port":443,"password":"trojan-secret","sni":"edge.example.invalid","network":"tcp"}

@@ -1,0 +1,1 @@
+{"proxies":[{"name":"o-tls","type":"vless","server":"edge.example.invalid","port":443,"uuid":"c0ffee00-0007-4000-8000-000000000007","network":"tcp","tls":true,"private-key":"-----BEGIN PRIVATE KEY-----\nCMFIXO-tls-private-key\n-----END PRIVATE KEY-----","certificate":"-----BEGIN CERTIFICATE-----\nCMFIXO-tls-certificate\n-----END CERTIFICATE-----"}]}

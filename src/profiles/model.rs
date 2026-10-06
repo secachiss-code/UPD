@@ -9,7 +9,10 @@ use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 
-pub const SCHEMA_VERSION: u32 = 1;
+pub const SCHEMA_VERSION: u32 = 2;
+pub const MAX_OMISSION_SECTIONS: usize = 32;
+pub const MAX_SKIPPED_LINE_REPORTS: usize = 64;
+pub const MAX_SKIPPED_LINES_PER_CLASS: usize = 4096;
 pub const MAX_ID_BYTES: usize = 128;
 
 /// Opaque graph identifier. IDs are ASCII, stable, and shared by every entity type.
@@ -146,6 +149,136 @@ pub enum SourceOrigin {
     Local,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum TlsVerification {
+    /// No TLS hop to the proxy (Shadowsocks, plain VLESS/VMess, WireGuard, plain HTTP/SOCKS5).
+    /// Never shown as "verified": the channel to the proxy is not authenticated by TLS.
+    #[default]
+    NotApplicable,
+    Verified,
+    Pinned,
+    Disabled,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SkippedLineClass {
+    UnsupportedScheme,
+    UnsupportedFeature,
+    Malformed,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SkippedLines {
+    pub class: SkippedLineClass,
+    pub line_numbers: Vec<u32>,
+}
+
+/// Safe import summary stored in provenance. No line text, URIs, or field values.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, Default)]
+#[serde(deny_unknown_fields)]
+pub struct ImportOmissions {
+    #[serde(default)]
+    pub section_names: Vec<String>,
+    #[serde(default)]
+    pub skipped_lines: Vec<SkippedLines>,
+    #[serde(default)]
+    pub tls_verification_disabled_count: u32,
+}
+
+impl ImportOmissions {
+    pub fn is_empty(&self) -> bool {
+        self.section_names.is_empty()
+            && self.skipped_lines.is_empty()
+            && self.tls_verification_disabled_count == 0
+    }
+
+    pub fn requires_confirmation(&self) -> bool {
+        !self.is_empty()
+    }
+
+    pub fn validate(&self) -> ModelResult<()> {
+        if self.section_names.len() > MAX_OMISSION_SECTIONS
+            || self.skipped_lines.len() > MAX_SKIPPED_LINE_REPORTS
+        {
+            return Err(ModelError::InvalidProvenance);
+        }
+        let mut seen_sections = BTreeSet::new();
+        for name in &self.section_names {
+            if !is_known_omission_section(name) || !seen_sections.insert(name.as_str()) {
+                return Err(ModelError::InvalidProvenance);
+            }
+        }
+        let mut seen_classes = BTreeSet::new();
+        for report in &self.skipped_lines {
+            if report.line_numbers.is_empty()
+                || report.line_numbers.len() > MAX_SKIPPED_LINES_PER_CLASS
+                || !seen_classes.insert(report.class)
+            {
+                return Err(ModelError::InvalidProvenance);
+            }
+            let mut seen_lines = BTreeSet::new();
+            for line in &report.line_numbers {
+                if *line == 0 || !seen_lines.insert(line) {
+                    return Err(ModelError::InvalidProvenance);
+                }
+            }
+        }
+        Ok(())
+    }
+}
+
+pub fn is_known_omission_section(name: &str) -> bool {
+    matches!(
+        name,
+        "proxy-groups" | "rules" | "sub-rules" | "rule-providers" | "proxy-providers"
+    )
+}
+
+pub fn import_omissions_digest(omissions: &ImportOmissions) -> ModelResult<String> {
+    omissions.validate()?;
+    let bytes = serde_json::to_vec(omissions).map_err(|_| ModelError::InvalidProvenance)?;
+    Ok(hex_sha256(&bytes))
+}
+
+pub fn omissions_within_bound(candidate: &ImportOmissions, bound: &ImportOmissions) -> bool {
+    if candidate.tls_verification_disabled_count > bound.tls_verification_disabled_count {
+        return false;
+    }
+    let bound_sections: BTreeSet<&str> = bound.section_names.iter().map(String::as_str).collect();
+    let candidate_sections: BTreeSet<&str> =
+        candidate.section_names.iter().map(String::as_str).collect();
+    if bound_sections != candidate_sections {
+        return false;
+    }
+    let bound_classes: BTreeSet<SkippedLineClass> = bound
+        .skipped_lines
+        .iter()
+        .map(|report| report.class)
+        .collect();
+    for report in &candidate.skipped_lines {
+        if !bound_classes.contains(&report.class) {
+            return false;
+        }
+        let bound_set: BTreeSet<u32> = bound
+            .skipped_lines
+            .iter()
+            .find(|item| item.class == report.class)
+            .map(|item| item.line_numbers.iter().copied().collect())
+            .unwrap_or_default();
+        if !report
+            .line_numbers
+            .iter()
+            .all(|line| bound_set.contains(line))
+        {
+            return false;
+        }
+    }
+    true
+}
+
 /// Safe graph metadata only; URL, raw UA, body bytes and definitions live privately.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -159,6 +292,13 @@ pub struct SourceProvenance {
     pub core_commit: String,
     pub origin: SourceOrigin,
     pub actual_user_agent_sha256: Option<String>,
+    #[serde(default)]
+    pub omissions: ImportOmissions,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub confirmed_omissions_digest_sha256: Option<String>,
+    /// Upper bound accepted by the user for automatic refresh; safe metadata only.
+    #[serde(default)]
+    pub accepted_omissions_bound: ImportOmissions,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -214,6 +354,8 @@ pub struct Node {
     pub source_generation: u64,
     pub definition_digest_sha256: String,
     pub protocol: NodeProtocol,
+    #[serde(default)]
+    pub tls_verification: TlsVerification,
     /// References resolve only through the private credential metadata registry.
     pub credential_refs: Vec<Id>,
 }
@@ -779,10 +921,10 @@ impl GraphSnapshot {
         }
 
         for (id, old_node) in &old.nodes {
-            if let Some(new_node) = new.nodes.get(id) {
-                if old_node != new_node {
-                    return Err(ModelError::NodeMutation);
-                }
+            if let Some(new_node) = new.nodes.get(id)
+                && old_node != new_node
+            {
+                return Err(ModelError::NodeMutation);
             }
         }
 
@@ -818,9 +960,7 @@ impl GraphSnapshot {
                             .provenance
                             .as_ref()
                             .ok_or(ModelError::InvalidProvenance)?;
-                        if new_provenance.accepted_at_unix_ms
-                            < old_provenance.accepted_at_unix_ms
-                        {
+                        if new_provenance.accepted_at_unix_ms < old_provenance.accepted_at_unix_ms {
                             return Err(ModelError::InvalidProvenance);
                         }
                         if old_source.content_digest_sha256 == new_source.content_digest_sha256
@@ -995,15 +1135,14 @@ impl GraphSnapshot {
         }
 
         for (id, previous) in &old.verifications {
-            if let Some(current) = new.verifications.get(id) {
-                if previous.session_id != current.session_id
+            if let Some(current) = new.verifications.get(id)
+                && (previous.session_id != current.session_id
                     || previous.tunnel_instance_id != current.tunnel_instance_id
                     || previous.tunnel_generation != current.tunnel_generation
                     || previous.axis != current.axis
-                    || current.evidence_at_unix_ms < previous.evidence_at_unix_ms
-                {
-                    return Err(ModelError::InvalidVerification);
-                }
+                    || current.evidence_at_unix_ms < previous.evidence_at_unix_ms)
+            {
+                return Err(ModelError::InvalidVerification);
             }
         }
 
@@ -1036,7 +1175,7 @@ impl GraphSnapshot {
                 && !new.sources.contains_key(&source.id);
             if (!inline_removal && new_removal.stage != RemovalStage::LinksPending)
                 || new_removal.credential_metadata != expected
-                || new_removal.removed_credential_refs.len() != 0
+                || !new_removal.removed_credential_refs.is_empty()
             {
                 return Err(ModelError::InvalidRemovalStage);
             }
@@ -1234,7 +1373,10 @@ impl GraphSnapshot {
                     || !is_bounded_core_version(&provenance.core_version)
                     || !is_git_commit(&provenance.core_commit)
                     || matches!(
-                        (provenance.origin, provenance.actual_user_agent_sha256.as_deref()),
+                        (
+                            provenance.origin,
+                            provenance.actual_user_agent_sha256.as_deref()
+                        ),
                         (SourceOrigin::Negotiated, None) | (SourceOrigin::Local, Some(_))
                     )
                     || (provenance.origin == SourceOrigin::Negotiated
@@ -1245,7 +1387,33 @@ impl GraphSnapshot {
                         .is_some_and(|digest| !is_sha256(digest))
                     || (provenance.format == SourceFormat::LocalDefinition
                         && provenance.origin != SourceOrigin::Local)
+                    || provenance.omissions.validate().is_err()
+                    || provenance
+                        .confirmed_omissions_digest_sha256
+                        .as_deref()
+                        .is_some_and(|digest| !is_sha256(digest))
                 {
+                    return Err(ModelError::InvalidProvenance);
+                }
+                if provenance.omissions.requires_confirmation()
+                    && provenance.confirmed_omissions_digest_sha256.is_none()
+                {
+                    return Err(ModelError::InvalidProvenance);
+                }
+                if let Some(confirmed) = &provenance.confirmed_omissions_digest_sha256 {
+                    let expected = import_omissions_digest(&provenance.omissions)?;
+                    if confirmed != &expected {
+                        return Err(ModelError::InvalidProvenance);
+                    }
+                    if provenance.accepted_omissions_bound.validate().is_err()
+                        || !omissions_within_bound(
+                            &provenance.omissions,
+                            &provenance.accepted_omissions_bound,
+                        )
+                    {
+                        return Err(ModelError::InvalidProvenance);
+                    }
+                } else if !provenance.accepted_omissions_bound.is_empty() {
                     return Err(ModelError::InvalidProvenance);
                 }
             }
@@ -1278,10 +1446,10 @@ impl GraphSnapshot {
         }
         for profile in self.connection_profiles.values() {
             require_schema(profile.schema_version)?;
-            if let NodeSelection::Policy { name } = &profile.node_selection {
-                if name.is_empty() {
-                    return Err(ModelError::InvalidPolicy);
-                }
+            if let NodeSelection::Policy { name } = &profile.node_selection
+                && name.is_empty()
+            {
+                return Err(ModelError::InvalidPolicy);
             }
         }
         for tunnel in self.tunnel_instances.values() {
@@ -1395,10 +1563,10 @@ impl GraphSnapshot {
 
     fn validate_references(&self) -> ModelResult<()> {
         for source in self.sources.values() {
-            if let Some(metadata) = &source.credential {
-                if self.credentials.get(&metadata.credential_ref) != Some(metadata) {
-                    return Err(ModelError::InvalidCredentialMetadata);
-                }
+            if let Some(metadata) = &source.credential
+                && self.credentials.get(&metadata.credential_ref) != Some(metadata)
+            {
+                return Err(ModelError::InvalidCredentialMetadata);
             }
             for node_id in &source.current_node_ids {
                 let node = self.nodes.get(node_id).ok_or(ModelError::MissingEntity)?;
@@ -1515,18 +1683,16 @@ impl GraphSnapshot {
                 }
             }
         }
-        if let Some(host) = &self.host_policy {
-            if let (Some(profile_id), Some(tunnel_id)) =
+        if let Some(host) = &self.host_policy
+            && let (Some(profile_id), Some(tunnel_id)) =
                 (&host.connection_profile_id, &host.tunnel_instance_id)
-            {
-                let tunnel = self
-                    .tunnel_instances
-                    .get(tunnel_id)
-                    .ok_or(ModelError::MissingEntity)?;
-                if tunnel.owner != TunnelOwner::Host || &tunnel.connection_profile_id != profile_id
-                {
-                    return Err(ModelError::InvalidOwnership);
-                }
+        {
+            let tunnel = self
+                .tunnel_instances
+                .get(tunnel_id)
+                .ok_or(ModelError::MissingEntity)?;
+            if tunnel.owner != TunnelOwner::Host || &tunnel.connection_profile_id != profile_id {
+                return Err(ModelError::InvalidOwnership);
             }
         }
 
@@ -1997,9 +2163,9 @@ fn is_bounded_core_version(version: &str) -> bool {
 
 fn is_git_commit(commit: &str) -> bool {
     commit.len() == 40
-        && commit
-            .bytes()
-            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte) || (b'A'..=b'F').contains(&byte))
+        && commit.bytes().all(|byte| {
+            byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte) || (b'A'..=b'F').contains(&byte)
+        })
 }
 
 fn hex_sha256(bytes: &[u8]) -> String {

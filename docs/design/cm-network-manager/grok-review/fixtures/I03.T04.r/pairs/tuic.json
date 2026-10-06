@@ -1,0 +1,1 @@
+{"name":"edge-tuic","type":"tuic","server":"edge.example.invalid","port":443,"uuid":"123e4567-e89b-12d3-a456-4266141740d3","password":"tuic-secret","congestion-controller":"bbr","udp-relay-mode":"native","sni":"edge.example.invalid"}

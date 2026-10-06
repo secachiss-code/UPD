@@ -323,8 +323,8 @@ fn duplicate_record_fields_dictionary_ids_and_registry_ids_are_ambiguous() {
     let graph = fixture();
     let source = serde_json::to_string(&graph.sources[&id("source-a")]).unwrap();
     let duplicate_schema = source.replacen(
-        "\"schema_version\":1",
-        "\"schema_version\":999,\"schema_version\":1",
+        "\"schema_version\":2",
+        "\"schema_version\":999,\"schema_version\":2",
         1,
     );
     assert!(serde_json::from_str::<Source>(&duplicate_schema).is_err());

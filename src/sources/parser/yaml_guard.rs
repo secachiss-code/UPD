@@ -2,7 +2,7 @@
 //! Uses the same locked libyaml implementation, without alias expansion or loading.
 
 use std::mem::MaybeUninit;
-use unsafe_libyaml as sys;
+use unsafe_libyaml as unsafe_libyaml_sys;
 
 const MAX_VALUES: usize = 1_000_000;
 const MAX_DEPTH: usize = 64;
@@ -15,18 +15,18 @@ pub(super) enum GuardError {
     TooManyValues,
 }
 
-struct Parser(Box<sys::yaml_parser_t>);
+struct Parser(Box<unsafe_libyaml_sys::yaml_parser_t>);
 impl Drop for Parser {
     fn drop(&mut self) {
         // SAFETY: initialized once, stable Box address and exactly one deletion.
-        unsafe { sys::yaml_parser_delete(&mut *self.0) }
+        unsafe { unsafe_libyaml_sys::yaml_parser_delete(&mut *self.0) }
     }
 }
-struct Event(sys::yaml_event_t);
+struct Event(unsafe_libyaml_sys::yaml_event_t);
 impl Drop for Event {
     fn drop(&mut self) {
         // SAFETY: only successfully parsed events become this unique owner.
-        unsafe { sys::yaml_event_delete(&mut self.0) }
+        unsafe { unsafe_libyaml_sys::yaml_event_delete(&mut self.0) }
     }
 }
 
@@ -41,39 +41,46 @@ pub(super) fn validate(bytes: &[u8]) -> Result<(), GuardError> {
     {
         return Err(GuardError::Malformed);
     }
-    let mut allocation = Box::<sys::yaml_parser_t>::new_uninit();
+    let mut allocation = Box::<unsafe_libyaml_sys::yaml_parser_t>::new_uninit();
     // SAFETY: writable, aligned allocation. Initialization fills the entire parser.
-    if unsafe { sys::yaml_parser_initialize(allocation.as_mut_ptr()) }.fail {
+    if unsafe { unsafe_libyaml_sys::yaml_parser_initialize(allocation.as_mut_ptr()) }.fail {
         return Err(GuardError::Malformed);
     }
     // SAFETY: successful initialization above; never move the parser out of its Box.
     let mut parser = Parser(unsafe { allocation.assume_init() });
     // SAFETY: parser address remains stable; input lives until all events/parser drop.
     unsafe {
-        sys::yaml_parser_set_encoding(&mut *parser.0, sys::YAML_UTF8_ENCODING);
-        sys::yaml_parser_set_input_string(&mut *parser.0, bytes.as_ptr(), bytes.len() as u64);
+        unsafe_libyaml_sys::yaml_parser_set_encoding(
+            &mut *parser.0,
+            unsafe_libyaml_sys::YAML_UTF8_ENCODING,
+        );
+        unsafe_libyaml_sys::yaml_parser_set_input_string(
+            &mut *parser.0,
+            bytes.as_ptr(),
+            bytes.len() as u64,
+        );
     }
     let mut frames: Vec<Frame> = Vec::with_capacity(MAX_DEPTH);
     let mut values = 0usize;
     let mut documents = 0usize;
     loop {
-        let mut raw = MaybeUninit::<sys::yaml_event_t>::uninit();
+        let mut raw = MaybeUninit::<unsafe_libyaml_sys::yaml_event_t>::uninit();
         // SAFETY: initialized parser, writable event allocation; parse-only API mode.
-        if unsafe { sys::yaml_parser_parse(&mut *parser.0, raw.as_mut_ptr()) }.fail {
+        if unsafe { unsafe_libyaml_sys::yaml_parser_parse(&mut *parser.0, raw.as_mut_ptr()) }.fail {
             return Err(GuardError::Malformed);
         }
         // SAFETY: parse success initializes the event, uniquely freed even on early return.
         let event = Event(unsafe { raw.assume_init() });
         match event.0.type_ {
-            sys::YAML_STREAM_START_EVENT => {}
-            sys::YAML_STREAM_END_EVENT => {
+            unsafe_libyaml_sys::YAML_STREAM_START_EVENT => {}
+            unsafe_libyaml_sys::YAML_STREAM_END_EVENT => {
                 return if documents == 1 && frames.is_empty() {
                     Ok(())
                 } else {
                     Err(GuardError::Malformed)
                 };
             }
-            sys::YAML_DOCUMENT_START_EVENT => {
+            unsafe_libyaml_sys::YAML_DOCUMENT_START_EVENT => {
                 documents += 1;
                 // SAFETY: this union member corresponds to the checked event type.
                 let start = unsafe { event.0.data.document_start };
@@ -84,13 +91,13 @@ pub(super) fn validate(bytes: &[u8]) -> Result<(), GuardError> {
                     return Err(GuardError::UnsupportedYaml);
                 }
             }
-            sys::YAML_DOCUMENT_END_EVENT => {
+            unsafe_libyaml_sys::YAML_DOCUMENT_END_EVENT => {
                 if !frames.is_empty() {
                     return Err(GuardError::Malformed);
                 }
             }
-            sys::YAML_ALIAS_EVENT => return Err(GuardError::UnsupportedYaml),
-            sys::YAML_SCALAR_EVENT => {
+            unsafe_libyaml_sys::YAML_ALIAS_EVENT => return Err(GuardError::UnsupportedYaml),
+            unsafe_libyaml_sys::YAML_SCALAR_EVENT => {
                 // SAFETY: scalar event owns these valid pointers until Event drops.
                 let scalar = unsafe { event.0.data.scalar };
                 if !scalar.anchor.is_null() || !scalar.tag.is_null() {
@@ -108,7 +115,8 @@ pub(super) fn validate(bytes: &[u8]) -> Result<(), GuardError> {
                     return Err(GuardError::TooDeep);
                 }
             }
-            sys::YAML_SEQUENCE_START_EVENT | sys::YAML_MAPPING_START_EVENT => {
+            unsafe_libyaml_sys::YAML_SEQUENCE_START_EVENT
+            | unsafe_libyaml_sys::YAML_MAPPING_START_EVENT => {
                 // Complex map keys are outside the string-keyed native schema.
                 if frames
                     .last()
@@ -116,7 +124,7 @@ pub(super) fn validate(bytes: &[u8]) -> Result<(), GuardError> {
                 {
                     return Err(GuardError::Malformed);
                 }
-                let mapping = event.0.type_ == sys::YAML_MAPPING_START_EVENT;
+                let mapping = event.0.type_ == unsafe_libyaml_sys::YAML_MAPPING_START_EVENT;
                 // SAFETY: read only the union member selected by the event type.
                 let has_annotation = unsafe {
                     if mapping {
@@ -139,9 +147,10 @@ pub(super) fn validate(bytes: &[u8]) -> Result<(), GuardError> {
                     expecting_key: true,
                 });
             }
-            sys::YAML_SEQUENCE_END_EVENT | sys::YAML_MAPPING_END_EVENT => {
+            unsafe_libyaml_sys::YAML_SEQUENCE_END_EVENT
+            | unsafe_libyaml_sys::YAML_MAPPING_END_EVENT => {
                 let frame = frames.pop().ok_or(GuardError::Malformed)?;
-                if frame.mapping != (event.0.type_ == sys::YAML_MAPPING_END_EVENT)
+                if frame.mapping != (event.0.type_ == unsafe_libyaml_sys::YAML_MAPPING_END_EVENT)
                     || (frame.mapping && !frame.expecting_key)
                 {
                     return Err(GuardError::Malformed);
@@ -157,10 +166,10 @@ fn begin_value(frames: &mut [Frame], values: &mut usize) -> Result<(), GuardErro
     if *values > MAX_VALUES {
         return Err(GuardError::TooManyValues);
     }
-    if let Some(frame) = frames.last_mut() {
-        if frame.mapping {
-            frame.expecting_key = !frame.expecting_key;
-        }
+    if let Some(frame) = frames.last_mut()
+        && frame.mapping
+    {
+        frame.expecting_key = !frame.expecting_key;
     }
     Ok(())
 }

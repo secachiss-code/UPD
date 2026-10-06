@@ -1,13 +1,15 @@
 //! Source capabilities, bounded negotiation, and private artifact publication.
 //!
-//! Full format parsers and the real fetch adapter are implemented in later stages.
 
 pub mod artifact;
 mod bounded;
 pub mod capabilities;
+pub mod import_confirmation;
+pub mod manual;
 pub mod negotiation;
 pub mod parser;
 pub mod pipeline;
+pub mod transport;
 
 pub use artifact::{
     ArtifactError, GlobalDefaults, MAX_ARTIFACT_DEPTH, MAX_ARTIFACT_NODE_COUNT,
@@ -29,7 +31,13 @@ pub use negotiation::{
     NegotiationError, NegotiationPolicy, RequestSpec, UserAgent, negotiate, negotiate_with_clock,
 };
 
+pub use import_confirmation::{
+    PendingImportSummary, apply_confirmation, evaluate_auto_refresh, pending_import_summary,
+};
+
+pub use transport::FetchTransport;
+
 pub use parser::{
-    MAX_NATIVE_DEPTH, MAX_NATIVE_ENTRIES, MAX_NATIVE_NODES, ParsedSource, ParserError,
-    parse_native,
+    BodyKind, MAX_NATIVE_DEPTH, MAX_NATIVE_ENTRIES, MAX_NATIVE_NODES, ParsedSource, ParserError,
+    detect_body, parse_native, parse_share_uri, parse_source, parse_uri_list,
 };

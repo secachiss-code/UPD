@@ -18,6 +18,9 @@ fn graph_with_provenance() -> GraphSnapshot {
         core_commit: PINNED_CORE_COMMIT.into(),
         origin: SourceOrigin::Negotiated,
         actual_user_agent_sha256: Some(digest(b"synthetic-private-accepted-agent")),
+        omissions: ImportOmissions::default(),
+        confirmed_omissions_digest_sha256: None,
+        accepted_omissions_bound: ImportOmissions::default(),
     });
     graph.validate().unwrap();
     graph
@@ -46,7 +49,7 @@ fn provenance_has_strict_schema_and_consistent_origin_time_and_body_digest() {
             "actual_user_agent",
             serde_json::json!("synthetic-private-accepted-agent"),
         ),
-        ("schema_version", serde_json::json!(2)),
+        ("schema_version", serde_json::json!(999)),
         ("format", serde_json::json!("unknown-format")),
     ] {
         let mut modified = encoded.clone();

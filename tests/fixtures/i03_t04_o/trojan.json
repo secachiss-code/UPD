@@ -1,0 +1,1 @@
+{"proxies":[{"name":"o-trojan","type":"trojan","server":"edge.example.invalid","port":443,"password":"CMFIXO-trojan-password","sni":"edge.example.invalid"}]}

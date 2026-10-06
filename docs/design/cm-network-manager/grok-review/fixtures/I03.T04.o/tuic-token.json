@@ -1,0 +1,1 @@
+{"proxies":[{"name":"o-tuic-v4","type":"tuic","server":"edge.example.invalid","port":443,"uuid":"c0ffee00-0009-4000-8000-000000000009","password":"CMFIXO-tuic-v4-password","token":"CMFIXO-tuic-token"}]}

@@ -1,0 +1,1 @@
+{"name":"edge-https","type":"http","server":"edge.example.invalid","port":443,"username":"http-user","password":"http-secret","tls":true}

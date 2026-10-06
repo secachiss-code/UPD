@@ -13,8 +13,9 @@ use super::capabilities::{
 use super::negotiation::PrivateFetchSettings;
 use crate::profiles::store::{fresh_id, make_metadata, reserve_id};
 use crate::profiles::{
-    CredentialMaterial, EntityIdKind, GraphSnapshot, Id, Node, NodeProtocol, SCHEMA_VERSION,
-    Source, SourceFormat, SourceKind, SourceOrigin, SourceProvenance, Store, StoreError,
+    CredentialMaterial, EntityIdKind, GraphSnapshot, Id, ImportOmissions, Node, NodeProtocol,
+    SCHEMA_VERSION, Source, SourceFormat, SourceKind, SourceOrigin, SourceProvenance, Store,
+    StoreError, TlsVerification, import_omissions_digest, omissions_within_bound,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -29,7 +30,7 @@ pub const MAX_SERIALIZED_ARTIFACT_BYTES: usize = 32 * 1024 * 1024;
 pub const MAX_ARTIFACT_NODE_COUNT: usize = 4096;
 pub const MAX_ARTIFACT_DEPTH: usize = 64;
 const MAX_ARTIFACT_VALUE_NODES: usize = 1_000_000;
-const MAX_ARTIFACT_SCHEMA_VERSION: u32 = 1;
+const MAX_ARTIFACT_SCHEMA_VERSION: u32 = 2;
 
 /// Safe artifact errors. Input content, UA values, URLs, and serde diagnostics never escape.
 #[derive(Debug)]
@@ -55,6 +56,9 @@ pub enum ArtifactError {
     SameBodyPayloadChanged,
     RawBodyDigestCollision,
     SourceGenerationConflict,
+    PendingConfirmationRequired,
+    OmissionsDigestMismatch,
+    AutoUpdateBlocked,
     Store(StoreError),
 }
 
@@ -84,6 +88,9 @@ impl fmt::Display for ArtifactError {
             }
             Self::RawBodyDigestCollision => "source body digest does not match stored bytes",
             Self::SourceGenerationConflict => "source generation does not match",
+            Self::PendingConfirmationRequired => "import omissions require explicit confirmation",
+            Self::OmissionsDigestMismatch => "import omissions digest does not match the summary",
+            Self::AutoUpdateBlocked => "automatic source refresh was blocked by omission policy",
             Self::Store(_) => "profile store operation failed",
         })
     }
@@ -105,6 +112,7 @@ pub struct NodeDefinitionInput {
     protocol: NodeProtocol,
     transport: Transport,
     full_definition: Value,
+    tls_verification: TlsVerification,
 }
 
 impl NodeDefinitionInput {
@@ -127,7 +135,17 @@ impl NodeDefinitionInput {
             protocol,
             transport,
             full_definition,
+            tls_verification: TlsVerification::NotApplicable,
         })
+    }
+
+    pub fn with_tls_verification(mut self, tls_verification: TlsVerification) -> Self {
+        self.tls_verification = tls_verification;
+        self
+    }
+
+    pub fn tls_verification(&self) -> TlsVerification {
+        self.tls_verification
     }
 
     pub fn protocol(&self) -> NodeProtocol {
@@ -155,6 +173,7 @@ impl fmt::Debug for NodeDefinitionInput {
 }
 
 /// Constrained, sorted top-level defaults carried into every definition digest.
+#[derive(Default)]
 pub struct GlobalDefaults(BTreeMap<DefaultField, Value>);
 
 impl GlobalDefaults {
@@ -191,12 +210,6 @@ impl GlobalDefaults {
     }
 }
 
-impl Default for GlobalDefaults {
-    fn default() -> Self {
-        Self(BTreeMap::new())
-    }
-}
-
 impl fmt::Debug for GlobalDefaults {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("GlobalDefaults")
@@ -216,6 +229,10 @@ pub struct SourceImportInput {
     fetch_settings: Option<PrivateFetchSettings>,
     definitions: Vec<NodeDefinitionInput>,
     defaults: GlobalDefaults,
+    omissions: ImportOmissions,
+    omissions_confirmation_digest: Option<String>,
+    /// Unattended refresh: omissions may stay within the previously confirmed bound.
+    auto_refresh: bool,
 }
 
 impl SourceImportInput {
@@ -240,6 +257,9 @@ impl SourceImportInput {
             fetch_settings: Some(payload.fetch_settings),
             definitions,
             defaults,
+            omissions: ImportOmissions::default(),
+            omissions_confirmation_digest: None,
+            auto_refresh: false,
         };
         validate_input(&input, SourceKind::Subscription)?;
         Ok(input)
@@ -268,6 +288,9 @@ impl SourceImportInput {
             fetch_settings: Some(negotiated.fetch_settings().clone()),
             definitions,
             defaults,
+            omissions: ImportOmissions::default(),
+            omissions_confirmation_digest: None,
+            auto_refresh: false,
         };
         validate_input(&input, SourceKind::Subscription)?;
         Ok(input)
@@ -289,9 +312,56 @@ impl SourceImportInput {
             fetch_settings: None,
             definitions,
             defaults,
+            omissions: ImportOmissions::default(),
+            omissions_confirmation_digest: None,
+            auto_refresh: false,
         };
         validate_input(&input, SourceKind::ManualServer)?;
         Ok(input)
+    }
+
+    /// Attach parser omissions. The disabled-TLS count is always derived from the node
+    /// definitions, so a caller cannot hide `tls_verification: Disabled` nodes from confirmation.
+    pub fn with_omissions(mut self, omissions: ImportOmissions) -> Self {
+        self.omissions = omissions;
+        self.sync_tls_count();
+        self
+    }
+
+    /// Mark the input as an unattended refresh (`cm auto`, timer).
+    pub fn as_auto_refresh(mut self) -> Self {
+        self.auto_refresh = true;
+        self
+    }
+
+    fn disabled_tls_count(&self) -> u32 {
+        let count = self
+            .definitions
+            .iter()
+            .filter(|definition| definition.tls_verification == TlsVerification::Disabled)
+            .count();
+        u32::try_from(count).unwrap_or(u32::MAX)
+    }
+
+    fn sync_tls_count(&mut self) {
+        self.omissions.tls_verification_disabled_count = self.disabled_tls_count();
+    }
+
+    pub fn with_omissions_confirmation_digest(mut self, digest: Option<String>) -> Self {
+        self.omissions_confirmation_digest = digest;
+        self
+    }
+
+    pub fn omissions(&self) -> &ImportOmissions {
+        &self.omissions
+    }
+
+    pub fn node_definition_count(&self) -> usize {
+        self.definitions.len()
+    }
+
+    pub fn omissions_confirmation_digest(&self) -> Option<&str> {
+        self.omissions_confirmation_digest.as_deref()
     }
 }
 
@@ -474,7 +544,44 @@ fn validate_input(input: &SourceImportInput, kind: SourceKind) -> Result<(), Art
         validate_value_tree(value, 1, &mut total_nodes)?;
     }
     preflight::validate_payload_budget(input)?;
+    input
+        .omissions
+        .validate()
+        .map_err(|_| ArtifactError::InvalidProvenance)?;
     Ok(())
+}
+
+/// Confirmation gate at publication. Returns the bound to record in provenance.
+///
+/// A user confirmation must match the digest of the exact omissions. An unattended refresh
+/// needs no new confirmation only while it stays within the previously confirmed bound;
+/// the old bound is then carried forward, never widened.
+fn confirmation_bound(
+    input: &SourceImportInput,
+    previous_bound: Option<&ImportOmissions>,
+) -> Result<ImportOmissions, ArtifactError> {
+    if input.omissions.tls_verification_disabled_count != input.disabled_tls_count() {
+        return Err(ArtifactError::InvalidProvenance);
+    }
+    let expected_digest =
+        import_omissions_digest(&input.omissions).map_err(|_| ArtifactError::InvalidProvenance)?;
+    if !input.omissions.requires_confirmation() {
+        if input.omissions_confirmation_digest.is_some() {
+            return Err(ArtifactError::InvalidInput);
+        }
+        return Ok(ImportOmissions::default());
+    }
+    match (&input.omissions_confirmation_digest, previous_bound) {
+        (Some(digest), _) if digest == &expected_digest => Ok(input.omissions.clone()),
+        (Some(_), _) => Err(ArtifactError::OmissionsDigestMismatch),
+        (None, Some(bound))
+            if input.auto_refresh && omissions_within_bound(&input.omissions, bound) =>
+        {
+            Ok(bound.clone())
+        }
+        (None, _) if input.auto_refresh => Err(ArtifactError::AutoUpdateBlocked),
+        (None, _) => Err(ArtifactError::PendingConfirmationRequired),
+    }
 }
 
 #[derive(Serialize)]
@@ -482,12 +589,14 @@ struct DefinitionDigestInput<'a> {
     defaults: &'a BTreeMap<DefaultField, Value>,
     protocol: NodeProtocol,
     transport: ArtifactTransport,
+    tls_verification: TlsVerification,
     definition: &'a Value,
 }
 
 fn definition_digest(
     protocol: NodeProtocol,
     transport: Transport,
+    tls_verification: TlsVerification,
     definition: &Value,
     defaults: &GlobalDefaults,
 ) -> Result<String, ArtifactError> {
@@ -501,6 +610,7 @@ fn definition_digest(
             defaults: &defaults.0,
             protocol,
             transport: transport.into(),
+            tls_verification,
             definition,
         },
         MAX_SERIALIZED_ARTIFACT_BYTES,
@@ -587,6 +697,8 @@ struct PrivateNodeDefinition {
     protocol: NodeProtocol,
     transport: ArtifactTransport,
     definition_digest_sha256: String,
+    #[serde(default)]
+    tls_verification: TlsVerification,
     definition: Value,
 }
 
@@ -604,6 +716,7 @@ fn build_artifact(
     credential_ref: Id,
     generation: u64,
     node_ids: Vec<Id>,
+    accepted_omissions_bound: ImportOmissions,
 ) -> Result<BuiltArtifact, ArtifactError> {
     if node_ids.len() != input.definitions.len() {
         return Err(ArtifactError::InvalidInput);
@@ -620,6 +733,7 @@ fn build_artifact(
         let digest = definition_digest(
             definition.protocol,
             definition.transport,
+            definition.tls_verification,
             &definition.full_definition,
             &input.defaults,
         )?;
@@ -628,6 +742,7 @@ fn build_artifact(
             protocol: definition.protocol,
             transport: definition.transport.into(),
             definition_digest_sha256: digest.clone(),
+            tls_verification: definition.tls_verification,
             definition: definition.full_definition,
         });
         nodes.push(Node {
@@ -637,10 +752,17 @@ fn build_artifact(
             source_generation: generation,
             definition_digest_sha256: digest,
             protocol: definition.protocol,
+            tls_verification: definition.tls_verification,
             credential_refs: vec![credential_ref.clone()],
         });
     }
 
+    let omissions = input.omissions;
+    let confirmed_omissions_digest_sha256 = if omissions.requires_confirmation() {
+        Some(import_omissions_digest(&omissions).map_err(|_| ArtifactError::InvalidProvenance)?)
+    } else {
+        None
+    };
     let provenance = SourceProvenance {
         schema_version: SCHEMA_VERSION,
         format: input.format,
@@ -650,6 +772,9 @@ fn build_artifact(
         core_commit: PINNED_CORE_COMMIT.to_owned(),
         origin: input.origin,
         actual_user_agent_sha256: actual_user_agent_sha256.clone(),
+        omissions,
+        confirmed_omissions_digest_sha256,
+        accepted_omissions_bound,
     };
     let artifact = PrivateArtifact {
         schema_version: MAX_ARTIFACT_SCHEMA_VERSION,
@@ -696,7 +821,7 @@ fn validate_private_artifact(artifact: &PrivateArtifact) -> Result<(), ArtifactE
             return Err(ArtifactError::CorruptArtifact);
         }
     }
-    if artifact.schema_version != MAX_ARTIFACT_SCHEMA_VERSION
+    if !matches!(artifact.schema_version, 1 | MAX_ARTIFACT_SCHEMA_VERSION)
         || artifact.source_generation == 0
         || artifact.raw_body.len() > MAX_RAW_SOURCE_BYTES
         || artifact.definitions.is_empty()
@@ -764,6 +889,7 @@ fn validate_private_artifact(artifact: &PrivateArtifact) -> Result<(), ArtifactE
         if definition_digest(
             definition.protocol,
             definition.transport.into(),
+            definition.tls_verification,
             &definition.definition,
             &defaults,
         )
@@ -1003,8 +1129,9 @@ impl fmt::Debug for SourceImportInput {
 pub fn create_source(
     store: &Store,
     expected_revision: u64,
-    input: SourceImportInput,
+    mut input: SourceImportInput,
 ) -> Result<SourceImportReceipt, ArtifactError> {
+    input.sync_tls_count();
     let mut candidate = store.read_snapshot()?;
     if candidate.revision != expected_revision {
         return Err(StoreError::Conflict {
@@ -1018,6 +1145,10 @@ pub fn create_source(
         SourceOrigin::Local => SourceKind::ManualServer,
     };
     validate_input(&input, kind)?;
+    if input.auto_refresh {
+        return Err(ArtifactError::InvalidInput);
+    }
+    let accepted_omissions_bound = confirmation_bound(&input, None)?;
     let source_id = reserve_fresh(&mut candidate, "source", EntityIdKind::Source)?;
     let credential_ref = reserve_fresh(&mut candidate, "artifact", EntityIdKind::CredentialRef)?;
     let mut node_ids = Vec::with_capacity(input.definitions.len());
@@ -1030,6 +1161,7 @@ pub fn create_source(
         credential_ref.clone(),
         1,
         node_ids.clone(),
+        accepted_omissions_bound,
     )?;
     candidate
         .credentials
@@ -1071,9 +1203,10 @@ pub fn update_source(
     source_id: &Id,
     expected_revision: u64,
     expected_source_generation: u64,
-    input: SourceImportInput,
+    mut input: SourceImportInput,
     evidence_at_unix_ms: i64,
 ) -> Result<SourceImportReceipt, ArtifactError> {
+    input.sync_tls_count();
     if evidence_at_unix_ms < 0 {
         return Err(ArtifactError::InvalidInput);
     }
@@ -1108,6 +1241,8 @@ pub fn update_source(
     if input.accepted_at_unix_ms < old_provenance.accepted_at_unix_ms {
         return Err(ArtifactError::InvalidProvenance);
     }
+    let accepted_omissions_bound =
+        confirmation_bound(&input, Some(&old_provenance.accepted_omissions_bound))?;
 
     let next_digest = sha256_hex(&input.raw_body);
     let same_digest = next_digest == old_provenance.raw_body_digest_sha256;
@@ -1161,6 +1296,7 @@ pub fn update_source(
             credential_ref.clone(),
             generation,
             node_ids.clone(),
+            accepted_omissions_bound,
         )?;
         let mut source = old_source.clone();
         source.generation = generation;

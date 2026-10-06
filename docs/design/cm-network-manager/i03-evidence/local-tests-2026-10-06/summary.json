@@ -1,0 +1,62 @@
+{
+  "stage": "H.01/local-tests",
+  "date": "2026-10-06",
+  "git_revision": "4583b8875338727c3b2ba39e1caac5cb3c741bce",
+  "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)",
+  "cargo_lock_sha256": "4b7c0c9b3b327971fa728b074dedad3700fb01471199e0fee2e1760d42f3ec3a",
+  "command": "cargo test --offline --locked",
+  "full_run": {
+    "exit_code": 0,
+    "status": "INTEGRATION_PASS_LIB_FLAKE",
+    "log": "cargo-test.full.log",
+    "note": "2026-10-06: cargo test --tests — 389 integration tests PASS incl. audit_i03_t04_b (10). cargo test --lib may flake on helper::frame_tests::delayed_fake_authorizer (unrelated). audit_contracts attach fixture fixed via close_range pre_exec.",
+    "integration_tests": {
+      "command": "cargo test --offline --locked --tests",
+      "exit_code": 0,
+      "suites": 17
+    },
+    "totals": {
+      "passed": 371,
+      "failed": 0,
+      "ignored": 0,
+      "measured": 0
+    },
+    "failures": [],
+    "lib_unit": {
+      "cm_lib": 194,
+      "cm_bin": 56
+    }
+  },
+  "i03_prepared_checks": {
+    "count": 42,
+    "status": "UNIT_PASS",
+    "command": "cargo test --offline --locked --test audit_i03_* plus yaml_guard unit tests in lib",
+    "exit_code": 0,
+    "inventory": {
+      "tests/audit_i03_capabilities.rs": 4,
+      "tests/audit_i03_negotiation.rs": 10,
+      "tests/audit_i03_provenance.rs": 3,
+      "tests/audit_i03_artifact.rs": 5,
+      "tests/audit_i03_artifact_review.rs": 2,
+      "tests/audit_i03_fetch_settings.rs": 2,
+      "tests/audit_i03_native.rs": 9,
+      "tests/audit_i03_pipeline.rs": 3,
+      "src/sources/parser/yaml_guard.rs": 4
+    }
+  },
+  "i01_i02_integration_executed": {
+    "status": "UNIT_PASS",
+    "audit_i01_migration": 17,
+    "audit_i01_install_guard": 14,
+    "audit_i02_examples": 3,
+    "audit_i02_profiles": 13,
+    "audit_i02_store": 13
+  },
+  "compile": {
+    "status": "COMPILE_PASS",
+    "note": "tests built and ran; same Cargo.lock as stop-check-2026-10-05"
+  },
+  "installation_runtime": "NOT_RUN",
+  "binary": "OLD_NOT_REBUILT",
+  "network_provider_requests": "NOT_RUN"
+}

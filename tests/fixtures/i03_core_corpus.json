@@ -1,0 +1,14 @@
+{"proxies":[
+ {"name":"ss-gcm","type":"ss","server":"edge.example.invalid","port":8388,"cipher":"aes-128-gcm","password":"p"},
+ {"name":"ss-2022","type":"ss","server":"edge.example.invalid","port":8388,"cipher":"2022-blake3-aes-128-gcm","password":"AAAAAAAAAAAAAAAAAAAAAA=="},
+ {"name":"vless-tcp","type":"vless","server":"edge.example.invalid","port":443,"uuid":"123e4567-e89b-12d3-a456-426614174000","tls":false},
+ {"name":"vless-ws-tls","type":"vless","server":"edge.example.invalid","port":443,"uuid":"123e4567-e89b-12d3-a456-426614174000","tls":true,"servername":"cdn.example.invalid","network":"ws","ws-opts":{"path":"/ws","headers":{"Host":"cdn.example.invalid"}}},
+ {"name":"vless-reality","type":"vless","server":"edge.example.invalid","port":443,"uuid":"123e4567-e89b-12d3-a456-426614174000","tls":true,"servername":"www.example.com","client-fingerprint":"chrome","flow":"xtls-rprx-vision","reality-opts":{"public-key":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA","short-id":"ab"}},
+ {"name":"vless-grpc","type":"vless","server":"edge.example.invalid","port":443,"uuid":"123e4567-e89b-12d3-a456-426614174000","tls":true,"network":"grpc","grpc-opts":{"grpc-service-name":"svc"}},
+ {"name":"vmess-ws","type":"vmess","server":"edge.example.invalid","port":443,"uuid":"123e4567-e89b-12d3-a456-426614174000","cipher":"auto","alterId":0,"tls":true,"network":"ws","ws-opts":{"path":"/v"}},
+ {"name":"trojan","type":"trojan","server":"edge.example.invalid","port":443,"password":"p","sni":"edge.example.invalid"},
+ {"name":"hy2","type":"hysteria2","server":"edge.example.invalid","port":443,"password":"p","obfs":"salamander","obfs-password":"o"},
+ {"name":"tuic","type":"tuic","server":"edge.example.invalid","port":443,"uuid":"123e4567-e89b-12d3-a456-426614174000","password":"p","congestion-controller":"bbr"},
+ {"name":"http","type":"http","server":"edge.example.invalid","port":8080},
+ {"name":"socks","type":"socks5","server":"edge.example.invalid","port":1080,"username":"u","password":"p"}
+]}

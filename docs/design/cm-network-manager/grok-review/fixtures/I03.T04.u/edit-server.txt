@@ -1,0 +1,6 @@
+protocol=vless
+port=443
+secret-source=stdin
+secret=c0ffee00-0005-4000-8000-000000000005
+from-server=edge.example.invalid
+to-server=other.example.invalid

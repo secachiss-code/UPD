@@ -1,0 +1,1 @@
+vless://123e4567-e89b-12d3-a456-4266141740b6@[2001:db8::10]:443?type=tcp&security=none#edge6

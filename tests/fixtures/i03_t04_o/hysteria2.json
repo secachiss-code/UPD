@@ -1,0 +1,1 @@
+{"proxies":[{"name":"o-hy2","type":"hysteria2","server":"edge.example.invalid","port":443,"password":"CMFIXO-hy2-password","obfs":"salamander","obfs-password":"CMFIXO-hy2-obfs","sni":"edge.example.invalid"}]}

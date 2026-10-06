@@ -1,7 +1,7 @@
 //! Synthetic failure boundaries; compile preparation does not constitute execution.
 
 use super::*;
-use crate::profiles::{NodeProtocol, SCHEMA_VERSION, SourceKind};
+use crate::profiles::{NodeProtocol, SCHEMA_VERSION, SourceKind, TlsVerification};
 
 fn id(value: &str) -> Id {
     Id::new(value).unwrap()
@@ -48,6 +48,7 @@ fn candidate_with_blobs() -> (GraphSnapshot, Vec<CredentialMaterial>) {
             source_generation: 1,
             definition_digest_sha256: hex_sha256(b"synthetic-node"),
             protocol: NodeProtocol::Socks5,
+            tls_verification: TlsVerification::NotApplicable,
             credential_refs: refs,
         },
     );
@@ -248,4 +249,47 @@ fn completion_rename_failure_keeps_pending_plan_with_missing_blobs_recoverable()
     assert_eq!(reopened.finish_removal(&plan_id).unwrap().revision, 3);
     drop(reopened);
     fs::remove_dir_all(root).unwrap();
+}
+
+/// v1 → v2: provenance gains empty omissions, nodes gain `not_applicable` TLS.
+#[test]
+fn v1_graph_migrates_to_v2_with_empty_omissions() {
+    let v1 = serde_json::json!({
+        "schema_version": 1,
+        "sources": {"s": {"schema_version": 1, "provenance": {"schema_version": 1}}},
+        "nodes": {"n": {"schema_version": 1}},
+    });
+    let migrated = migrate_graph_json(v1).unwrap();
+    assert_eq!(migrated["schema_version"], SCHEMA_VERSION);
+    let provenance = &migrated["sources"]["s"]["provenance"];
+    assert_eq!(
+        provenance["omissions"]["section_names"],
+        serde_json::json!([])
+    );
+    assert_eq!(
+        provenance["accepted_omissions_bound"]["tls_verification_disabled_count"],
+        0
+    );
+    assert_eq!(migrated["nodes"]["n"]["tls_verification"], "not_applicable");
+    assert!(!has_schema_other_than(&migrated, u64::from(SCHEMA_VERSION)));
+}
+
+/// A v1 file carrying a nested record of another version is refused, not relabelled as v2.
+#[test]
+fn v1_graph_with_foreign_nested_version_is_refused() {
+    for nested in [0, 2, 3] {
+        let v1 = serde_json::json!({
+            "schema_version": 1,
+            "sources": {"s": {"schema_version": 1, "provenance": {"schema_version": nested}}},
+        });
+        assert!(matches!(
+            migrate_graph_json(v1),
+            Err(StoreError::UnsupportedSchema)
+        ));
+    }
+    let future = serde_json::json!({"schema_version": 3});
+    assert!(matches!(
+        migrate_graph_json(future),
+        Err(StoreError::UnsupportedSchema)
+    ));
 }

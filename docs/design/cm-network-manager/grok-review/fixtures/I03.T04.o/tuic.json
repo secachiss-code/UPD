@@ -1,0 +1,1 @@
+{"proxies":[{"name":"o-tuic","type":"tuic","server":"edge.example.invalid","port":443,"uuid":"c0ffee00-0003-4000-8000-000000000003","password":"CMFIXO-tuic-password","congestion-controller":"bbr","udp-relay-mode":"native"}]}

@@ -4,7 +4,7 @@
       "autostart": false,
       "id": "group",
       "mutual_network_access": false,
-      "schema_version": 1,
+      "schema_version": 2,
       "tunnel_instance_id": "tunnel-group"
     }
   },
@@ -22,7 +22,7 @@
       "environment_preset_id": "preset",
       "executable": "/usr/bin/example-1",
       "id": "app-1",
-      "schema_version": 1
+      "schema_version": 2
     },
     "app-2": {
       "argv": [],
@@ -37,7 +37,7 @@
       "environment_preset_id": "preset",
       "executable": "/usr/bin/example-2",
       "id": "app-2",
-      "schema_version": 1
+      "schema_version": 2
     },
     "app-3": {
       "argv": [],
@@ -52,7 +52,7 @@
       "environment_preset_id": "preset",
       "executable": "/usr/bin/example-3",
       "id": "app-3",
-      "schema_version": 1
+      "schema_version": 2
     }
   },
   "browser_identity_profiles": {
@@ -60,19 +60,19 @@
       "data_profile_id": "data-1",
       "id": "browser-1",
       "label": null,
-      "schema_version": 1
+      "schema_version": 2
     },
     "browser-2": {
       "data_profile_id": "data-2",
       "id": "browser-2",
       "label": null,
-      "schema_version": 1
+      "schema_version": 2
     },
     "browser-3": {
       "data_profile_id": "data-3",
       "id": "browser-3",
       "label": null,
-      "schema_version": 1
+      "schema_version": 2
     }
   },
   "connection_profiles": {
@@ -91,7 +91,7 @@
         },
         "selection": "pinned"
       },
-      "schema_version": 1,
+      "schema_version": 2,
       "source_id": "source-a"
     },
     "profile-b": {
@@ -109,7 +109,7 @@
         },
         "selection": "pinned"
       },
-      "schema_version": 1,
+      "schema_version": 2,
       "source_id": "source-b"
     }
   },
@@ -118,29 +118,29 @@
       "credential_ref": "credential-a",
       "digest_sha256": "4ede3d757b22baa5f3f92659aa1ed33a95c4d118ed9d0b4cf469b6cc448d10fe",
       "owner_source_id": "source-a",
-      "schema_version": 1,
+      "schema_version": 2,
       "size_bytes": 19
     },
     "credential-b": {
       "credential_ref": "credential-b",
       "digest_sha256": "5afaf8ae10226a69c81d3e560152c1aa98ca3c113ed1118c6295a25eeb83abbf",
       "owner_source_id": "source-b",
-      "schema_version": 1,
+      "schema_version": 2,
       "size_bytes": 19
     }
   },
   "data_profiles": {
     "data-1": {
       "id": "data-1",
-      "schema_version": 1
+      "schema_version": 2
     },
     "data-2": {
       "id": "data-2",
-      "schema_version": 1
+      "schema_version": 2
     },
     "data-3": {
       "id": "data-3",
-      "schema_version": 1
+      "schema_version": 2
     }
   },
   "environment_presets": {
@@ -150,7 +150,7 @@
         "en"
       ],
       "locale": "en_US.UTF-8",
-      "schema_version": 1,
+      "schema_version": 2,
       "timezone": "UTC"
     }
   },
@@ -162,7 +162,7 @@
       ],
       "locale": "en_US.UTF-8",
       "preset_id": "preset",
-      "schema_version": 1,
+      "schema_version": 2,
       "session_id": "session-1",
       "timezone": "UTC"
     },
@@ -173,7 +173,7 @@
       ],
       "locale": "en_US.UTF-8",
       "preset_id": "preset",
-      "schema_version": 1,
+      "schema_version": 2,
       "session_id": "session-2",
       "timezone": "UTC"
     }
@@ -183,7 +183,7 @@
     "connection_profile_id": null,
     "id": "host",
     "mode": "off",
-    "schema_version": 1,
+    "schema_version": 2,
     "tunnel_instance_id": null
   },
   "issued_id_kinds": {
@@ -250,9 +250,10 @@
       "definition_digest_sha256": "f64633d2b1505e3498ea24dfe5be3533a047c391f51989b719dc7a2f013e6a85",
       "id": "node-a-1",
       "protocol": "vless",
-      "schema_version": 1,
+      "schema_version": 2,
       "source_generation": 1,
-      "source_id": "source-a"
+      "source_id": "source-a",
+      "tls_verification": "not_applicable"
     },
     "node-b-1": {
       "credential_refs": [
@@ -261,13 +262,14 @@
       "definition_digest_sha256": "e71fde374b25e346cb098590061c14f3dfb00894540652db541c1ca162165413",
       "id": "node-b-1",
       "protocol": "vless",
-      "schema_version": 1,
+      "schema_version": 2,
       "source_generation": 1,
-      "source_id": "source-b"
+      "source_id": "source-b",
+      "tls_verification": "not_applicable"
     }
   },
   "revision": 0,
-  "schema_version": 1,
+  "schema_version": 2,
   "sessions": {
     "session-1": {
       "application_id": "app-1",
@@ -278,7 +280,7 @@
       "id": "session-1",
       "lifecycle": "active",
       "node_id": "node-a-1",
-      "schema_version": 1,
+      "schema_version": 2,
       "source_generation": 1,
       "source_id": "source-a",
       "tunnel_generation": 1,
@@ -293,7 +295,7 @@
       "id": "session-2",
       "lifecycle": "active",
       "node_id": "node-a-1",
-      "schema_version": 1,
+      "schema_version": 2,
       "source_generation": 1,
       "source_id": "source-a",
       "tunnel_generation": 1,
@@ -307,7 +309,7 @@
         "credential_ref": "credential-a",
         "digest_sha256": "4ede3d757b22baa5f3f92659aa1ed33a95c4d118ed9d0b4cf469b6cc448d10fe",
         "owner_source_id": "source-a",
-        "schema_version": 1,
+        "schema_version": 2,
         "size_bytes": 19
       },
       "current_node_ids": [
@@ -316,7 +318,7 @@
       "generation": 1,
       "id": "source-a",
       "kind": "subscription",
-      "schema_version": 1
+      "schema_version": 2
     },
     "source-b": {
       "content_digest_sha256": "fd76cd243ac274dfaaab96a6caf39fa88bee2dbead87a77598127bb5d46dcd2b",
@@ -324,7 +326,7 @@
         "credential_ref": "credential-b",
         "digest_sha256": "5afaf8ae10226a69c81d3e560152c1aa98ca3c113ed1118c6295a25eeb83abbf",
         "owner_source_id": "source-b",
-        "schema_version": 1,
+        "schema_version": 2,
         "size_bytes": 19
       },
       "current_node_ids": [
@@ -333,7 +335,7 @@
       "generation": 1,
       "id": "source-b",
       "kind": "subscription",
-      "schema_version": 1
+      "schema_version": 2
     }
   },
   "staged_removals": {},
@@ -347,7 +349,7 @@
         "group_id": "group",
         "owner": "group"
       },
-      "schema_version": 1
+      "schema_version": 2
     },
     "tunnel-own": {
       "connection_profile_id": "profile-b",
@@ -358,7 +360,7 @@
         "application_id": "app-3",
         "owner": "application"
       },
-      "schema_version": 1
+      "schema_version": 2
     }
   },
   "verifications": {}

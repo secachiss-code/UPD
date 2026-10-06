@@ -98,10 +98,12 @@ fn rejects_host_control_fields_sections_unknown_fields_and_unsupported_branches(
     );
 
     let provider = r#"{"proxies":[{"name":"n","type":"ss","server":"edge.example","port":443,"cipher":"aes-128-gcm","password":"p"}],"proxy-providers":{"remote":{"type":"http"}}}"#;
-    assert_eq!(
-        json_source(provider).unwrap_err(),
-        ParserError::UnsupportedNativeSection
-    );
+    let parsed = json_source(provider).expect("http providers are omitted, not fetched");
+    assert!(parsed
+        .omissions()
+        .section_names
+        .iter()
+        .any(|name| name == "proxy-providers"));
 
     let unknown = r#"{"proxies":[{"name":"n","type":"ss","server":"edge.example","port":443,"cipher":"aes-128-gcm","password":"p","new-core-option":true}]}"#;
     assert_eq!(
@@ -110,26 +112,29 @@ fn rejects_host_control_fields_sections_unknown_fields_and_unsupported_branches(
     );
 
     let tls = r#"{"proxies":[{"name":"n","type":"vless","server":"edge.example","port":443,"uuid":"123e4567-e89b-12d3-a456-426614174000","tls":true}]}"#;
+    let parsed = json_source(tls).expect("tls without skip-cert-verify stays verified");
+    let (_, definitions, _) = parsed.into_parts();
     assert_eq!(
-        json_source(tls).unwrap_err(),
-        ParserError::UnsupportedNodeFeature { node_index: 0 }
+        definitions[0].tls_verification(),
+        cm::profiles::TlsVerification::Verified
     );
 
-    let websocket = r#"{"proxies":[{"name":"n","type":"vless","server":"edge.example","port":443,"uuid":"123e4567-e89b-12d3-a456-426614174000","network":"ws"}]}"#;
+    let websocket = r#"{"proxies":[{"name":"n","type":"vless","server":"edge.example","port":443,"uuid":"123e4567-e89b-12d3-a456-426614174000","network":"ws","ws-opts":{"path":"no-slash"}}]}"#;
     assert_eq!(
         json_source(websocket).unwrap_err(),
-        ParserError::UnsupportedTransport { node_index: 0 }
+        ParserError::InvalidNode { node_index: 0 }
     );
 
-    let native_group = r#"{"proxies":[{"name":"n","type":"ss","server":"edge.example","port":443,"cipher":"aes-128-gcm","password":"p"}],"proxy-groups":[]}"#;
+    let native_group = r#"{"proxies":[{"name":"n","type":"ss","server":"edge.example","port":443,"cipher":"aes-128-gcm","password":"p"}],"proxy-groups":[],"rules":[]}"#;
+    let parsed = json_source(native_group).expect("groups and rules are recorded omissions");
     assert_eq!(
-        json_source(native_group).unwrap_err(),
-        ParserError::UnsupportedNativeSection
+        parsed.omissions().section_names,
+        ["proxy-groups".to_string(), "rules".to_string()]
     );
 
     let ss2022 = r#"{"proxies":[{"name":"n","type":"ss","server":"edge.example","port":443,"cipher":"2022-blake3-aes-128-gcm","password":"private-psk"}]}"#;
     let error = json_source(ss2022).unwrap_err();
-    assert_eq!(error, ParserError::UnsupportedNodeFeature { node_index: 0 });
+    assert_eq!(error, ParserError::InvalidNode { node_index: 0 });
     assert!(!format!("{error:?} {error}").contains("private-psk"));
 }
 

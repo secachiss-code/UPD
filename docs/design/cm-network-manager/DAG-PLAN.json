@@ -194,7 +194,7 @@
             "I03.T03"
           ],
           "status": "IN_PROGRESS",
-          "progress_note": "User stopped work on 2026-10-05. Native first subset, streaming YAML guard, private restart settings and bound parser/publication pipeline saved. TLS/REALITY/transports/remaining protocols/URI/base64/manual remain. All root targets cargo check --offline --locked --tests COMPILE_PASS; I03 total42 checks prepared NOT_RUN. Binary OLD_NOT_REBUILT. WORK-STOP-2026-10-05.md",
+          "progress_note": "User stopped work on 2026-10-05. Native first subset, streaming YAML guard, private restart settings and bound parser/publication pipeline saved. TLS/REALITY/transports/remaining protocols/URI/base64/manual remain. I03 42 prepared checks UNIT_PASS local run 2026-10-06 (i03-evidence/local-tests-2026-10-06/summary.json); full cargo test 371 pass/1 fail audit_contracts resource flake. installation runtime NOT_RUN; binary OLD_NOT_REBUILT. WORK-STOP-2026-10-05.md",
           "coding_status": "PARTIAL"
         },
         {

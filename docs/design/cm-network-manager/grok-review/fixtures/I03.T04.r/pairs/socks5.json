@@ -1,0 +1,1 @@
+{"name":"edge-socks","type":"socks5","server":"edge.example.invalid","port":1080,"username":"sock-user","password":"sock-secret"}

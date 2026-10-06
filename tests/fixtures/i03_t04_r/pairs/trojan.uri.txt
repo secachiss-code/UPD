@@ -1,0 +1,1 @@
+trojan://trojan-secret@edge.example.invalid:443?sni=edge.example.invalid#edge-trojan

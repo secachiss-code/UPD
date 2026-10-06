@@ -1,0 +1,1 @@
+vless://123e4567-e89b-12d3-a456-4266141740b1@edge.example.invalid:443?type=tcp&security=none&not-a-real-opt=CMFIXR-unknown#edge

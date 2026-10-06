@@ -1,0 +1,1 @@
+{"proxies":[{"name":"o-tls-path","type":"vless","server":"edge.example.invalid","port":443,"uuid":"c0ffee00-0008-4000-8000-000000000008","network":"tcp","tls":true,"private-key":"/tmp/CMFIXO-tls-path.pem"}]}

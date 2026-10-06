@@ -102,8 +102,8 @@ fn focus(pid: u32) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::atomic::{AtomicUsize, Ordering};
     use cm::common::contract_fixtures::TempDirGuard;
+    use std::sync::atomic::{AtomicUsize, Ordering};
     #[test]
     fn repeat_launch_focuses_live_terminal_and_force_opens_another() {
         let dir = TempDirGuard::new("tui-deduplicate").unwrap();

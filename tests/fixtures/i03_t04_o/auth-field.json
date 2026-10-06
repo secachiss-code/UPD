@@ -1,0 +1,1 @@
+{"proxies":[{"name":"o-auth","type":"ss","server":"edge.example.invalid","port":8388,"cipher":"aes-128-gcm","password":"CMFIXO-ss-password-2","auth":"CMFIXO-auth"}]}

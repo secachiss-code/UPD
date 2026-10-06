@@ -1,0 +1,1 @@
+{"proxies":[{"name":"o-vmess","type":"vmess","server":"edge.example.invalid","port":443,"uuid":"c0ffee00-0002-4000-8000-000000000002","cipher":"auto","alterId":0,"network":"tcp"}]}

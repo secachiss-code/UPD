@@ -1,0 +1,1 @@
+tuic://123e4567-e89b-12d3-a456-4266141740d3:tuic-secret@edge.example.invalid:443?congestion_control=bbr&udp_relay_mode=native&sni=edge.example.invalid#edge-tuic

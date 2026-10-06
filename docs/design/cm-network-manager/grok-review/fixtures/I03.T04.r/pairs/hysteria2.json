@@ -1,0 +1,1 @@
+{"name":"edge-hy2","type":"hysteria2","server":"edge.example.invalid","port":443,"password":"hy2-secret","sni":"edge.example.invalid"}

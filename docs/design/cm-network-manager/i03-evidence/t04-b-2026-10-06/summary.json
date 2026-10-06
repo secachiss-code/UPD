@@ -1,0 +1,14 @@
+{
+  "stage": "I03.T04.b/nested-opts-validator",
+  "date": "2026-10-06",
+  "fixtures": "tests/fixtures/i03_t04_b (copied from grok-review/fixtures/I03.T04.b)",
+  "command": "cargo test --offline --locked --test audit_i03_t04_b",
+  "exit_code": 0,
+  "tests_passed": 10,
+  "outputs": [
+    "src/sources/parser/native/common.rs (build_fixture_opts, has_disallowed_text, digest)",
+    "tests/audit_i03_t04_b.rs"
+  ],
+  "error_mapping": "UnsupportedField → UnsupportedNodeField { node_index: 0 } per existing ParserError set",
+  "installation_runtime": "NOT_RUN"
+}

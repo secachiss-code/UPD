@@ -1,0 +1,3130 @@
+{
+  "schema_version": 2,
+  "date": "2026-10-06",
+  "supersedes_granularity_of": "DAG-PLAN.json",
+  "size_weights": {
+    "S": 1,
+    "M": 2,
+    "L": 4,
+    "XL": 8
+  },
+  "evidence_levels": {
+    "D": "решение пользователя/ADR",
+    "L0": "чтение первичных источников, документ",
+    "L1": "unit/fixture, compile",
+    "L2": "Linux network harness (netns, локальный test endpoint)",
+    "L3": "реальное приложение/executor",
+    "L4": "сквозная проверка: fault injection, миграция, установка"
+  },
+  "done": [
+    "I01.T01",
+    "I01.T02",
+    "I01.T03",
+    "I01.T04",
+    "I01.T05",
+    "I02.T01",
+    "I02.T02",
+    "I02.T03",
+    "I02.T04",
+    "I02.T05",
+    "I03.T01",
+    "I03.T02",
+    "I03.T03",
+    "I03.T04.p",
+    "H.01",
+    "H.02",
+    "H.04",
+    "H.05",
+    "I03.T04.a",
+    "I03.T04.b",
+    "I03.T04.y",
+    "I03.T04.c",
+    "I03.T04.d",
+    "I03.T04.e",
+    "I03.T04.f",
+    "I03.T04.g",
+    "I03.T04.h",
+    "I03.T04.i",
+    "I03.T04.j",
+    "I03.T04.k",
+    "I03.T04.l",
+    "I03.T04.m",
+    "I03.T04.n",
+    "I03.T04.o",
+    "I03.T04.q",
+    "I03.T04.r",
+    "I03.T04.s",
+    "I03.T04.t",
+    "I03.T04.u",
+    "I03.T04.v",
+    "I03.T04.w"
+  ],
+  "milestones": [
+    {
+      "id": "H",
+      "title": "Гигиена кода и инфраструктура проверок",
+      "priority": "P0",
+      "lane": "infra",
+      "goal": "Снять технические блокеры до роста кода: HTTP-транспорт с честным deadline, судьба YAML, декомпозиция крупных модулей, сетевой harness, актуальные статусы evidence.",
+      "questions": "",
+      "gate": "H.04 и H.11 блокируют реальные fetch и все L2-проверки"
+    },
+    {
+      "id": "I03",
+      "title": "Подписки и собственные серверы (остаток T04–T05)",
+      "priority": "P1",
+      "lane": "import",
+      "goal": "Довести импорт до полного заявленного subset без silent dropping и закрыть итерацию evidence.",
+      "questions": "Q04, Q06, Q24",
+      "gate": "Неподдержанное → UnsupportedFeature, а не молчаливое удаление"
+    },
+    {
+      "id": "V",
+      "title": "Вертикальный срез: новая модель → пользователь",
+      "priority": "P0",
+      "lane": "slice",
+      "goal": "Предложение (решение D7): подключить Store/sources к CLI и текущему singleton mihomo до I04+, чтобы новая архитектура получила живую проверку. Соответствует «Поставке 1» из DETAILED-DAG-PLAN §8.",
+      "questions": "",
+      "gate": "Не подменяет I04: генератор V.03 становится основой I04.T04.a"
+    },
+    {
+      "id": "I04",
+      "title": "Контракт ядер и адаптер mihomo",
+      "priority": "P0",
+      "lane": "core",
+      "goal": "Typed CoreAdapter, instance-owned ресурсы, A+C разделение ответственности, рабочий mihomo-адаптер.",
+      "questions": "Q02, Q03, Q07",
+      "gate": "G1 (вместе с I02/I06)"
+    },
+    {
+      "id": "I05",
+      "title": "Адаптер Xray и доставка ядер",
+      "priority": "P1",
+      "lane": "core",
+      "goal": "Второе ядро за тем же контрактом и безопасное обновление/откат обоих ядер.",
+      "questions": "Q03, Q07",
+      "gate": "G3 частично (DNS на обоих ядрах)"
+    },
+    {
+      "id": "I06",
+      "title": "Привилегированный контроллер",
+      "priority": "P0",
+      "lane": "root",
+      "goal": "Typed root-протокол с проверкой владельца, транзакциями и минимальными правами.",
+      "questions": "Q08, Q11, Q16, Q25",
+      "gate": "G1"
+    },
+    {
+      "id": "I07",
+      "title": "Режимы хоста и outer egress",
+      "priority": "P0",
+      "lane": "net",
+      "goal": "CM владеет маршрутами и firewall; worker выходит наружу без петель; host off/proxy/tunnel независимы.",
+      "questions": "Q02, Q03, Q09",
+      "gate": "G1 → I08"
+    },
+    {
+      "id": "I08",
+      "title": "Сетевые окружения приложений",
+      "priority": "P0",
+      "lane": "net",
+      "goal": "Netns на приложение/сессию с единственным разрешённым выходом через worker.",
+      "questions": "Q09, Q10, Q11",
+      "gate": "G2 (с I09)"
+    },
+    {
+      "id": "I09",
+      "title": "Fail-closed, lifecycle и восстановление",
+      "priority": "P0",
+      "lane": "net",
+      "goal": "Никакой прямой утечки при сбоях; восстановление после crash и перезагрузки.",
+      "questions": "Q12, Q13",
+      "gate": "G2"
+    },
+    {
+      "id": "I10",
+      "title": "DNS, IPv6, UDP и утечки",
+      "priority": "P0",
+      "lane": "net",
+      "goal": "Доказанный DNS-путь на обоих ядрах, IPv6 pass/block, UDP/QUIC.",
+      "questions": "Q03, Q09, Q14",
+      "gate": "G3"
+    },
+    {
+      "id": "I11",
+      "title": "Универсальный запуск приложений",
+      "priority": "P1",
+      "lane": "apps",
+      "goal": "Произвольный исполняемый файл в готовом окружении без shell и без списка продуктов в коде.",
+      "questions": "Q10, Q11",
+      "gate": ""
+    },
+    {
+      "id": "I12",
+      "title": "Группы и независимые назначения",
+      "priority": "P1",
+      "lane": "apps",
+      "goal": "Своё туннельное подключение или общая группа; независимые источники.",
+      "questions": "Q05, Q12, Q16",
+      "gate": ""
+    },
+    {
+      "id": "I13",
+      "title": "Brokers, supervisors и упаковки",
+      "priority": "P1",
+      "lane": "apps",
+      "goal": "Честная матрица: какой процесс на самом деле ходит в сеть для native/AppImage/Flatpak/systemd user/D-Bus.",
+      "questions": "Q10, Q11, Q17",
+      "gate": ""
+    },
+    {
+      "id": "I14",
+      "title": "Страна, timezone и locale",
+      "priority": "P1",
+      "lane": "env",
+      "goal": "Региональное окружение процесса без изменения хоста.",
+      "questions": "Q01, Q15, Q18",
+      "gate": ""
+    },
+    {
+      "id": "I15-R",
+      "title": "Раннее исследование отпечатка (можно начинать сейчас)",
+      "priority": "P1",
+      "lane": "env",
+      "goal": "Отделить доказуемое от желаемого до большой интеграции.",
+      "questions": "Q01, Q26, Q27",
+      "gate": "G4"
+    },
+    {
+      "id": "I15",
+      "title": "Приватное окружение и адаптеры приложений",
+      "priority": "P1",
+      "lane": "env",
+      "goal": "Только доказанные в I15-R механизмы.",
+      "questions": "Q11, Q17, Q18",
+      "gate": ""
+    },
+    {
+      "id": "I16",
+      "title": "Оценка качества и автоматический выбор",
+      "priority": "P1",
+      "lane": "quality",
+      "goal": "Объяснимый выбор узла: сначала ограничения, потом score.",
+      "questions": "Q13, Q18, Q19",
+      "gate": ""
+    },
+    {
+      "id": "I17-D",
+      "title": "Ранний проект TUI/апплета (можно начинать сейчас)",
+      "priority": "P1",
+      "lane": "ui",
+      "goal": "Макеты на fixtures без обещаний гарантий.",
+      "questions": "Q22",
+      "gate": ""
+    },
+    {
+      "id": "I17",
+      "title": "TUI, апплет и наблюдаемость",
+      "priority": "P1",
+      "lane": "ui",
+      "goal": "Реальные статусы вместо макетов.",
+      "questions": "Q01, Q22",
+      "gate": ""
+    },
+    {
+      "id": "X",
+      "title": "Проверки на установке (отложенный runtime)",
+      "priority": "P0",
+      "lane": "runtime",
+      "goal": "Всё, что нельзя доказать без реальной системы. Только по отдельному поручению пользователя.",
+      "questions": "",
+      "gate": "Установка/изменение сети хоста — по явному разрешению"
+    },
+    {
+      "id": "I18",
+      "title": "Сквозная приёмка и готовность выпуска",
+      "priority": "P0",
+      "lane": "release",
+      "goal": "A01–A20 на реальных приложениях.",
+      "questions": "",
+      "gate": "G6"
+    }
+  ],
+  "tasks": [
+    {
+      "id": "H.01",
+      "milestone": "H",
+      "title": "Обновить статусы evidence после локального прогона",
+      "size": "S",
+      "level": "L1",
+      "depends_on": [],
+      "what": "2026-10-06 `cargo test --offline --locked` прошёл: 372 теста, 0 отказов. Записать прогон с revision, rustc, хешем Cargo.lock. Разделить в статусах «compile/unit PASS» и «installation runtime NOT_RUN».",
+      "outputs": "i03-evidence/local-tests-2026-10-06/summary.json; правки WORK-STOP, CODER-QUEUE, DAG-PLAN.json",
+      "done_when": "Ни один документ не утверждает NOT_RUN для фактически выполненных unit/fixture проверок; runtime-статусы не повышены.",
+      "decision": null,
+      "wave": 1,
+      "critical": false
+    },
+    {
+      "id": "H.02",
+      "milestone": "H",
+      "title": "Расширить локальный gate",
+      "size": "S",
+      "level": "L1",
+      "depends_on": [],
+      "what": "В `tests/check_audit.sh`: `cargo clippy --all-targets -- -D warnings` для новых модулей (`src/sources`, `src/profiles`, `src/migration`), `rustfmt --check` для них же, отдельный шаг для `cosmic`.",
+      "outputs": "tests/check_audit.sh",
+      "done_when": "Gate падает на новом предупреждении в новых модулях; старые модули пока в allowlist.",
+      "decision": null,
+      "wave": 1,
+      "critical": false
+    },
+    {
+      "id": "H.03",
+      "milestone": "H",
+      "title": "Убрать предупреждения clippy (~100)",
+      "size": "M",
+      "level": "L1",
+      "depends_on": [
+        "H.02"
+      ],
+      "what": "54× collapsible_if, лишние касты, field_reassign_with_default, too_many_arguments (ввести структуры параметров), items_after_test_module. Отдельные коммиты по файлам, без изменения поведения.",
+      "outputs": "чистый `cargo clippy --all-targets`",
+      "done_when": "0 предупреждений; все 372 теста проходят; diff не меняет логику (ревью по файлу).",
+      "decision": null,
+      "wave": 2,
+      "critical": false
+    },
+    {
+      "id": "H.04",
+      "milestone": "H",
+      "title": "HTTP-транспорт с общим deadline (ADR + реализация)",
+      "size": "L",
+      "level": "L1",
+      "depends_on": [],
+      "what": "Известный блокер: ureq 2.12 не ограничивает DNS lookup таймаутом запроса. Сравнить: ureq 3 с собственным Resolver; резолв в отдельном потоке с отменой по deadline; minreq/свой клиент на rustls. Реализовать `FetchTransport` для `sources::negotiation`: общий deadline (DNS+connect+TLS+body), лимит тела, redirect-политика (лимит, запрет https→http, повторная проверка лимитов), опциональный локальный proxy FlClash по прежним правилам.",
+      "outputs": "ADR-HTTP-TRANSPORT.md; src/sources/transport.rs; тесты на локальном сервере 127.0.0.1",
+      "done_when": "Медленный DNS/slow-loris/бесконечный redirect/большое тело завершаются в пределах budget с типизированной ошибкой; секретный URL не попадает в ошибки и логи.",
+      "decision": "D4",
+      "wave": 1,
+      "critical": false
+    },
+    {
+      "id": "H.05",
+      "milestone": "H",
+      "title": "Решение по YAML-стеку",
+      "size": "M",
+      "level": "L0",
+      "depends_on": [],
+      "what": "serde_yaml 0.9 больше не сопровождается; yaml_guard ходит в FFI `unsafe_libyaml =0.2.11`. Варианты: оставить с pin и аудитом; serde_yaml_ng/serde_norway; парсер на saphyr с собственным guard. Критерии: duplicate keys, лимиты, отсутствие alias expansion, поддержка, unsafe.",
+      "outputs": "ADR-YAML.md; при смене — миграция parser/native и yaml_guard",
+      "done_when": "Решение записано; все fixtures native/guard проходят на выбранном стеке.",
+      "decision": "D5",
+      "wave": 1,
+      "critical": false
+    },
+    {
+      "id": "H.05.b",
+      "milestone": "H",
+      "title": "Миграция пути импорта на saphyr (D5)",
+      "size": "M",
+      "level": "L1",
+      "depends_on": [
+        "H.05"
+      ],
+      "what": "По ADR-YAML-draft: разбор событий `saphyr_parser::Parser::next_event` с собственным guard (дубли ключей, алиасы, теги, лимиты) вместо `serde_yaml` + FFI `unsafe_libyaml`; `Yaml::load_from_str` не использовать. `src/vpn.rs` остаётся на serde_yaml до H.06. Крейта нет в локальном кэше: нужен разовый `cargo fetch` с разрешения пользователя.",
+      "outputs": "src/sources/parser/native/common.rs, yaml_guard.rs; Cargo.toml/lock",
+      "done_when": "4 guard + 3 YAML native fixtures проходят на saphyr; `unsafe_libyaml` не используется путём импорта.",
+      "decision": null,
+      "wave": 2,
+      "critical": false
+    },
+    {
+      "id": "H.06",
+      "milestone": "H",
+      "title": "Декомпозиция vpn.rs (3807 строк)",
+      "size": "L",
+      "level": "L1",
+      "depends_on": [
+        "H.03"
+      ],
+      "what": "Без изменения поведения разнести на модули: `vpn/subs.rs` (Sub/Subs, хранение), `vpn/fetch.rs` (ureq, UA), `vpn/profile_files.rs` (stage/install/rollback), `vpn/config.rs` (генерация YAML, budget), `vpn/state.rs` (VpnState, last failure), `vpn/conflicts.rs` (FlClash/чужие TUN), `vpn/core.rs` (ядро, geo).",
+      "outputs": "src/vpn/*.rs",
+      "done_when": "Публичный API для main/tui/helper не изменился; тесты проходят; ни один файл не длиннее ~900 строк.",
+      "decision": null,
+      "wave": 3,
+      "critical": false
+    },
+    {
+      "id": "H.07",
+      "milestone": "H",
+      "title": "Декомпозиция helper.rs (2842 строки)",
+      "size": "L",
+      "level": "L1",
+      "depends_on": [
+        "H.03"
+      ],
+      "what": "Выделить `helper/protocol.rs` (Request/Envelope/Reply/Event), `helper/auth.rs` (Peer, polkit), `helper/ops.rs` (runner, PTY, очередь событий), `helper/settings.rs`. Это подготовка к I06.",
+      "outputs": "src/helper/*.rs",
+      "done_when": "Протокол байт-в-байт совместим (тест сериализации старых сообщений); тесты проходят.",
+      "decision": null,
+      "wave": 3,
+      "critical": false
+    },
+    {
+      "id": "H.08",
+      "milestone": "H",
+      "title": "Политика evidence в git",
+      "size": "S",
+      "level": "D",
+      "depends_on": [],
+      "what": "Сейчас в git 148 файлов логов evidence. Предложение: в git только summary.json с хешами и командой, сырые логи — в каталоге вне репозитория или в архиве релиза.",
+      "outputs": "правило в MODEL-WORKFLOW.md; .gitignore",
+      "done_when": "Решение пользователя записано и применяется к новым evidence.",
+      "decision": "D8",
+      "wave": 1,
+      "critical": false
+    },
+    {
+      "id": "H.12",
+      "milestone": "H",
+      "title": "PTY без CLOEXEC в helper и TUI",
+      "size": "S",
+      "level": "L1",
+      "depends_on": [],
+      "what": "`openpty` в `src/helper.rs` (spawn_pty) и `src/tui/process.rs` создаёт master и slave без `O_CLOEXEC`; флаг ставится позже и только на master, исходный slave остаётся наследуемым. Fork/exec в другом потоке в это окно уносит копию PTY в чужой процесс, и долгоживущий потомок держит терминал: reader не получает EOF. Сразу после `openpty` ставить `FD_CLOEXEC` на оба fd (stdio потомка ставится через dup2, флаг не мешает) или открывать через `posix_openpt(O_CLOEXEC)`.",
+      "outputs": "src/helper.rs, src/tui/process.rs; тест",
+      "done_when": "Тест: параллельный spawn во время открытия PTY не получает PTY-fd (проверка /proc/<pid>/fd потомка).",
+      "decision": null,
+      "wave": 1,
+      "critical": false
+    },
+    {
+      "id": "H.09",
+      "milestone": "H",
+      "title": "Аудит unsafe",
+      "size": "M",
+      "level": "L1",
+      "depends_on": [
+        "H.06",
+        "H.07",
+        "H.12"
+      ],
+      "what": "~190 вхождений `unsafe` (helper 48, store 24, common 24, tui/process 21). Каждому блоку — комментарий SAFETY; `#![deny(unsafe_op_in_unsafe_fn)]` и `clippy::undocumented_unsafe_blocks` для src/sources, src/profiles, src/helper; по возможности заменить libc-вызовы безопасными обёртками (rustix/nix).",
+      "outputs": "UNSAFE-AUDIT.md; правки кода",
+      "done_when": "Нет unsafe-блока без обоснования; lint включён в gate H.02.",
+      "decision": null,
+      "wave": 4,
+      "critical": false
+    },
+    {
+      "id": "H.10",
+      "milestone": "H",
+      "title": "CI на GitHub (опционально)",
+      "size": "M",
+      "level": "D",
+      "depends_on": [
+        "H.02"
+      ],
+      "what": "Workflow: build musl, test, clippy, rustfmt новых модулей, сборка cosmic. Без установки и сети хоста. Внешнее действие — только по решению пользователя.",
+      "outputs": ".github/workflows/check.yml",
+      "done_when": "Зелёный прогон на ветке; секреты не нужны.",
+      "decision": "D9",
+      "wave": 2,
+      "critical": false
+    },
+    {
+      "id": "H.11",
+      "milestone": "H",
+      "title": "Сетевой test harness",
+      "size": "XL",
+      "level": "L2",
+      "depends_on": [
+        "H.04"
+      ],
+      "what": "Rootless user+net namespace (unshare) или VM: veth-пары, «внешний» namespace с тестовыми серверами (mihomo/xray inbound VLESS/VMess/Trojan/SS/Hy2/TUIC/WG, DNS-сервер, HTTP subscription server), tcpdump-capture на каждом интерфейсе, сценарии отказов (drop, delay, link down). Прошлый W0-1 упёрся в запрет NETLINK_ROUTE в песочнице — нужно согласовать среду.",
+      "outputs": "tests/netharness/ (скрипты + Rust-обвязка), README-NETHARNESS.md",
+      "done_when": "Один сценарий «клиент → worker → тестовый сервер» проходит с capture; среда воспроизводима одной командой.",
+      "decision": "D6",
+      "wave": 2,
+      "critical": false
+    },
+    {
+      "id": "I03.T04.a",
+      "milestone": "I03",
+      "title": "Разбить parser/native.rs на модули",
+      "size": "S",
+      "level": "L1",
+      "depends_on": [],
+      "what": "849 строк вырастут втрое. Разнести: `native/mod.rs` (вход, лимиты), `native/common.rs` (строгий visitor, строки/числа/enum-наборы), `native/tls.rs`, `native/transport.rs`, `native/proto/{vless,vmess,ss,trojan,hy2,tuic,wg,http,socks}.rs`.",
+      "outputs": "src/sources/parser/native/*",
+      "done_when": "Поведение не изменилось: 9 native + 4 guard + 3 pipeline теста проходят.",
+      "decision": null,
+      "wave": 1,
+      "critical": true
+    },
+    {
+      "id": "I03.T04.b",
+      "milestone": "I03",
+      "title": "Общий валидатор вложенных опций",
+      "size": "M",
+      "level": "L1",
+      "depends_on": [
+        "I03.T04.a"
+      ],
+      "what": "Типизированный builder вложенных map: строгий набор ключей, отказ на неизвестный ключ без эха имени, ограниченные строки (длина, управляющие символы), списки с лимитом, enum-наборы, взаимоисключающие и парные поля. Результат сохраняется в full_definition без потерь, digest стабилен (каноническая сортировка).",
+      "outputs": "native/common.rs",
+      "done_when": "Fixture: неизвестный вложенный ключ, дубль, превышение длины, неверный тип → фиксированные коды ошибок.",
+      "decision": null,
+      "wave": 2,
+      "critical": true
+    },
+    {
+      "id": "I03.T04.c",
+      "milestone": "I03",
+      "title": "TLS-опции",
+      "size": "L",
+      "level": "L1",
+      "depends_on": [
+        "I03.T04.b"
+      ],
+      "what": "По pinned v1.19.32: `tls`, `servername`/`sni`, `alpn`, `client-fingerprint` (закрытый набор значений), `fingerprint` (pin сертификата, формат hex sha256), `skip-cert-verify` (политика D2), `certificate`/`private-key` (пути хоста — отказ), `ech-opts` → UnsupportedFeature.",
+      "outputs": "native/tls.rs; fixtures tls_*",
+      "done_when": "Каждое поле: позитивный и негативный fixture; ссылка на строку первичного источника в doc.",
+      "decision": "D2",
+      "wave": 3,
+      "critical": true
+    },
+    {
+      "id": "I03.T04.d",
+      "milestone": "I03",
+      "title": "REALITY",
+      "size": "M",
+      "level": "L1",
+      "depends_on": [
+        "I03.T04.c"
+      ],
+      "what": "`reality-opts`: `public-key` (base64url, 32 байта), `short-id` (hex, ≤16 символов, чётная длина), прочие ключи pinned версии. Разрешённые сочетания: VLESS + TCP/gRPC/XHTTP (сверить с источником), обязателен TLS-блок с servername.",
+      "outputs": "native/tls.rs (reality)",
+      "done_when": "Неверная длина ключа, REALITY без servername, REALITY с WS → отказ с кодом.",
+      "decision": null,
+      "wave": 4,
+      "critical": true
+    },
+    {
+      "id": "I03.T04.e",
+      "milestone": "I03",
+      "title": "Расширения VLESS/VMess",
+      "size": "M",
+      "level": "L1",
+      "depends_on": [
+        "I03.T04.c"
+      ],
+      "what": "VLESS: `flow` (`xtls-rprx-vision` только с TLS/REALITY на TCP), `packet-encoding` (`packetaddr`/`xudp`). VMess: TLS, `packet-addr`, `global-padding`, `authenticated-length`; `alterId` > 0 — решение по источнику.",
+      "outputs": "native/proto/vless.rs, vmess.rs",
+      "done_when": "Матрица flow × transport покрыта fixtures.",
+      "decision": null,
+      "wave": 4,
+      "critical": false
+    },
+    {
+      "id": "I03.T04.f",
+      "milestone": "I03",
+      "title": "Транспорт WS и HTTPUpgrade",
+      "size": "M",
+      "level": "L1",
+      "depends_on": [
+        "I03.T04.b"
+      ],
+      "what": "`network: ws`, `ws-opts`: `path`, `headers` (HTTP token, без дублей регистра), `max-early-data`, `early-data-header-name`, `v2ray-http-upgrade`, `v2ray-http-upgrade-fast-open`.",
+      "outputs": "native/transport.rs (ws)",
+      "done_when": "Path без ведущего `/`, нечисловой early-data, конфликтующие флаги → отказ.",
+      "decision": null,
+      "wave": 3,
+      "critical": false
+    },
+    {
+      "id": "I03.T04.g",
+      "milestone": "I03",
+      "title": "Транспорты HTTP и H2",
+      "size": "M",
+      "level": "L1",
+      "depends_on": [
+        "I03.T04.b"
+      ],
+      "what": "`http-opts`: `method`, `path` (список), `headers` (map → список строк). `h2-opts`: `host` (список), `path`. H2 требует TLS — проверка в I03.T04.i.",
+      "outputs": "native/transport.rs (http, h2)",
+      "done_when": "Fixtures для пустых списков, лишних ключей, header-инъекций CR/LF.",
+      "decision": null,
+      "wave": 3,
+      "critical": false
+    },
+    {
+      "id": "I03.T04.h",
+      "milestone": "I03",
+      "title": "Транспорты gRPC и XHTTP",
+      "size": "M",
+      "level": "L1",
+      "depends_on": [
+        "I03.T04.b"
+      ],
+      "what": "`grpc-opts.grpc-service-name`. XHTTP: сверить, есть ли он в pinned v1.19.32 и какие ключи (`path`, `host`, `mode`, extra); если в pinned ядре нет — UnsupportedFeature и правка capability matrix.",
+      "outputs": "native/transport.rs (grpc, xhttp); правка I03-CAPABILITY-MATRIX",
+      "done_when": "Решение по XHTTP подтверждено ссылкой на pinned source.",
+      "decision": null,
+      "wave": 3,
+      "critical": false
+    },
+    {
+      "id": "I03.T04.i",
+      "milestone": "I03",
+      "title": "Перекрёстная матрица protocol × transport × security",
+      "size": "M",
+      "level": "L1",
+      "depends_on": [
+        "I03.T04.d",
+        "I03.T04.e",
+        "I03.T04.f",
+        "I03.T04.g",
+        "I03.T04.h"
+      ],
+      "what": "Единая таблица допустимых сочетаний (из `capabilities::supported_transports` + требования TLS для grpc/h2, REALITY только для перечисленных транспортов, flow только TCP). Валидация после разбора узла.",
+      "outputs": "native/matrix.rs; генерированная таблица в capability doc",
+      "done_when": "Таблица в doc генерируется из кода (без ручной копии); fixture на каждый запрещённый класс.",
+      "decision": null,
+      "wave": 5,
+      "critical": true
+    },
+    {
+      "id": "I03.T04.j",
+      "milestone": "I03",
+      "title": "Trojan",
+      "size": "M",
+      "level": "L1",
+      "depends_on": [
+        "I03.T04.i"
+      ],
+      "what": "`password`, `sni`, `alpn`, `skip-cert-verify`, `client-fingerprint`, `network` tcp/ws/grpc, `reality-opts` если поддержан, `ss-opts` → UnsupportedFeature, `udp`.",
+      "outputs": "native/proto/trojan.rs",
+      "done_when": "Позитивные tcp/ws/grpc; негатив без password, с h2, с ss-opts.",
+      "decision": null,
+      "wave": 6,
+      "critical": false
+    },
+    {
+      "id": "I03.T04.k",
+      "milestone": "I03",
+      "title": "Hysteria2",
+      "size": "M",
+      "level": "L1",
+      "depends_on": [
+        "I03.T04.c"
+      ],
+      "what": "`password`, `ports` (диапазоны, лимит количества) и `hop-interval`, `up`/`down` (единицы), `obfs: salamander` + `obfs-password`, `sni`, `alpn`, `skip-cert-verify`, `fingerprint`, `udp`.",
+      "outputs": "native/proto/hy2.rs",
+      "done_when": "Port-hopping диапазон 1–65535, перевёрнутый диапазон, obfs без пароля → отказ.",
+      "decision": null,
+      "wave": 4,
+      "critical": false
+    },
+    {
+      "id": "I03.T04.l",
+      "milestone": "I03",
+      "title": "TUIC",
+      "size": "M",
+      "level": "L1",
+      "depends_on": [
+        "I03.T04.c"
+      ],
+      "what": "v5: `uuid` + `password`; v4 `token` — UnsupportedFeature (или отдельное решение). `congestion-controller` (cubic/new_reno/bbr), `udp-relay-mode` (native/quic), `reduce-rtt`, `alpn`, `sni`, `disable-sni`, `request-timeout`.",
+      "outputs": "native/proto/tuic.rs",
+      "done_when": "Fixtures для v4/v5, неизвестного congestion-controller.",
+      "decision": null,
+      "wave": 4,
+      "critical": false
+    },
+    {
+      "id": "I03.T04.m",
+      "milestone": "I03",
+      "title": "WireGuard",
+      "size": "L",
+      "level": "L1",
+      "depends_on": [
+        "I03.T04.b"
+      ],
+      "what": "`private-key`/`public-key`/`pre-shared-key` (base64, 32 байта), `ip`/`ipv6` (CIDR), `allowed-ips`, `mtu`, `reserved`, `peers` (список с лимитом), `persistent-keepalive`. `amnezia-wg-option`, `dialer-proxy`, `remote-dns-resolve`, `dns` → Restricted/Unsupported. Private key — только в закрытом blob.",
+      "outputs": "native/proto/wg.rs",
+      "done_when": "Неверная длина ключа, пересекающиеся peers, host-control поле → отказ; ключ не встречается в status DTO.",
+      "decision": null,
+      "wave": 3,
+      "critical": false
+    },
+    {
+      "id": "I03.T04.n",
+      "milestone": "I03",
+      "title": "Расширения Shadowsocks",
+      "size": "M",
+      "level": "L1",
+      "depends_on": [
+        "I03.T04.b"
+      ],
+      "what": "Шифры 2022 (`2022-blake3-*`, длина ключа base64 под шифр, мультипользовательский `:`), `udp-over-tcp` (+version), плагины: `obfs`, `v2ray-plugin` — поддержать или явно UnsupportedFeature; `shadow-tls`, `restls` — Unsupported по матрице.",
+      "outputs": "native/proto/ss.rs",
+      "done_when": "Ключ 2022 неверной длины → отказ; неизвестный plugin → UnsupportedFeature.",
+      "decision": null,
+      "wave": 3,
+      "critical": false
+    },
+    {
+      "id": "I03.T04.o",
+      "milestone": "I03",
+      "title": "Классификация секретов узлов",
+      "size": "M",
+      "level": "L1",
+      "depends_on": [
+        "I03.T04.j",
+        "I03.T04.k",
+        "I03.T04.l",
+        "I03.T04.m",
+        "I03.T04.n"
+      ],
+      "what": "Перечень секретных полей каждого протокола (uuid, password, private-key, psk, obfs-password, auth). Проверить, что секреты есть только в закрытом blob; status DTO, Debug, ошибки и diagnostic export их не содержат.",
+      "outputs": "native/secrets.rs; тест-сканер по всем fixtures",
+      "done_when": "Сканер находит 0 секретов вне закрытого blob на всём корпусе fixtures.",
+      "decision": null,
+      "wave": 7,
+      "critical": false
+    },
+    {
+      "id": "I03.T04.p",
+      "milestone": "I03",
+      "title": "Решение: группы, правила, провайдеры (принято)",
+      "size": "S",
+      "level": "D",
+      "depends_on": [],
+      "what": "Почти все реальные native-подписки содержат `proxy-groups` и `rules`. Сейчас они отвергаются целиком, значит большинство подписок не импортируется. Варианты: (1) отказ — как сейчас; (2) импорт узлов с явным, сохранённым в provenance списком «не импортировано: groups/rules» и подтверждением пользователя; (3) сохранять groups/rules типизированно для I04.",
+      "outputs": "запись в QUESTIONS.md / I03-DECISIONS",
+      "done_when": "Выбран вариант; он не противоречит запрету silent dropping.",
+      "decision": "D1",
+      "wave": 1,
+      "critical": false
+    },
+    {
+      "id": "I03.T04.y",
+      "milestone": "I03",
+      "title": "Схема пропусков, TLS-отметка, подтверждение",
+      "size": "M",
+      "level": "L1",
+      "depends_on": [
+        "I03.T04.b"
+      ],
+      "what": "По I03-DECISIONS-2026-10-06: `ImportOmissions` в provenance (имена секций, классы строк, число узлов без проверки сертификата), `tls_verification` узла (Verified/Pinned/Disabled, в digest), новая версия схемы Store с миграцией, `PendingConfirmation` + `accept_omissions(digest)`, автообновление не шире подтверждённого, > 0 узлов, падение ≤ 50%.",
+      "outputs": "profiles/model.rs, profiles/store.rs, sources/pipeline.rs; тесты",
+      "done_when": "Старый Store мигрирует; без подтверждения не публикуется; автообновление с новым пропуском, нулём узлов или падением > 50% оставляет прежнее поколение; ни текста строк, ни значений в сводке.",
+      "decision": null,
+      "wave": 3,
+      "critical": false
+    },
+    {
+      "id": "I03.T04.q",
+      "milestone": "I03",
+      "title": "Реализовать политику групп/правил/провайдеров",
+      "size": "L",
+      "level": "L1",
+      "depends_on": [
+        "I03.T04.p",
+        "I03.T04.i",
+        "I03.T04.y"
+      ],
+      "what": "По D1 (вариант 2): узлы из `proxies` и `inline` proxy-providers; groups/rules/sub-rules/rule-providers, http и file провайдеры — в `ImportOmissions` без сети и путей хоста; 0 узлов → отказ. Содержимое секций не пишется в диагностику.",
+      "outputs": "native/sections.rs",
+      "done_when": "Fixture реальной структуры подписки (обезличенный) импортируется или отвергается ровно по D1.",
+      "decision": null,
+      "wave": 6,
+      "critical": false
+    },
+    {
+      "id": "I03.T04.r",
+      "milestone": "I03",
+      "title": "URI-парсер",
+      "size": "L",
+      "level": "L1",
+      "depends_on": [
+        "I03.T04.i",
+        "I03.T04.j",
+        "I03.T04.k",
+        "I03.T04.l",
+        "I03.T04.n"
+      ],
+      "what": "`vless://`, `vmess://` (base64-JSON формат v2rayN), `ss://` (SIP002 и legacy base64), `trojan://`, `hysteria2://`/`hy2://`, `tuic://`, `socks5://`, `http(s)://`. Percent-decoding, fragment → имя, query → тот же типизированный node, что и в native (одна каноническая форма, один digest). Неизвестный query-параметр → отказ.",
+      "outputs": "src/sources/parser/uri.rs",
+      "done_when": "Для каждого протокола URI и эквивалентный native дают одинаковый definition digest.",
+      "decision": null,
+      "wave": 7,
+      "critical": false
+    },
+    {
+      "id": "I03.T04.s",
+      "milestone": "I03",
+      "title": "base64-подписка и смешанные списки",
+      "size": "M",
+      "level": "L1",
+      "depends_on": [
+        "I03.T04.r",
+        "I03.T04.y"
+      ],
+      "what": "Std/urlsafe, с padding и без, перевод строк; лимит после декодирования; по D3: неподдержанные и испорченные строки — пропуск с классом и номером, порча base64-слоя или 0 узлов — отказ источника.",
+      "outputs": "src/sources/parser/base64.rs",
+      "done_when": "Fixtures: мусор, двойной base64, пустые строки, неизвестная схема.",
+      "decision": "D3",
+      "wave": 8,
+      "critical": false
+    },
+    {
+      "id": "I03.T04.t",
+      "milestone": "I03",
+      "title": "Определение формата и negotiation для всех форматов",
+      "size": "M",
+      "level": "L1",
+      "depends_on": [
+        "I03.T04.s",
+        "I03.T04.q"
+      ],
+      "what": "Классификатор тела: native YAML/JSON, URI-список, base64, HTML/заглушка, пустой. Обобщить `negotiate_native_source` → `negotiate_source`: HTML/непригодное тело даёт bounded retry следующим UA, unsupported semantics — terminal отказ.",
+      "outputs": "src/sources/parser/detect.rs; pipeline.rs",
+      "done_when": "Таблица «тело → решение» покрыта fixtures, включая HTML-заглушку провайдера.",
+      "decision": null,
+      "wave": 9,
+      "critical": false
+    },
+    {
+      "id": "I03.T04.u",
+      "milestone": "I03",
+      "title": "Ручной собственный сервер",
+      "size": "M",
+      "level": "L1",
+      "depends_on": [
+        "I03.T04.r",
+        "I03.T04.o"
+      ],
+      "what": "Вход: URI или структурированные поля CLI (`cm source add-server --protocol … --server … --port …`, секреты из stdin/файла, не из argv). SourceKind Manual, origin local, без fetch settings. Изменение = новое поколение, Node identity сохраняется.",
+      "outputs": "src/sources/manual.rs; CLI-подкоманда за флагом",
+      "done_when": "Секрет не попадает в argv/историю shell; правка сервера сохраняет Node ID.",
+      "decision": null,
+      "wave": 8,
+      "critical": false
+    },
+    {
+      "id": "I03.T04.v",
+      "milestone": "I03",
+      "title": "Независимые источники для профилей",
+      "size": "M",
+      "level": "L1",
+      "depends_on": [
+        "I03.T04.u",
+        "I03.T04.t"
+      ],
+      "what": "ConnectionProfile ссылается на (source, node) любого источника; несколько источников сосуществуют; удаление используемого источника → staged removal из I02; refresh одного источника не трогает другие.",
+      "outputs": "profiles/store: тесты сценариев",
+      "done_when": "Fixtures: два источника, профиль на каждом, удаление одного с активным профилем.",
+      "decision": null,
+      "wave": 10,
+      "critical": false
+    },
+    {
+      "id": "I03.T04.w",
+      "milestone": "I03",
+      "title": "Сверка с ядром на корпусе fixtures",
+      "size": "M",
+      "level": "L1",
+      "depends_on": [
+        "I03.T04.t",
+        "I03.T04.o"
+      ],
+      "what": "Для каждого принятого fixture сгенерировать минимальный config и прогнать `mihomo -t -d <tmp>` pinned версии, если бинарник доступен (без сети). Расхождение «мы приняли — ядро отвергло» = баг парсера.",
+      "outputs": "tests/audit_i03_core_check.rs (skip без бинарника, с явным статусом)",
+      "done_when": "0 расхождений на корпусе; skip отмечается в evidence как SKIPPED, не PASS.",
+      "decision": null,
+      "wave": 10,
+      "critical": false
+    },
+    {
+      "id": "I03.T04.x",
+      "milestone": "I03",
+      "title": "Закрыть T04 в документации",
+      "size": "S",
+      "level": "L0",
+      "depends_on": [
+        "I03.T04.v",
+        "I03.T04.w",
+        "H.05.b"
+      ],
+      "what": "Обновить capability matrix (из кода), parser contract, I03-NATIVE-PARSER-FIRST → итоговый документ T04.",
+      "outputs": "I03-PARSER-FINAL.md",
+      "done_when": "Все пункты списка остатка из WORK-STOP закрыты или явно Unsupported со ссылкой.",
+      "decision": null,
+      "wave": 11,
+      "critical": false
+    },
+    {
+      "id": "I03.T05.a",
+      "milestone": "I03",
+      "title": "Инвентарь регрессий I01–I03",
+      "size": "S",
+      "level": "L0",
+      "depends_on": [
+        "I03.T04.x",
+        "H.01",
+        "H.08"
+      ],
+      "what": "Каждая проверка → тест-ID, уровень доказательства, статус (PASS локально / NOT_RUN install / SKIPPED).",
+      "outputs": "I03-REGRESSION-INVENTORY.md",
+      "done_when": "Нет проверки без ID и статуса.",
+      "decision": null,
+      "wave": 12,
+      "critical": false
+    },
+    {
+      "id": "I03.T05.b",
+      "milestone": "I03",
+      "title": "Fixtures отказов источника",
+      "size": "M",
+      "level": "L1",
+      "depends_on": [
+        "I03.T04.t"
+      ],
+      "what": "HTML/заглушка, `subscription-userinfo` с исчерпанной квотой/истёкшим сроком, timeout (mock-транспорт), исчезновение узла, обновление активного источника, битый import не заменяет рабочее состояние.",
+      "outputs": "tests/audit_i03_failures.rs",
+      "done_when": "Каждый сценарий: состояние Store до и после совпадает при отказе.",
+      "decision": null,
+      "wave": 10,
+      "critical": false
+    },
+    {
+      "id": "I03.T05.c",
+      "milestone": "I03",
+      "title": "Реальный транспорт на локальном сервере",
+      "size": "M",
+      "level": "L1",
+      "depends_on": [
+        "H.04",
+        "I03.T04.t"
+      ],
+      "what": "Интеграционный тест: локальный HTTP-сервер отдаёт разные тела по UA, задержки, redirect-цепочки, огромные тела.",
+      "outputs": "tests/audit_i03_transport.rs",
+      "done_when": "Deadline соблюдается с допуском; ответы классифицируются как в mock-тестах.",
+      "decision": null,
+      "wave": 10,
+      "critical": false
+    },
+    {
+      "id": "I03.T05.d",
+      "milestone": "I03",
+      "title": "Сборка и манифест",
+      "size": "S",
+      "level": "L1",
+      "depends_on": [
+        "I03.T05.a",
+        "I03.T05.b",
+        "I03.T05.c"
+      ],
+      "what": "`build.sh` musl CLI + compile COSMIC. Манифест: git revision, хеш дерева, Cargo.lock sha256, rustc, sha256 бинарников.",
+      "outputs": "i03-evidence/build-<date>/manifest.json",
+      "done_when": "Манифест воспроизводится повторной сборкой (хеши совпадают или отличие объяснено).",
+      "decision": null,
+      "wave": 13,
+      "critical": false
+    },
+    {
+      "id": "I03.T05.e",
+      "milestone": "I03",
+      "title": "Installation driver I03",
+      "size": "M",
+      "level": "L0",
+      "depends_on": [
+        "I03.T05.d"
+      ],
+      "what": "Скрипт проверок для установки: реальный импорт подписок пользователя (секреты остаются локально), negotiation с реальным провайдером, refresh, отказ. Только сценарий — выполнение в X-треке.",
+      "outputs": "tests/check_i03_regressions.py",
+      "done_when": "Driver проходит dry-run без сети.",
+      "decision": null,
+      "wave": 14,
+      "critical": false
+    },
+    {
+      "id": "I03.T05.f",
+      "milestone": "I03",
+      "title": "Отчёт закрытия I03",
+      "size": "S",
+      "level": "L0",
+      "depends_on": [
+        "I03.T05.e"
+      ],
+      "what": "Итог кодовой части I03, ссылки на evidence, обновление DAG-PLAN.json статусов.",
+      "outputs": "I03-CODER-COMPLETION.md",
+      "done_when": "Статусы кодовой и runtime-приёмки разделены.",
+      "decision": null,
+      "wave": 15,
+      "critical": false
+    },
+    {
+      "id": "V.01",
+      "milestone": "V",
+      "title": "ADR сосуществования legacy Subs и Store",
+      "size": "M",
+      "level": "D",
+      "depends_on": [
+        "I03.T04.p"
+      ],
+      "what": "Одноразовый импорт `subs.json` в Store (dry-run → apply), источник истины на переходный период, откат, что видит TUI во время перехода.",
+      "outputs": "ADR-LEGACY-STORE-BRIDGE.md",
+      "done_when": "Решение пользователя по D7 записано.",
+      "decision": "D7",
+      "wave": 2,
+      "critical": false
+    },
+    {
+      "id": "V.02",
+      "milestone": "V",
+      "title": "CLI только для чтения",
+      "size": "M",
+      "level": "L1",
+      "depends_on": [
+        "V.01",
+        "I03.T04.t",
+        "H.04"
+      ],
+      "what": "`cm source list|show|import --dry-run|doctor`: новый pipeline с реальным транспортом, диагностика без изменения работающего VPN, вывод без секретов.",
+      "outputs": "src/main.rs подкоманды; i18n строки",
+      "done_when": "Dry-run реальной подписки печатает узлы и отказы; файлы legacy не изменены.",
+      "decision": null,
+      "wave": 10,
+      "critical": false
+    },
+    {
+      "id": "V.03",
+      "milestone": "V",
+      "title": "Генератор config mihomo из Store (ранний I04.T04.a)",
+      "size": "L",
+      "level": "L1",
+      "depends_on": [
+        "V.02",
+        "I03.T05.f",
+        "H.06"
+      ],
+      "what": "Узлы Store → `proxies`, авто-группа, пользовательские правила `rules.txt`, DNS как в текущем legacy. Проверка `validate_candidate` (`mihomo -t`).",
+      "outputs": "src/core/mihomo/config.rs",
+      "done_when": "Для обезличенных fixtures config принят ядром; diff с legacy-генерацией объяснён.",
+      "decision": null,
+      "wave": 16,
+      "critical": false
+    },
+    {
+      "id": "V.04",
+      "milestone": "V",
+      "title": "Переключение singleton на источник из Store",
+      "size": "L",
+      "level": "L1",
+      "depends_on": [
+        "V.03"
+      ],
+      "what": "`cm vpn use source:ID` за флагом: кандидат → проверка → атомарная замена → reload, откат при ошибке; legacy-путь остаётся по умолчанию. До I04.T04.f для источника с пропущенными groups/rules — предупреждение (D1).",
+      "outputs": "src/vpn/* интеграция",
+      "done_when": "Unit: отказ проверки оставляет прежний config; флаг выключен по умолчанию.",
+      "decision": null,
+      "wave": 17,
+      "critical": false
+    },
+    {
+      "id": "V.05",
+      "milestone": "V",
+      "title": "Приёмка среза на установке",
+      "size": "L",
+      "level": "L4",
+      "depends_on": [
+        "V.04",
+        "X.01"
+      ],
+      "what": "По parity-протоколу I01: та же подписка через legacy и через Store, одинаковый узел, A/B/A.",
+      "outputs": "v-evidence/acceptance/summary.json",
+      "done_when": "Паритет подтверждён или различие объяснено; без утверждения «VPN исправлен» при неполной parity.",
+      "decision": null,
+      "wave": 18,
+      "critical": false
+    },
+    {
+      "id": "I04.T01.a",
+      "milestone": "I04",
+      "title": "Trait CoreAdapter и таксономия ошибок",
+      "size": "M",
+      "level": "L1",
+      "depends_on": [],
+      "what": "capabilities(), validate(config), start/stop/reload, health(), statistics(); раздельные состояния ApiReady / RouteReady / RemoteReachable; ошибки без секретов. Может идти параллельно с I03.",
+      "outputs": "src/core/adapter.rs; ADR-CORE-ADAPTER.md",
+      "done_when": "Trait компилируется с fake-реализацией; ADR перечисляет, что не гарантируется.",
+      "decision": null,
+      "wave": 1,
+      "critical": false
+    },
+    {
+      "id": "I04.T01.b",
+      "milestone": "I04",
+      "title": "Дескриптор возможностей pinned ядра",
+      "size": "S",
+      "level": "L1",
+      "depends_on": [
+        "I04.T01.a",
+        "I03.T04.i"
+      ],
+      "what": "Capabilities mihomo 1.19.32 из матрицы I03 (одна таблица, без копии).",
+      "outputs": "src/core/mihomo/caps.rs",
+      "done_when": "Тест: матрица I03 и дескриптор согласованы.",
+      "decision": null,
+      "wave": 6,
+      "critical": false
+    },
+    {
+      "id": "I04.T01.c",
+      "milestone": "I04",
+      "title": "Fake adapter для тестов",
+      "size": "S",
+      "level": "L1",
+      "depends_on": [
+        "I04.T01.a"
+      ],
+      "what": "In-memory адаптер с управляемыми отказами для I06/I07/I09 до реальных ядер.",
+      "outputs": "src/core/fake.rs",
+      "done_when": "Используется хотя бы одним тестом lifecycle.",
+      "decision": null,
+      "wave": 2,
+      "critical": false
+    },
+    {
+      "id": "I04.T02.a",
+      "milestone": "I04",
+      "title": "Каталоги и права instance",
+      "size": "M",
+      "level": "L1",
+      "depends_on": [
+        "I04.T01.a"
+      ],
+      "what": "InstanceId → `/var/lib/cm/instances/<id>/{config,cache,run}`, владелец, режимы, очистка.",
+      "outputs": "src/core/instance.rs",
+      "done_when": "Fixture: два instance не видят файлов друг друга; удаление не трогает соседей.",
+      "decision": null,
+      "wave": 2,
+      "critical": false
+    },
+    {
+      "id": "I04.T02.b",
+      "milestone": "I04",
+      "title": "Реестр выделенных ресурсов",
+      "size": "M",
+      "level": "L1",
+      "depends_on": [
+        "I04.T02.a"
+      ],
+      "what": "Leases в Store через CAS: socket, порты, fwmark, номер таблицы маршрутов, имя TUN; освобождение и утечки после crash.",
+      "outputs": "src/core/leases.rs",
+      "done_when": "Конкурентное выделение (тест с потоками) не даёт дублей.",
+      "decision": null,
+      "wave": 3,
+      "critical": false
+    },
+    {
+      "id": "I04.T02.c",
+      "milestone": "I04",
+      "title": "systemd template `cm-core@.service`",
+      "size": "M",
+      "level": "L1",
+      "depends_on": [
+        "I04.T02.a"
+      ],
+      "what": "На основе ограничений cm-vpn: CAP_NET_ADMIN/RAW/BIND только при нужде, ReadWritePaths только каталог instance, NoNewPrivileges, отдельный RuntimeDirectory.",
+      "outputs": "packaging/systemd/cm-core@.service",
+      "done_when": "`systemd-analyze verify` и `security` без регресса к cm-vpn.",
+      "decision": null,
+      "wave": 3,
+      "critical": false
+    },
+    {
+      "id": "I04.T02.d",
+      "milestone": "I04",
+      "title": "Legacy host wrapper",
+      "size": "M",
+      "level": "L1",
+      "depends_on": [
+        "I04.T02.a",
+        "H.06"
+      ],
+      "what": "Текущий cm-vpn как instance `host-legacy` за CoreAdapter, без изменения поведения пользователя.",
+      "outputs": "src/core/legacy_host.rs",
+      "done_when": "Все VPN-тесты legacy проходят через wrapper.",
+      "decision": null,
+      "wave": 4,
+      "critical": false
+    },
+    {
+      "id": "I04.T03.a",
+      "milestone": "I04",
+      "title": "Запрет конкурирующих настроек в worker",
+      "size": "M",
+      "level": "L1",
+      "depends_on": [
+        "I04.T02.a",
+        "I04.T02.b"
+      ],
+      "what": "Генератор app-worker конфигов не включает `tun.auto-route`, `auto-redirect`, `dns-hijack`, внешние listeners; worker слушает только выделенные ресурсы.",
+      "outputs": "src/core/policy.rs",
+      "done_when": "Fixture: попытка включить запрещённое → ошибка генерации.",
+      "decision": null,
+      "wave": 4,
+      "critical": false
+    },
+    {
+      "id": "I04.T03.b",
+      "milestone": "I04",
+      "title": "ADR владения TUN-устройством",
+      "size": "M",
+      "level": "L2",
+      "depends_on": [
+        "I04.T03.a",
+        "H.11"
+      ],
+      "what": "Эксперимент: CM заранее создаёт persistent TUN (owner uid) и передаёт ядру vs ядро создаёт TUN без маршрутов. Критерии: права, восстановление после crash, MTU, IPv6.",
+      "outputs": "ADR-TUN-OWNERSHIP.md + capture",
+      "done_when": "Выбран вариант, подтверждённый на harness.",
+      "decision": null,
+      "wave": 5,
+      "critical": false
+    },
+    {
+      "id": "I04.T04.a",
+      "milestone": "I04",
+      "title": "Генератор config mihomo (обобщение V.03)",
+      "size": "L",
+      "level": "L1",
+      "depends_on": [
+        "I04.T03.a",
+        "I03.T04.i"
+      ],
+      "what": "Узлы поддержанных протоколов (растёт вместе с I03.T04.j–n), DnsPolicy профиля, listeners instance; если V.03 сделан — обобщить, иначе написать.",
+      "outputs": "src/core/mihomo/config.rs",
+      "done_when": "Корпус I03 → config → `mihomo -t` без расхождений.",
+      "decision": null,
+      "wave": 6,
+      "critical": true
+    },
+    {
+      "id": "I04.T04.b",
+      "milestone": "I04",
+      "title": "Валидация и безопасные ошибки",
+      "size": "M",
+      "level": "L1",
+      "depends_on": [
+        "I04.T04.a"
+      ],
+      "what": "`mihomo -t -d <sandbox>`, разбор stderr в фиксированные коды (обобщить `core_validation_reason`).",
+      "outputs": "src/core/mihomo/validate.rs",
+      "done_when": "Ни одна ошибка не содержит строк конфига.",
+      "decision": null,
+      "wave": 7,
+      "critical": false
+    },
+    {
+      "id": "I04.T04.c",
+      "milestone": "I04",
+      "title": "Lifecycle через API на unix-сокете",
+      "size": "L",
+      "level": "L2",
+      "depends_on": [
+        "I04.T04.a",
+        "I04.T02.c",
+        "H.11"
+      ],
+      "what": "start/stop/reload (`PUT /configs`), health (`/version`, delay), проверки владельца сокета и peer из текущего vpn.rs.",
+      "outputs": "src/core/mihomo/lifecycle.rs",
+      "done_when": "На harness: start → ApiReady → reload → stop без утечек процессов и сокетов.",
+      "decision": null,
+      "wave": 7,
+      "critical": true
+    },
+    {
+      "id": "I04.T04.d",
+      "milestone": "I04",
+      "title": "Статистика instance",
+      "size": "S",
+      "level": "L2",
+      "depends_on": [
+        "I04.T04.c"
+      ],
+      "what": "Трафик и соединения через API; без суммирования физического и TUN трафика.",
+      "outputs": "src/core/mihomo/stats.rs",
+      "done_when": "Счётчики совпадают с capture ±5%.",
+      "decision": null,
+      "wave": 8,
+      "critical": false
+    },
+    {
+      "id": "I04.T04.e",
+      "milestone": "I04",
+      "title": "Эксперимент: N workers vs один multi-outbound",
+      "size": "M",
+      "level": "L2",
+      "depends_on": [
+        "I04.T04.c"
+      ],
+      "what": "RAM/CPU, изоляция отказов, независимость reload на 1/5/20 туннелях.",
+      "outputs": "ADR-WORKER-TOPOLOGY.md + замеры",
+      "done_when": "Решение подкреплено числами.",
+      "decision": null,
+      "wave": 8,
+      "critical": false
+    },
+    {
+      "id": "I04.T04.f",
+      "milestone": "I04",
+      "title": "Типизированные группы и правила издателя (D1, вариант 3)",
+      "size": "L",
+      "level": "L1",
+      "depends_on": [
+        "I04.T04.a",
+        "I03.T04.q"
+      ],
+      "what": "Разбор `proxy-groups` (select/url-test/fallback/load-balance; relay — отказ, как в ядре), `rules` с проверкой цели, `sub-rules` и циклов, `inline` rule-providers; повторный разбор из сохранённого сырого тела без загрузки; генерация в config.",
+      "outputs": "src/core/mihomo/policy.rs",
+      "done_when": "Подписка с группами и правилами издателя даёт config, принятый `mihomo -t`; пропуски D1 для групп/правил исчезают.",
+      "decision": null,
+      "wave": 7,
+      "critical": false
+    },
+    {
+      "id": "I04.T05.a",
+      "milestone": "I04",
+      "title": "Два instance + legacy host одновременно",
+      "size": "M",
+      "level": "L2",
+      "depends_on": [
+        "I04.T04.c",
+        "I04.T02.d"
+      ],
+      "what": "Независимые конфиги/узлы, остановка одного не влияет на другой и на host.",
+      "outputs": "i04-evidence/two-instances",
+      "done_when": "Capture показывает раздельный egress.",
+      "decision": null,
+      "wave": 8,
+      "critical": true
+    },
+    {
+      "id": "I04.T05.c",
+      "milestone": "I04",
+      "title": "Отчёт кодовой части и ADR I04",
+      "size": "S",
+      "level": "L0",
+      "depends_on": [
+        "I04.T05.a",
+        "I04.T01.b",
+        "I04.T01.c",
+        "I04.T03.b",
+        "I04.T04.b",
+        "I04.T04.d",
+        "I04.T04.e",
+        "I04.T04.f"
+      ],
+      "what": "Итог кодовой части, ограничения, downstream-воздействие. Parity адаптера (L4) — X.08 → X.07 и не блокирует I06/I07.",
+      "outputs": "I04-REPORT.md",
+      "done_when": "Статусы кодовой/runtime-приёмки разделены.",
+      "decision": null,
+      "wave": 9,
+      "critical": false
+    },
+    {
+      "id": "I05.T01.a",
+      "milestone": "I05",
+      "title": "Pin Xray",
+      "size": "S",
+      "level": "L0",
+      "depends_on": [
+        "I04.T01.a"
+      ],
+      "what": "Версия, URL релиза, `.dgst`-хеши, архитектура x86_64, geo data, лицензия.",
+      "outputs": "I05-PIN.md",
+      "done_when": "Хеши проверены по двум источникам.",
+      "decision": null,
+      "wave": 2,
+      "critical": false
+    },
+    {
+      "id": "I05.T01.b",
+      "milestone": "I05",
+      "title": "Capability gaps относительно CoreAdapter",
+      "size": "M",
+      "level": "L0",
+      "depends_on": [
+        "I05.T01.a",
+        "I04.T01.b"
+      ],
+      "what": "Чего нет у Xray: reload без рестарта, delay API, протоколы (Hy2/TUIC/WG в pinned версии) → Unsupported.",
+      "outputs": "I05-GAPS.md",
+      "done_when": "Каждый gap имеет решение: unsupported / обход / вне scope.",
+      "decision": null,
+      "wave": 7,
+      "critical": false
+    },
+    {
+      "id": "I05.T02.a",
+      "milestone": "I05",
+      "title": "Прототип TCP/UDP/TUN в A+C",
+      "size": "L",
+      "level": "L2",
+      "depends_on": [
+        "I05.T01.b",
+        "H.11",
+        "I04.T03.b"
+      ],
+      "what": "Проверить native TUN inbound pinned версии; иначе tproxy/dokodemo-door с маршрутизацией CM. UDP и QUIC отдельно.",
+      "outputs": "ADR-XRAY-DATAPATH.md + capture",
+      "done_when": "TCP+UDP проходят; SOCKS-only путь не назван полным туннелем.",
+      "decision": null,
+      "wave": 8,
+      "critical": false
+    },
+    {
+      "id": "I05.T02.b",
+      "milestone": "I05",
+      "title": "DNS-путь Xray",
+      "size": "M",
+      "level": "L2",
+      "depends_on": [
+        "I05.T02.a"
+      ],
+      "what": "DNS inbound → routing → DNS outbound; qtypes сверх A/AAAA; truncation/TCP retry.",
+      "outputs": "capture + таблица qtypes",
+      "done_when": "Gap зафиксирован, forwarder не добавлен без доказательства.",
+      "decision": null,
+      "wave": 9,
+      "critical": false
+    },
+    {
+      "id": "I05.T03.a",
+      "milestone": "I05",
+      "title": "Генератор config Xray",
+      "size": "L",
+      "level": "L1",
+      "depends_on": [
+        "I05.T02.a",
+        "I03.T04.x"
+      ],
+      "what": "Маппинг узлов Store → outbounds с сохранением семантики; несопоставимые → Unsupported.",
+      "outputs": "src/core/xray/config.rs",
+      "done_when": "Корпус I03 → config → `xray run -test` без расхождений; таблица неэквивалентностей.",
+      "decision": null,
+      "wave": 12,
+      "critical": false
+    },
+    {
+      "id": "I05.T03.b",
+      "milestone": "I05",
+      "title": "Validate, lifecycle, ошибки",
+      "size": "L",
+      "level": "L2",
+      "depends_on": [
+        "I05.T03.a"
+      ],
+      "what": "`-test`, readiness, start/stop/reload (рестарт, если нет hot reload), безопасный маппинг ошибок.",
+      "outputs": "src/core/xray/*.rs",
+      "done_when": "Fake и harness-тесты lifecycle проходят.",
+      "decision": null,
+      "wave": 13,
+      "critical": false
+    },
+    {
+      "id": "I05.T04.a",
+      "milestone": "I05",
+      "title": "Загрузчик ядер",
+      "size": "M",
+      "level": "L1",
+      "depends_on": [
+        "H.04",
+        "I05.T01.a"
+      ],
+      "what": "Через транспорт H.04: лимиты, sha256, распаковка с лимитом, общий для mihomo и Xray (заменить текущий `cm vpn core update`).",
+      "outputs": "src/core/delivery.rs",
+      "done_when": "Битый хеш/архив-бомба/подмена имени → отказ.",
+      "decision": null,
+      "wave": 3,
+      "critical": false
+    },
+    {
+      "id": "I05.T04.b",
+      "milestone": "I05",
+      "title": "Кандидат, атомарная замена, откат",
+      "size": "M",
+      "level": "L1",
+      "depends_on": [
+        "I05.T04.a",
+        "I05.T03.b"
+      ],
+      "what": "Кандидат проверяется `version` и validate текущих конфигов; предыдущий бинарник сохраняется; работающие instance остаются на своём бинарнике до рестарта.",
+      "outputs": "src/core/delivery.rs",
+      "done_when": "Прерывание на каждом шаге оставляет рабочий бинарник.",
+      "decision": null,
+      "wave": 14,
+      "critical": false
+    },
+    {
+      "id": "I05.T05.a",
+      "milestone": "I05",
+      "title": "Проверка на тестовом endpoint",
+      "size": "M",
+      "level": "L2",
+      "depends_on": [
+        "I05.T04.b",
+        "I05.T02.b",
+        "I03.T05.f",
+        "I04.T05.c"
+      ],
+      "what": "Транспорты, DNS, lifecycle; список случаев, где сравнение с mihomo невозможно.",
+      "outputs": "i05-evidence",
+      "done_when": "Матрица pass/unsupported заполнена.",
+      "decision": null,
+      "wave": 16,
+      "critical": false
+    },
+    {
+      "id": "I06.T01.a",
+      "milestone": "I06",
+      "title": "ADR Q08: helper или отдельный сервис",
+      "size": "M",
+      "level": "D",
+      "depends_on": [
+        "H.07",
+        "I04.T01.a"
+      ],
+      "what": "Сравнить расширение helper (сериализация пакетных операций) и `cm-netd` для параллельных сетевых операций.",
+      "outputs": "ADR-CONTROLLER.md",
+      "done_when": "Решение с учётом Q16 (несколько пользователей).",
+      "decision": null,
+      "wave": 4,
+      "critical": false
+    },
+    {
+      "id": "I06.T01.b",
+      "milestone": "I06",
+      "title": "Typed протокол и polkit-действия",
+      "size": "M",
+      "level": "L1",
+      "depends_on": [
+        "I06.T01.a",
+        "H.09"
+      ],
+      "what": "Versioned serde enum, классы операций → отдельные polkit actions, лимиты размера сообщения.",
+      "outputs": "src/controller/protocol.rs; polkit policy",
+      "done_when": "Fuzz-цель декодера готова.",
+      "decision": null,
+      "wave": 5,
+      "critical": false
+    },
+    {
+      "id": "I06.T02.a",
+      "milestone": "I06",
+      "title": "Идентификация peer",
+      "size": "M",
+      "level": "L1",
+      "depends_on": [
+        "I06.T01.b"
+      ],
+      "what": "SO_PEERCRED + pidfd + start time + cgroup + logind session + netns inode; правила передачи FD.",
+      "outputs": "src/controller/peer.rs",
+      "done_when": "PID reuse ловится через pidfd в тесте.",
+      "decision": null,
+      "wave": 6,
+      "critical": false
+    },
+    {
+      "id": "I06.T02.b",
+      "milestone": "I06",
+      "title": "Возврат к исходному пользователю",
+      "size": "S",
+      "level": "L1",
+      "depends_on": [
+        "I06.T02.a"
+      ],
+      "what": "AppLaunch выполняется под uid/gid/groups вызывающего, не root.",
+      "outputs": "src/controller/drop.rs",
+      "done_when": "Тест: дочерний процесс имеет uid вызывающего и пустые capabilities.",
+      "decision": null,
+      "wave": 7,
+      "critical": false
+    },
+    {
+      "id": "I06.T03.a",
+      "milestone": "I06",
+      "title": "Журнал владения и транзакции",
+      "size": "L",
+      "level": "L1",
+      "depends_on": [
+        "I06.T02.a",
+        "I04.T02.b"
+      ],
+      "what": "allocate/apply/check/stop/reconcile; журнал в Store; compensation при частичном отказе; ключи идемпотентности.",
+      "outputs": "src/controller/txn.rs",
+      "done_when": "Fault injection на каждом шаге → консистентное состояние после reconcile.",
+      "decision": null,
+      "wave": 7,
+      "critical": false
+    },
+    {
+      "id": "I06.T03.b",
+      "milestone": "I06",
+      "title": "Интеграция с CoreAdapter",
+      "size": "M",
+      "level": "L2",
+      "depends_on": [
+        "I06.T03.a",
+        "I04.T05.a"
+      ],
+      "what": "Контроллер управляет instance через адаптер; generation ownership.",
+      "outputs": "src/controller/core_ops.rs",
+      "done_when": "Harness: старт/стоп instance только через контроллер.",
+      "decision": null,
+      "wave": 9,
+      "critical": true
+    },
+    {
+      "id": "I06.T04.a",
+      "milestone": "I06",
+      "title": "Ужесточение",
+      "size": "M",
+      "level": "L1",
+      "depends_on": [
+        "I06.T03.b"
+      ],
+      "what": "Bounding capabilities, close_range для унаследованных FD, секреты через memfd/FD (не argv/env), rlimits, квоты instance, лимит конкурентных операций, таймауты, редакция диагностики.",
+      "outputs": "src/controller/*",
+      "done_when": "Чек-лист с тестом на каждый пункт.",
+      "decision": null,
+      "wave": 10,
+      "critical": true
+    },
+    {
+      "id": "I06.T05.a",
+      "milestone": "I06",
+      "title": "Отрицательные проверки",
+      "size": "M",
+      "level": "L2",
+      "depends_on": [
+        "I06.T04.a",
+        "I06.T02.b",
+        "I04.T05.c"
+      ],
+      "what": "Чужой uid, PID reuse, argv/path injection, устаревший запрос, crash посреди транзакции, fuzz декодера (cargo-fuzz, ≥1 ч).",
+      "outputs": "i06-evidence",
+      "done_when": "0 обходов; найденные креши исправлены и превращены в регрессии.",
+      "decision": null,
+      "wave": 11,
+      "critical": true
+    },
+    {
+      "id": "I07.T01.a",
+      "milestone": "I07",
+      "title": "Packet-flow спецификация",
+      "size": "M",
+      "level": "L0",
+      "depends_on": [
+        "I06.T05.a",
+        "I04.T05.a"
+      ],
+      "what": "TCP/UDP/DNS для host tunnel и app worker; схема fwmark, диапазон приоритетов `ip rule`, номера таблиц, таблица nftables `inet cm` и sets; чужие rules сохраняются.",
+      "outputs": "I07-PACKET-FLOW.md + схема",
+      "done_when": "Ревью: каждый пакетный путь имеет владельца.",
+      "decision": null,
+      "wave": 12,
+      "critical": true
+    },
+    {
+      "id": "I07.T01.b",
+      "milestone": "I07",
+      "title": "nftables / iptables-nft",
+      "size": "S",
+      "level": "L0",
+      "depends_on": [
+        "I07.T01.a"
+      ],
+      "what": "Определение доступного backend, сосуществование с firewalld/ufw.",
+      "outputs": "ADR-FIREWALL-BACKEND.md",
+      "done_when": "Матрица дистрибутивов из «Поддерживаемых систем».",
+      "decision": null,
+      "wave": 13,
+      "critical": true
+    },
+    {
+      "id": "I07.T02.a",
+      "milestone": "I07",
+      "title": "Outer egress worker",
+      "size": "L",
+      "level": "L2",
+      "depends_on": [
+        "I07.T01.b"
+      ],
+      "what": "Сокеты worker помечаются (SO_MARK задаёт CM, не импорт) → обходная таблица → физический интерфейс; нет chaining через host VPN и рекурсии.",
+      "outputs": "src/net/egress.rs",
+      "done_when": "Capture: endpoint ядра идёт мимо TUN при включённом host tunnel.",
+      "decision": null,
+      "wave": 14,
+      "critical": true
+    },
+    {
+      "id": "I07.T03.a",
+      "milestone": "I07",
+      "title": "Политика host off/proxy/tunnel",
+      "size": "L",
+      "level": "L2",
+      "depends_on": [
+        "I07.T02.a"
+      ],
+      "what": "Переходы между режимами транзакционно; host proxy явно не означает полный охват.",
+      "outputs": "src/net/host.rs",
+      "done_when": "Все 6 переходов проверены на harness.",
+      "decision": null,
+      "wave": 15,
+      "critical": true
+    },
+    {
+      "id": "I07.T04.a",
+      "milestone": "I07",
+      "title": "NetworkManager, firewalld, чужие VPN",
+      "size": "L",
+      "level": "L2",
+      "depends_on": [
+        "I07.T03.a"
+      ],
+      "what": "TUN unmanaged в NM, реакция на смену маршрутов через netlink-монитор, существующее обнаружение конфликтов (vpn.rs), транзакционное применение с rollback.",
+      "outputs": "src/net/integration.rs",
+      "done_when": "Включение/выключение Wi-Fi и чужого VPN не ломает состояние.",
+      "decision": null,
+      "wave": 16,
+      "critical": true
+    },
+    {
+      "id": "I07.T05.a",
+      "milestone": "I07",
+      "title": "Проверка смены сети и stop host",
+      "size": "M",
+      "level": "L2",
+      "depends_on": [
+        "I07.T04.a"
+      ],
+      "what": "Link down/up, смена default route, stop host при работающих app workers.",
+      "outputs": "i07-evidence (для I08)",
+      "done_when": "App workers сохраняют egress; утечек нет на capture.",
+      "decision": null,
+      "wave": 17,
+      "critical": true
+    },
+    {
+      "id": "I08.T01.a",
+      "milestone": "I08",
+      "title": "Решение Q09: локальные сети и сервисы",
+      "size": "S",
+      "level": "D",
+      "depends_on": [
+        "I07.T01.a"
+      ],
+      "what": "Что доступно приложению в туннеле: loopback, LAN, принтеры, mDNS, D-Bus системный.",
+      "outputs": "QUESTIONS.md Q09",
+      "done_when": "Решение пользователя.",
+      "decision": null,
+      "wave": 13,
+      "critical": false
+    },
+    {
+      "id": "I08.T01.b",
+      "milestone": "I08",
+      "title": "Дизайн netns/veth/TUN/cgroup",
+      "size": "M",
+      "level": "L0",
+      "depends_on": [
+        "I08.T01.a",
+        "I07.T05.a"
+      ],
+      "what": "Связь app netns с worker, cgroup v2 на сессию, межприложенная изоляция; abstract unix sockets привязаны к netns (X11, некоторые IPC) — учесть.",
+      "outputs": "ADR-APP-NETNS.md",
+      "done_when": "Все пути выхода перечислены и закрыты либо разрешены по Q09.",
+      "decision": null,
+      "wave": 18,
+      "critical": true
+    },
+    {
+      "id": "I08.T02.a",
+      "milestone": "I08",
+      "title": "Выделение сети через контроллер",
+      "size": "L",
+      "level": "L2",
+      "depends_on": [
+        "I08.T01.b",
+        "I06.T05.a"
+      ],
+      "what": "Создание netns, nft default-drop до запуска приложения, подключение к worker.",
+      "outputs": "src/net/appns.rs",
+      "done_when": "До подключения worker любой выход блокируется (capture).",
+      "decision": null,
+      "wave": 19,
+      "critical": true
+    },
+    {
+      "id": "I08.T03.a",
+      "milestone": "I08",
+      "title": "Тестовый launcher под исходным uid",
+      "size": "M",
+      "level": "L2",
+      "depends_on": [
+        "I08.T02.a"
+      ],
+      "what": "Ограниченный запуск процесса в netns до универсального I11.",
+      "outputs": "tests/netharness/run-in-ns",
+      "done_when": "Процесс получает uid пользователя и только этот netns.",
+      "decision": null,
+      "wave": 20,
+      "critical": true
+    },
+    {
+      "id": "I08.T04.a",
+      "milestone": "I08",
+      "title": "Проверки обхода",
+      "size": "M",
+      "level": "L2",
+      "depends_on": [
+        "I08.T03.a"
+      ],
+      "what": "fork/exec, IPv4/IPv6, прямые socket calls, raw sockets, унаследованный сетевой FD; GUI (Wayland), audio (PipeWire).",
+      "outputs": "i08-evidence",
+      "done_when": "Каждый путь: прошёл через tunnel или заблокирован.",
+      "decision": null,
+      "wave": 21,
+      "critical": true
+    },
+    {
+      "id": "I08.T05.a",
+      "milestone": "I08",
+      "title": "Два namespace на двух tunnels",
+      "size": "M",
+      "level": "L2",
+      "depends_on": [
+        "I08.T04.a"
+      ],
+      "what": "Независимость, общий транспорт без неявного доступа, критерии cleanup.",
+      "outputs": "i08-evidence",
+      "done_when": "Удаление одного не задевает другого.",
+      "decision": null,
+      "wave": 22,
+      "critical": true
+    },
+    {
+      "id": "I09.T01.a",
+      "milestone": "I09",
+      "title": "Машина состояний",
+      "size": "M",
+      "level": "L1",
+      "depends_on": [
+        "I08.T05.a"
+      ],
+      "what": "allocating/blocked/starting/verified/degraded/stopping/reconciling, хранение в Store, порядок firewall → worker → launch.",
+      "outputs": "src/net/state.rs",
+      "done_when": "Property-тест: недопустимые переходы невозможны.",
+      "decision": null,
+      "wave": 23,
+      "critical": true
+    },
+    {
+      "id": "I09.T02.a",
+      "milestone": "I09",
+      "title": "Постоянная блокировка",
+      "size": "L",
+      "level": "L2",
+      "depends_on": [
+        "I09.T01.a"
+      ],
+      "what": "Правила в ядре не зависят от процессов CM; остановка tunnel не снимает блок с живого приложения.",
+      "outputs": "src/net/block.rs",
+      "done_when": "kill всех процессов CM → приложение без сети, не напрямую.",
+      "decision": null,
+      "wave": 24,
+      "critical": true
+    },
+    {
+      "id": "I09.T03.a",
+      "milestone": "I09",
+      "title": "Reconcile после crash/reboot",
+      "size": "L",
+      "level": "L2",
+      "depends_on": [
+        "I09.T02.a"
+      ],
+      "what": "Ранний systemd unit до сетевых сервисов; жизнь сети приложения не привязана к TUI.",
+      "outputs": "packaging/systemd/cm-reconcile.service",
+      "done_when": "Reboot посреди reload → консистентное состояние.",
+      "decision": null,
+      "wave": 25,
+      "critical": true
+    },
+    {
+      "id": "I09.T04.a",
+      "milestone": "I09",
+      "title": "Политика отказа endpoint",
+      "size": "M",
+      "level": "L1",
+      "depends_on": [
+        "I09.T03.a"
+      ],
+      "what": "Block или разрешённый резерв с constraints; stop all; освобождение ресурсов.",
+      "outputs": "src/net/failure.rs",
+      "done_when": "Решение по Q13 применено.",
+      "decision": null,
+      "wave": 26,
+      "critical": true
+    },
+    {
+      "id": "I09.T05.a",
+      "milestone": "I09",
+      "title": "Fault matrix",
+      "size": "L",
+      "level": "L4",
+      "depends_on": [
+        "I09.T04.a"
+      ],
+      "what": "kill -9 worker/helper/UI, невалидный reload, network flap, suspend/resume, ошибки cleanup; capture негативных путей.",
+      "outputs": "i09-evidence/fault-matrix",
+      "done_when": "0 прямых утечек.",
+      "decision": null,
+      "wave": 27,
+      "critical": true
+    },
+    {
+      "id": "I10.T01.a",
+      "milestone": "I10",
+      "title": "Спецификация DnsPolicy/DnsRuntime",
+      "size": "M",
+      "level": "L0",
+      "depends_on": [
+        "I04.T05.c"
+      ],
+      "what": "Можно начинать раньше: bootstrap endpoint через outer egress, разрешение приложений, fake-IP инвалидация на поколение.",
+      "outputs": "I10-DNS-SPEC.md",
+      "done_when": "Ревью спецификации.",
+      "decision": null,
+      "wave": 10,
+      "critical": false
+    },
+    {
+      "id": "I10.T02.a",
+      "milestone": "I10",
+      "title": "Пробы DNS mihomo",
+      "size": "M",
+      "level": "L2",
+      "depends_on": [
+        "I10.T01.a",
+        "I08.T05.a"
+      ],
+      "what": "UDP/TCP, A/AAAA/TXT/MX/SRV/HTTPS/SVCB, NXDOMAIN, truncation.",
+      "outputs": "i10-evidence/mihomo",
+      "done_when": "Таблица qtype × результат.",
+      "decision": null,
+      "wave": 23,
+      "critical": false
+    },
+    {
+      "id": "I10.T02.b",
+      "milestone": "I10",
+      "title": "Пробы DNS Xray",
+      "size": "M",
+      "level": "L2",
+      "depends_on": [
+        "I10.T01.a",
+        "I05.T05.a"
+      ],
+      "what": "Та же матрица для Xray.",
+      "outputs": "i10-evidence/xray",
+      "done_when": "Таблица qtype × результат.",
+      "decision": null,
+      "wave": 17,
+      "critical": false
+    },
+    {
+      "id": "I10.T03.a",
+      "milestone": "I10",
+      "title": "ADR: встроенный resolver или forwarder",
+      "size": "S",
+      "level": "D",
+      "depends_on": [
+        "I10.T02.a",
+        "I10.T02.b"
+      ],
+      "what": "Forwarder только при доказанном gap.",
+      "outputs": "ADR-DNS.md",
+      "done_when": "Решение по данным проб.",
+      "decision": null,
+      "wave": 24,
+      "critical": false
+    },
+    {
+      "id": "I10.T04.a",
+      "milestone": "I10",
+      "title": "Per-tunnel resolution и IPv6",
+      "size": "L",
+      "level": "L2",
+      "depends_on": [
+        "I10.T03.a",
+        "I09.T05.a"
+      ],
+      "what": "resolv.conf в mount ns netns, IPv6 pass/block, UDP/STUN/QUIC, DoH приложения остаётся в tunnel.",
+      "outputs": "src/net/dns.rs",
+      "done_when": "Capture без DNS вне tunnel.",
+      "decision": null,
+      "wave": 28,
+      "critical": true
+    },
+    {
+      "id": "I10.T05.a",
+      "milestone": "I10",
+      "title": "Матрица протоколов на обоих ядрах",
+      "size": "L",
+      "level": "L2",
+      "depends_on": [
+        "I10.T04.a"
+      ],
+      "what": "Отказ DNS, смена поколения, два кэша tunnel.",
+      "outputs": "i10-evidence/matrix",
+      "done_when": "Pass или явный block на обоих адаптерах.",
+      "decision": null,
+      "wave": 29,
+      "critical": true
+    },
+    {
+      "id": "I11.T01.a",
+      "milestone": "I11",
+      "title": "Поля запуска ApplicationDefinition",
+      "size": "S",
+      "level": "L1",
+      "depends_on": [
+        "I10.T05.a"
+      ],
+      "what": "Абсолютный путь (без PATH-подмены), argv массивом, cwd, allowlist env, data profile.",
+      "outputs": "profiles/model.rs",
+      "done_when": "Валидация с отказами на относительный путь/NUL.",
+      "decision": null,
+      "wave": 30,
+      "critical": true
+    },
+    {
+      "id": "I11.T02.a",
+      "milestone": "I11",
+      "title": "Typed launch через контроллер",
+      "size": "L",
+      "level": "L2",
+      "depends_on": [
+        "I11.T01.a"
+      ],
+      "what": "setns + сброс в uid/gid/groups, transient scope в cgroup сессии, возврат pidfd.",
+      "outputs": "src/controller/launch.rs",
+      "done_when": "Harness: процесс в нужном netns/cgroup под uid пользователя.",
+      "decision": null,
+      "wave": 31,
+      "critical": true
+    },
+    {
+      "id": "I11.T03.a",
+      "milestone": "I11",
+      "title": "Desktop entry и CLI",
+      "size": "M",
+      "level": "L1",
+      "depends_on": [
+        "I11.T02.a"
+      ],
+      "what": "`cm app run ID`, генерация .desktop, экранирование пробелов и спецсимволов.",
+      "outputs": "src/app/*.rs",
+      "done_when": "Fixtures имён с пробелами, кавычками, юникодом.",
+      "decision": null,
+      "wave": 32,
+      "critical": true
+    },
+    {
+      "id": "I11.T04.a",
+      "milestone": "I11",
+      "title": "Уже запущенные и single-instance",
+      "size": "M",
+      "level": "L3",
+      "depends_on": [
+        "I11.T03.a"
+      ],
+      "what": "Handoff в работающий экземпляр (D-Bus, unix-сокет) уводит в сеть хоста → обнаружить и отказать/предупредить.",
+      "outputs": "src/app/instance.rs",
+      "done_when": "Сценарий браузера: второй запуск не уходит в host-сеть молча.",
+      "decision": null,
+      "wave": 33,
+      "critical": true
+    },
+    {
+      "id": "I11.T05.a",
+      "milestone": "I11",
+      "title": "Проверка на тестовых бинарниках",
+      "size": "M",
+      "level": "L3",
+      "depends_on": [
+        "I11.T04.a"
+      ],
+      "what": "Ошибки executable/permissions, повторный запуск, фоновые потомки, привязка Session.",
+      "outputs": "i11-evidence",
+      "done_when": "Все сценарии воспроизводимы.",
+      "decision": null,
+      "wave": 34,
+      "critical": true
+    },
+    {
+      "id": "I12.T01.a",
+      "milestone": "I12",
+      "title": "App → own tunnel / shared group",
+      "size": "M",
+      "level": "L2",
+      "depends_on": [
+        "I11.T05.a"
+      ],
+      "what": "Каждый профиль выбирает свой source/server/core.",
+      "outputs": "src/app/assign.rs",
+      "done_when": "Две подписки одновременно на разных apps.",
+      "decision": null,
+      "wave": 35,
+      "critical": true
+    },
+    {
+      "id": "I12.T02.a",
+      "milestone": "I12",
+      "title": "Refcount и lifetime общего tunnel",
+      "size": "M",
+      "level": "L1",
+      "depends_on": [
+        "I12.T01.a"
+      ],
+      "what": "Завершение последней сессии ≠ host lifecycle (Q12).",
+      "outputs": "src/app/shared.rs",
+      "done_when": "Property-тест refcount.",
+      "decision": null,
+      "wave": 36,
+      "critical": true
+    },
+    {
+      "id": "I12.T03.a",
+      "milestone": "I12",
+      "title": "Окружение на сессию при общем выходе",
+      "size": "M",
+      "level": "L2",
+      "depends_on": [
+        "I12.T02.a"
+      ],
+      "what": "Per-session EnvironmentProfile, per-data-profile identity.",
+      "outputs": "src/app/env.rs",
+      "done_when": "Private state не смешивается.",
+      "decision": null,
+      "wave": 37,
+      "critical": true
+    },
+    {
+      "id": "I12.T04.a",
+      "milestone": "I12",
+      "title": "Смена назначения и поколения",
+      "size": "M",
+      "level": "L2",
+      "depends_on": [
+        "I12.T03.a"
+      ],
+      "what": "Без тихой переадресации живого соединения; явный restart/reconnect (Q13).",
+      "outputs": "src/app/reassign.rs",
+      "done_when": "Сценарий исчезновения узла посреди сессии.",
+      "decision": null,
+      "wave": 38,
+      "critical": true
+    },
+    {
+      "id": "I12.T05.a",
+      "milestone": "I12",
+      "title": "Проверки групп",
+      "size": "M",
+      "level": "L4",
+      "depends_on": [
+        "I12.T04.a"
+      ],
+      "what": "Закрытие одного из двух apps, несколько групп, stop host.",
+      "outputs": "i12-evidence",
+      "done_when": "Все сценарии pass.",
+      "decision": null,
+      "wave": 39,
+      "critical": true
+    },
+    {
+      "id": "I13.T01.a",
+      "milestone": "I13",
+      "title": "Матрица фактических executors",
+      "size": "M",
+      "level": "L0",
+      "depends_on": [
+        "I11.T05.a"
+      ],
+      "what": "native/terminal/GUI/AppImage/Flatpak, Wayland/X11, portals, systemd user services.",
+      "outputs": "I13-MATRIX.md",
+      "done_when": "Для каждой ячейки известен executor.",
+      "decision": null,
+      "wave": 35,
+      "critical": false
+    },
+    {
+      "id": "I13.T02.a",
+      "milestone": "I13",
+      "title": "Fixtures broker-сценариев",
+      "size": "M",
+      "level": "L3",
+      "depends_on": [
+        "I13.T01.a",
+        "I12.T05.a"
+      ],
+      "what": "Single-instance браузер, общий supervisor, делегированные операции.",
+      "outputs": "tests/brokers/",
+      "done_when": "Fixtures воспроизводимы.",
+      "decision": null,
+      "wave": 40,
+      "critical": true
+    },
+    {
+      "id": "I13.T03.a",
+      "milestone": "I13",
+      "title": "Адаптеры упаковок",
+      "size": "L",
+      "level": "L3",
+      "depends_on": [
+        "I13.T02.a"
+      ],
+      "what": "Flatpak (bwrap в netns), AppImage, отказ для systemd user/D-Bus activation, если нельзя охватить.",
+      "outputs": "src/app/packaging/*.rs",
+      "done_when": "Каждый адаптер: supported/partial/unsupported с причиной.",
+      "decision": null,
+      "wave": 41,
+      "critical": true
+    },
+    {
+      "id": "I13.T04.a",
+      "milestone": "I13",
+      "title": "Ограничения брокеров",
+      "size": "M",
+      "level": "L3",
+      "depends_on": [
+        "I13.T03.a"
+      ],
+      "what": "Унаследованные сокеты хоста, геолокация, GUI/audio/files; побочные эффекты видны пользователю.",
+      "outputs": "src/app/broker_policy.rs",
+      "done_when": "UI/CLI показывает последствия.",
+      "decision": null,
+      "wave": 42,
+      "critical": true
+    },
+    {
+      "id": "I13.T05.a",
+      "milestone": "I13",
+      "title": "Подтверждение executor",
+      "size": "M",
+      "level": "L3",
+      "depends_on": [
+        "I13.T04.a"
+      ],
+      "what": "netns/cgroup фактического executor для каждой упаковки и версии.",
+      "outputs": "i13-evidence",
+      "done_when": "Матрица заполнена доказательствами.",
+      "decision": null,
+      "wave": 43,
+      "critical": true
+    },
+    {
+      "id": "I14.T01.a",
+      "milestone": "I14",
+      "title": "Наблюдения страны exit-IP",
+      "size": "M",
+      "level": "L2",
+      "depends_on": [
+        "I10.T05.a"
+      ],
+      "what": "Несколько источников через tunnel, свежесть, расхождения; имя узла не доказательство.",
+      "outputs": "src/env/geo.rs",
+      "done_when": "Политика расхождений проверена fixtures.",
+      "decision": null,
+      "wave": 30,
+      "critical": false
+    },
+    {
+      "id": "I14.T02.a",
+      "milestone": "I14",
+      "title": "EnvironmentProfile и пресеты",
+      "size": "M",
+      "level": "L1",
+      "depends_on": [
+        "I14.T01.a"
+      ],
+      "what": "IANA timezone, DST, locale, languages; несколько допустимых комбинаций на страну.",
+      "outputs": "src/env/preset.rs",
+      "done_when": "Таблица пресетов с источником данных.",
+      "decision": null,
+      "wave": 31,
+      "critical": false
+    },
+    {
+      "id": "I14.T03.a",
+      "milestone": "I14",
+      "title": "Применение к процессу",
+      "size": "M",
+      "level": "L2",
+      "depends_on": [
+        "I14.T02.a",
+        "I11.T02.a"
+      ],
+      "what": "TZ env, приватный /etc/localtime в mount ns, проверка наличия locale.",
+      "outputs": "src/env/apply.rs",
+      "done_when": "Хост не меняется.",
+      "decision": null,
+      "wave": 32,
+      "critical": false
+    },
+    {
+      "id": "I14.T04.a",
+      "milestone": "I14",
+      "title": "Проверки libc/процесса/браузера",
+      "size": "M",
+      "level": "L3",
+      "depends_on": [
+        "I14.T03.a"
+      ],
+      "what": "Две apps на общем tunnel с разными пресетами.",
+      "outputs": "i14-evidence",
+      "done_when": "Значения совпадают с пресетом.",
+      "decision": null,
+      "wave": 33,
+      "critical": false
+    },
+    {
+      "id": "I14.T05.a",
+      "milestone": "I14",
+      "title": "Инвалидация после failover",
+      "size": "S",
+      "level": "L2",
+      "depends_on": [
+        "I14.T04.a"
+      ],
+      "what": "Повторная проверка constraint; без тихого рестарта приложения.",
+      "outputs": "src/env/geo.rs",
+      "done_when": "Сценарий смены страны.",
+      "decision": null,
+      "wave": 34,
+      "critical": false
+    },
+    {
+      "id": "I15-R.T01.a",
+      "milestone": "I15-R",
+      "title": "Наблюдаемые свойства и scope",
+      "size": "M",
+      "level": "L0",
+      "depends_on": [],
+      "what": "Network location, app environment, device identity, browser state, account link.",
+      "outputs": "I15R-SCOPE.md",
+      "done_when": "Решение по Q01.",
+      "decision": "Q01",
+      "wave": 1,
+      "critical": false
+    },
+    {
+      "id": "I15-R.T02.a",
+      "milestone": "I15-R",
+      "title": "Coverage matrix механизмов",
+      "size": "L",
+      "level": "L0",
+      "depends_on": [
+        "I15-R.T01.a"
+      ],
+      "what": "Политики/prefs, расширения, CDP, патчи движка; UA, Client Hints, workers, Canvas/WebGL/fonts/audio, TLS.",
+      "outputs": "I15R-COVERAGE.md",
+      "done_when": "Каждая ячейка со ссылкой на источник.",
+      "decision": null,
+      "wave": 2,
+      "critical": false
+    },
+    {
+      "id": "I15-R.T03.a",
+      "milestone": "I15-R",
+      "title": "Лабораторный эксперимент",
+      "size": "L",
+      "level": "L3",
+      "depends_on": [
+        "I15-R.T02.a"
+      ],
+      "what": "Отдельный тестовый профиль: controls до первого запроса, новые вкладки/workers, cold restart.",
+      "outputs": "i15r-evidence",
+      "done_when": "Воспроизводимый протокол.",
+      "decision": null,
+      "wave": 3,
+      "critical": false
+    },
+    {
+      "id": "I15-R.T04.a",
+      "milestone": "I15-R",
+      "title": "Каталог устройств: происхождение и правомерность",
+      "size": "M",
+      "level": "L0",
+      "depends_on": [
+        "I15-R.T03.a"
+      ],
+      "what": "Согласованность с реальным движком; 28 дней и 5 записей истории — гипотезы (Q27).",
+      "outputs": "I15R-CATALOG.md",
+      "done_when": "Решение по Q26/Q27.",
+      "decision": null,
+      "wave": 4,
+      "critical": false
+    },
+    {
+      "id": "I15-R.T05.a",
+      "milestone": "I15-R",
+      "title": "ADR go/conditional/no-go по свойствам",
+      "size": "S",
+      "level": "D",
+      "depends_on": [
+        "I15-R.T04.a"
+      ],
+      "what": "Evidence, цена поддержки, критерии регрессии.",
+      "outputs": "ADR-FINGERPRINT.md",
+      "done_when": "Каждое свойство имеет статус.",
+      "decision": null,
+      "wave": 5,
+      "critical": false
+    },
+    {
+      "id": "I15.T01.a",
+      "milestone": "I15",
+      "title": "Контракт адаптера",
+      "size": "M",
+      "level": "L0",
+      "depends_on": [
+        "I13.T05.a",
+        "I14.T05.a",
+        "I15-R.T05.a"
+      ],
+      "what": "isolated/fresh/existing data state без авто-удаления HOME.",
+      "outputs": "ADR-APP-ADAPTER.md",
+      "done_when": "Scope согласован с G4/G5.",
+      "decision": null,
+      "wave": 44,
+      "critical": true
+    },
+    {
+      "id": "I15.T02.a",
+      "milestone": "I15",
+      "title": "Границы XDG/HOME/keyring/SSH-agent/IPC",
+      "size": "L",
+      "level": "L3",
+      "depends_on": [
+        "I15.T01.a"
+      ],
+      "what": "С учётом подтверждённых packaging adapters.",
+      "outputs": "src/env/private.rs",
+      "done_when": "Каждая граница проверена.",
+      "decision": null,
+      "wave": 45,
+      "critical": true
+    },
+    {
+      "id": "I15.T03.a",
+      "milestone": "I15",
+      "title": "BrowserIdentityProfile",
+      "size": "L",
+      "level": "L3",
+      "depends_on": [
+        "I15.T02.a"
+      ],
+      "what": "Липкая согласованная личность, явная смена, история, version policy.",
+      "outputs": "src/env/identity.rs",
+      "done_when": "Только свойства со статусом go.",
+      "decision": null,
+      "wave": 46,
+      "critical": true
+    },
+    {
+      "id": "I15.T04.a",
+      "milestone": "I15",
+      "title": "Интеграция до первого запроса",
+      "size": "L",
+      "level": "L3",
+      "depends_on": [
+        "I15.T03.a"
+      ],
+      "what": "Frames/workers/restarts; identity не меняется в живом процессе.",
+      "outputs": "src/env/adapters/*",
+      "done_when": "Capture первого запроса.",
+      "decision": null,
+      "wave": 47,
+      "critical": true
+    },
+    {
+      "id": "I15.T05.a",
+      "milestone": "I15",
+      "title": "Проверка surfaces и сохранности аккаунта",
+      "size": "M",
+      "level": "L4",
+      "depends_on": [
+        "I15.T04.a"
+      ],
+      "what": "Частичные/unsupported свойства показываются.",
+      "outputs": "i15-evidence",
+      "done_when": "Нет неподтверждённых гарантий в UI.",
+      "decision": null,
+      "wave": 48,
+      "critical": true
+    },
+    {
+      "id": "I16.T01.a",
+      "milestone": "I16",
+      "title": "Constraints-before-score",
+      "size": "M",
+      "level": "L1",
+      "depends_on": [
+        "I03.T05.f",
+        "I04.T05.c",
+        "I05.T05.a",
+        "I09.T05.a",
+        "I10.T05.a",
+        "I12.T05.a",
+        "I14.T05.a"
+      ],
+      "what": "Capabilities, allowlist источников, страна, NET/DNS, лимиты провайдера, stable-IP.",
+      "outputs": "src/quality/constraints.rs",
+      "done_when": "Fixtures отсечения.",
+      "decision": null,
+      "wave": 40,
+      "critical": false
+    },
+    {
+      "id": "I16.T02.a",
+      "milestone": "I16",
+      "title": "Метрики и budget проб",
+      "size": "M",
+      "level": "L1",
+      "depends_on": [
+        "I16.T01.a"
+      ],
+      "what": "pinned/failover/adaptive; success/latency/TTFB/jitter/обрывы/CPU/RAM; privacy cost.",
+      "outputs": "src/quality/metrics.rs",
+      "done_when": "Budget не превышается.",
+      "decision": null,
+      "wave": 41,
+      "critical": false
+    },
+    {
+      "id": "I16.T03.a",
+      "milestone": "I16",
+      "title": "A/B/A пилот",
+      "size": "L",
+      "level": "L2",
+      "depends_on": [
+        "I16.T02.a"
+      ],
+      "what": "Размер выборки и допуски из пилота (30 проб — не статистика).",
+      "outputs": "i16-evidence/pilot",
+      "done_when": "Параметры выведены из данных.",
+      "decision": null,
+      "wave": 42,
+      "critical": false
+    },
+    {
+      "id": "I16.T04.a",
+      "milestone": "I16",
+      "title": "Score, гистерезис, pinning сессий",
+      "size": "L",
+      "level": "L1",
+      "depends_on": [
+        "I16.T03.a"
+      ],
+      "what": "Cooldown, drain/reconnect; без обещания переноса открытого stream.",
+      "outputs": "src/quality/select.rs",
+      "done_when": "Property-тест отсутствия флаппинга.",
+      "decision": null,
+      "wave": 43,
+      "critical": false
+    },
+    {
+      "id": "I16.T05.a",
+      "milestone": "I16",
+      "title": "Проверки деградации",
+      "size": "M",
+      "level": "L2",
+      "depends_on": [
+        "I16.T04.a"
+      ],
+      "what": "Флаппинг, unavailable, metered/battery, смена страны; причина каждого выбора.",
+      "outputs": "i16-evidence",
+      "done_when": "Каждое решение объяснимо.",
+      "decision": null,
+      "wave": 44,
+      "critical": false
+    },
+    {
+      "id": "I17-D.T01.a",
+      "milestone": "I17-D",
+      "title": "Fixtures состояний",
+      "size": "S",
+      "level": "L1",
+      "depends_on": [],
+      "what": "host off/proxy/tunnel, separate/shared apps, blocked/degraded/unknown.",
+      "outputs": "tests/fixtures/ui-states/",
+      "done_when": "Покрыты все оси NET/REGION/STATE/APP.",
+      "decision": null,
+      "wave": 1,
+      "critical": false
+    },
+    {
+      "id": "I17-D.T02.a",
+      "milestone": "I17-D",
+      "title": "Навигация: экран VPN vs страница apps/tunnels",
+      "size": "M",
+      "level": "L0",
+      "depends_on": [
+        "I17-D.T01.a"
+      ],
+      "what": "Клавиши, отмена, подтверждение последствий stop.",
+      "outputs": "I17D-NAV.md",
+      "done_when": "Выбор варианта.",
+      "decision": null,
+      "wave": 2,
+      "critical": false
+    },
+    {
+      "id": "I17-D.T03.a",
+      "milestone": "I17-D",
+      "title": "Отображение осей и возраста evidence",
+      "size": "M",
+      "level": "L1",
+      "depends_on": [
+        "I17-D.T02.a"
+      ],
+      "what": "Не сводить к одной зелёной лампе.",
+      "outputs": "src/tui/mock_tunnels.rs (за флагом)",
+      "done_when": "Рендер на fixtures.",
+      "decision": null,
+      "wave": 3,
+      "critical": false
+    },
+    {
+      "id": "I17-D.T04.a",
+      "milestone": "I17-D",
+      "title": "SVG апплета для новых состояний",
+      "size": "M",
+      "level": "L1",
+      "depends_on": [
+        "I17-D.T03.a"
+      ],
+      "what": "host off + app active, partial failure, blocked; темы.",
+      "outputs": "cosmic/res/*.svg",
+      "done_when": "Сборка cosmic с новыми иконками.",
+      "decision": null,
+      "wave": 4,
+      "critical": false
+    },
+    {
+      "id": "I17-D.T05.a",
+      "milestone": "I17-D",
+      "title": "Проверка размеров и локалей",
+      "size": "S",
+      "level": "L1",
+      "depends_on": [
+        "I17-D.T04.a"
+      ],
+      "what": "40×12, 60×18, 80×24, 120×32; 6 языков.",
+      "outputs": "snapshot-тесты",
+      "done_when": "Snapshot на каждый размер/язык.",
+      "decision": null,
+      "wave": 5,
+      "critical": false
+    },
+    {
+      "id": "I17.T01.a",
+      "milestone": "I17",
+      "title": "Сверка макетов с контрактами",
+      "size": "S",
+      "level": "L0",
+      "depends_on": [
+        "I15.T05.a",
+        "I16.T05.a",
+        "I17-D.T05.a"
+      ],
+      "what": "Назначение own/group tunnel.",
+      "outputs": "I17-UI-CONTRACT.md",
+      "done_when": "Нет provisional полей.",
+      "decision": null,
+      "wave": 49,
+      "critical": true
+    },
+    {
+      "id": "I17.T02.a",
+      "milestone": "I17",
+      "title": "Неблокирующие действия и статусы",
+      "size": "L",
+      "level": "L1",
+      "depends_on": [
+        "I17.T01.a"
+      ],
+      "what": "Host/app статусы, свежесть, ядро/узел, причина block/failover.",
+      "outputs": "src/tui/*",
+      "done_when": "Фоновая модель как в 0.2.7.",
+      "decision": null,
+      "wave": 50,
+      "critical": true
+    },
+    {
+      "id": "I17.T03.a",
+      "milestone": "I17",
+      "title": "Диагностический экспорт",
+      "size": "M",
+      "level": "L1",
+      "depends_on": [
+        "I17.T02.a"
+      ],
+      "what": "instance/generation/time; редакция секретов, argv, путей.",
+      "outputs": "src/diag/export.rs",
+      "done_when": "Сканер секретов по экспорту = 0.",
+      "decision": null,
+      "wave": 51,
+      "critical": true
+    },
+    {
+      "id": "I17.T04.a",
+      "milestone": "I17",
+      "title": "Апплет и монитор ресурсов",
+      "size": "M",
+      "level": "L3",
+      "depends_on": [
+        "I17.T03.a"
+      ],
+      "what": "Сессии, ошибки, CPU/RAM workers; трафик не суммируется.",
+      "outputs": "cosmic/src/*",
+      "done_when": "Ручная проверка на COSMIC.",
+      "decision": null,
+      "wave": 52,
+      "critical": true
+    },
+    {
+      "id": "I17.T05.a",
+      "milestone": "I17",
+      "title": "Проверка реальных состояний",
+      "size": "M",
+      "level": "L4",
+      "depends_on": [
+        "I17.T04.a"
+      ],
+      "what": "Long actions, локали, темы, размеры; сверка со capture.",
+      "outputs": "i17-evidence",
+      "done_when": "Snapshot ↔ evidence совпадают.",
+      "decision": null,
+      "wave": 53,
+      "critical": true
+    },
+    {
+      "id": "X.01",
+      "milestone": "X",
+      "title": "Разрешение и среда установки",
+      "size": "S",
+      "level": "D",
+      "depends_on": [
+        "I03.T05.d"
+      ],
+      "what": "Хост сейчас в состоянии K1 (следы UPD). Выбор: VM-клон или реальный хост; резервная копия; окно работ.",
+      "outputs": "INSTALL-PLAN.md",
+      "done_when": "Письменное поручение пользователя.",
+      "decision": "D10",
+      "wave": 14,
+      "critical": false
+    },
+    {
+      "id": "X.02",
+      "milestone": "X",
+      "title": "Runtime-регрессии I01",
+      "size": "M",
+      "level": "L4",
+      "depends_on": [
+        "X.01"
+      ],
+      "what": "W0-1 (K0–K6), W0-2, миграция UPD→CM на живой системе, recover после прерывания.",
+      "outputs": "i01-evidence/install",
+      "done_when": "Миграция без потери конфига и подписок.",
+      "decision": null,
+      "wave": 15,
+      "critical": false
+    },
+    {
+      "id": "X.03",
+      "milestone": "X",
+      "title": "Installation driver I02",
+      "size": "S",
+      "level": "L4",
+      "depends_on": [
+        "X.01"
+      ],
+      "what": "Store на реальной ФС: права, fsync, restart.",
+      "outputs": "i02-evidence/install",
+      "done_when": "Все проверки driver pass.",
+      "decision": null,
+      "wave": 15,
+      "critical": false
+    },
+    {
+      "id": "X.04",
+      "milestone": "X",
+      "title": "Installation driver I03",
+      "size": "M",
+      "level": "L4",
+      "depends_on": [
+        "X.01",
+        "I03.T05.e"
+      ],
+      "what": "Реальные подписки, negotiation, refresh, отказы; секреты локально.",
+      "outputs": "i03-evidence/install",
+      "done_when": "Driver pass; actual UA зафиксирован.",
+      "decision": null,
+      "wave": 15,
+      "critical": false
+    },
+    {
+      "id": "X.05",
+      "milestone": "X",
+      "title": "Parity CM vs FlClash (I01.T03)",
+      "size": "L",
+      "level": "L4",
+      "depends_on": [
+        "X.04"
+      ],
+      "what": "A/B/A на одинаковом полном узле; классификация отказа по стадиям.",
+      "outputs": "i01-evidence/parity-2",
+      "done_when": "Причина отказа найдена или UNKNOWN честно.",
+      "decision": null,
+      "wave": 16,
+      "critical": false
+    },
+    {
+      "id": "X.06",
+      "milestone": "X",
+      "title": "Пакеты, systemd, гонки",
+      "size": "M",
+      "level": "L4",
+      "depends_on": [
+        "X.02"
+      ],
+      "what": "pacman/apt хуки, units, реальные процессные гонки, сохранение настоящего конфига.",
+      "outputs": "x-evidence",
+      "done_when": "Без регресса относительно 0.2.8.",
+      "decision": null,
+      "wave": 16,
+      "critical": false
+    },
+    {
+      "id": "X.08",
+      "milestone": "X",
+      "title": "Parity-протокол I01 на адаптере mihomo",
+      "size": "M",
+      "level": "L4",
+      "depends_on": [
+        "I04.T05.a",
+        "X.01"
+      ],
+      "what": "A/B/A на одинаковом узле: legacy vs CoreAdapter. Revision FlClash core не считать upstream.",
+      "outputs": "i04-evidence/parity",
+      "done_when": "Результат или явный UNKNOWN.",
+      "decision": null,
+      "wave": 15,
+      "critical": false
+    },
+    {
+      "id": "X.07",
+      "milestone": "X",
+      "title": "Сводный runtime-отчёт",
+      "size": "S",
+      "level": "L0",
+      "depends_on": [
+        "X.02",
+        "X.03",
+        "X.05",
+        "X.06",
+        "V.05",
+        "X.08"
+      ],
+      "what": "Собрать результаты установки: I01–I03, срез V, parity адаптера; статусы PASS/FAIL/UNKNOWN без повышения.",
+      "outputs": "X-RUNTIME-REPORT.md",
+      "done_when": "Каждая отложенная проверка имеет итоговый статус и ссылку на evidence.",
+      "decision": null,
+      "wave": 19,
+      "critical": false
+    },
+    {
+      "id": "I18.T01.a",
+      "milestone": "I18",
+      "title": "Сверка W01–W11 с evidence",
+      "size": "M",
+      "level": "L0",
+      "depends_on": [
+        "I17.T05.a",
+        "X.07"
+      ],
+      "what": "Открытые P0/conditional/no-go.",
+      "outputs": "I18-TRACE.md",
+      "done_when": "Трассировка полная.",
+      "decision": null,
+      "wave": 54,
+      "critical": true
+    },
+    {
+      "id": "I18.T02.a",
+      "milestone": "I18",
+      "title": "A01–A20 на реальных apps",
+      "size": "XL",
+      "level": "L4",
+      "depends_on": [
+        "I18.T01.a"
+      ],
+      "what": "Captures, fault injection, actual executor.",
+      "outputs": "i18-evidence",
+      "done_when": "Все критерии pass или явный blocked.",
+      "decision": null,
+      "wave": 55,
+      "critical": true
+    },
+    {
+      "id": "I18.T03.a",
+      "milestone": "I18",
+      "title": "Повтор регрессий",
+      "size": "L",
+      "level": "L4",
+      "depends_on": [
+        "I18.T02.a"
+      ],
+      "what": "CM, UPD→CM, core update/rollback, прерванный апгрейд, лимиты ресурсов, долгие сессии.",
+      "outputs": "i18-evidence/regress",
+      "done_when": "Без регресса.",
+      "decision": null,
+      "wave": 56,
+      "critical": true
+    },
+    {
+      "id": "I18.T04.a",
+      "milestone": "I18",
+      "title": "Scope выпуска и runbooks",
+      "size": "M",
+      "level": "L0",
+      "depends_on": [
+        "I18.T03.a"
+      ],
+      "what": "Ядра/версии/упаковки, ограничения, rollback.",
+      "outputs": "RELEASE-SCOPE.md",
+      "done_when": "Нет неподтверждённых гарантий.",
+      "decision": null,
+      "wave": 57,
+      "critical": true
+    },
+    {
+      "id": "I18.T05.a",
+      "milestone": "I18",
+      "title": "Acceptance report и решение",
+      "size": "S",
+      "level": "D",
+      "depends_on": [
+        "I18.T04.a"
+      ],
+      "what": "ready/blocked; сборка/публикация — отдельным поручением.",
+      "outputs": "I18-ACCEPTANCE.md",
+      "done_when": "Решение пользователя.",
+      "decision": null,
+      "wave": 58,
+      "critical": true
+    }
+  ],
+  "decisions": [
+    {
+      "id": "D1",
+      "title": "Группы/правила/провайдеры в native-подписках",
+      "blocks": "I03.T04.p",
+      "note": "**Принято 2026-10-06:** вариант 2 сейчас, вариант 3 в I04.T04.f — [I03-DECISIONS](I03-DECISIONS-2026-10-06.md)."
+    },
+    {
+      "id": "D2",
+      "title": "Политика `skip-cert-verify`",
+      "blocks": "I03.T04.y",
+      "note": "**Принято 2026-10-06:** явный insecure-признак `tls_verification: Disabled` с подтверждением; с pin — `Pinned`."
+    },
+    {
+      "id": "D3",
+      "title": "Смешанный список с неподдержанными строками",
+      "blocks": "I03.T04.s",
+      "note": "**Принято 2026-10-06:** частичный импорт с перечнем по классам; отказ при порче или 0 узлов."
+    },
+    {
+      "id": "D4",
+      "title": "HTTP-клиент с общим deadline",
+      "blocks": "H.04",
+      "note": "Composer реализовал вариант B (ureq 2 + резолв в потоке) до решения; **нужно подтвердить** или выбрать другой."
+    },
+    {
+      "id": "D5",
+      "title": "YAML-стек",
+      "blocks": "H.05",
+      "note": "**Принято:** saphyr на пути импорта. Для H.05.b нужен разовый `cargo fetch` (сеть) — разрешение пользователя."
+    },
+    {
+      "id": "D6",
+      "title": "Среда для сетевого harness (rootless netns или VM)",
+      "blocks": "H.11",
+      "note": "Блокирует все L2-проверки начиная с I04.T03.b."
+    },
+    {
+      "id": "D7",
+      "title": "Принять вертикальный срез V до I04+",
+      "blocks": "V.01",
+      "note": "Рекомендуется: даёт первую живую проверку новой модели."
+    },
+    {
+      "id": "D8",
+      "title": "Evidence-логи вне git",
+      "blocks": "H.08",
+      "note": "Процессное решение."
+    },
+    {
+      "id": "D9",
+      "title": "CI на GitHub",
+      "blocks": "H.10",
+      "note": "Внешнее действие."
+    },
+    {
+      "id": "D10",
+      "title": "Разрешение на установку и среду",
+      "blocks": "X.01",
+      "note": "Без него все L4 остаются NOT_RUN."
+    }
+  ],
+  "critical_path": [
+    "I03.T04.a",
+    "I03.T04.b",
+    "I03.T04.c",
+    "I03.T04.d",
+    "I03.T04.i",
+    "I04.T04.a",
+    "I04.T04.c",
+    "I04.T05.a",
+    "I06.T03.b",
+    "I06.T04.a",
+    "I06.T05.a",
+    "I07.T01.a",
+    "I07.T01.b",
+    "I07.T02.a",
+    "I07.T03.a",
+    "I07.T04.a",
+    "I07.T05.a",
+    "I08.T01.b",
+    "I08.T02.a",
+    "I08.T03.a",
+    "I08.T04.a",
+    "I08.T05.a",
+    "I09.T01.a",
+    "I09.T02.a",
+    "I09.T03.a",
+    "I09.T04.a",
+    "I09.T05.a",
+    "I10.T04.a",
+    "I10.T05.a",
+    "I11.T01.a",
+    "I11.T02.a",
+    "I11.T03.a",
+    "I11.T04.a",
+    "I11.T05.a",
+    "I12.T01.a",
+    "I12.T02.a",
+    "I12.T03.a",
+    "I12.T04.a",
+    "I12.T05.a",
+    "I13.T02.a",
+    "I13.T03.a",
+    "I13.T04.a",
+    "I13.T05.a",
+    "I15.T01.a",
+    "I15.T02.a",
+    "I15.T03.a",
+    "I15.T04.a",
+    "I15.T05.a",
+    "I17.T01.a",
+    "I17.T02.a",
+    "I17.T03.a",
+    "I17.T04.a",
+    "I17.T05.a",
+    "I18.T01.a",
+    "I18.T02.a",
+    "I18.T03.a",
+    "I18.T04.a",
+    "I18.T05.a"
+  ],
+  "ready_now": [
+    "H.03",
+    "H.05.b",
+    "H.08",
+    "H.12",
+    "H.10",
+    "H.11",
+    "I03.T05.b",
+    "I03.T05.c",
+    "V.01",
+    "I04.T01.a",
+    "I15-R.T01.a",
+    "I17-D.T01.a"
+  ],
+  "early_starts": [
+    {
+      "task": "I05.T01.a",
+      "before_closure_of": "I03.T05"
+    },
+    {
+      "task": "I05.T01.a",
+      "before_closure_of": "I04.T05"
+    },
+    {
+      "task": "I05.T01.b",
+      "before_closure_of": "I03.T05"
+    },
+    {
+      "task": "I05.T01.b",
+      "before_closure_of": "I04.T05"
+    },
+    {
+      "task": "I06.T01.a",
+      "before_closure_of": "I04.T05"
+    },
+    {
+      "task": "I06.T01.b",
+      "before_closure_of": "I04.T05"
+    },
+    {
+      "task": "I08.T01.a",
+      "before_closure_of": "I07.T05"
+    },
+    {
+      "task": "I10.T01.a",
+      "before_closure_of": "I05.T05"
+    },
+    {
+      "task": "I10.T01.a",
+      "before_closure_of": "I08.T05"
+    },
+    {
+      "task": "I10.T01.a",
+      "before_closure_of": "I09.T05"
+    },
+    {
+      "task": "I13.T01.a",
+      "before_closure_of": "I12.T05"
+    }
+  ]
+}

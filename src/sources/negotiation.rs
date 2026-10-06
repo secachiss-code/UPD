@@ -426,6 +426,32 @@ impl HttpResponse {
     pub fn new(status: u16, body: Vec<u8>) -> Self {
         Self { status, body }
     }
+
+    #[cfg(test)]
+    pub(crate) fn status(&self) -> u16 {
+        self.status
+    }
+
+    #[cfg(test)]
+    pub(crate) fn body(&self) -> &[u8] {
+        &self.body
+    }
+}
+
+#[cfg(test)]
+pub(crate) fn test_request_spec<'a>(
+    endpoint: &'a ConfiguredEndpoint,
+    user_agent: &'a UserAgent,
+    request_timeout: Duration,
+    max_body_bytes: usize,
+) -> RequestSpec<'a> {
+    RequestSpec {
+        endpoint,
+        user_agent,
+        remaining_budget: request_timeout,
+        request_timeout,
+        max_body_bytes,
+    }
 }
 
 impl fmt::Debug for HttpResponse {
@@ -543,6 +569,7 @@ impl<T> fmt::Debug for Negotiated<T> {
 ///
 /// The injected fetch callback must enforce `RequestSpec::request_timeout` and must
 /// not follow redirects. This function cannot preempt an arbitrary blocking callback.
+#[allow(clippy::too_many_arguments)] // public negotiation surface: endpoint, agents, cache, policy, fetch, classify
 pub fn negotiate<T, F, C>(
     endpoint: &ConfiguredEndpoint,
     core_version: &str,
@@ -578,6 +605,7 @@ where
 /// is sampled once for TTL lookup; its monotonic anchor is captured immediately
 /// afterward. Accepted time includes only duration after that anchor, while the
 /// total budget also includes time spent obtaining the Unix timestamp.
+#[allow(clippy::too_many_arguments)] // testable clock injection adds elapsed/unix hooks without changing semantics
 pub fn negotiate_with_clock<T, F, C, E, N>(
     endpoint: &ConfiguredEndpoint,
     core_version: &str,
@@ -625,13 +653,12 @@ where
     });
     let fetch_settings = PrivateFetchSettings::capture(endpoint, &candidates, policy);
     let mut ordered = candidates;
-    if let (true, Some(cached)) = (cached_is_valid, cached_winner) {
-        if let Some(position) = ordered.iter().position(|agent| agent == &cached.winner) {
-            if position != 0 {
-                let winner = ordered.remove(position);
-                ordered.insert(0, winner);
-            }
-        }
+    if let (true, Some(cached)) = (cached_is_valid, cached_winner)
+        && let Some(position) = ordered.iter().position(|agent| agent == &cached.winner)
+        && position != 0
+    {
+        let winner = ordered.remove(position);
+        ordered.insert(0, winner);
     }
 
     let max_attempts = policy.max_requests.min(ordered.len());

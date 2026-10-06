@@ -1,0 +1,1 @@
+{"proxies":[{"name":"o-http","type":"http","server":"edge.example.invalid","port":8080,"username":"CMFIXO-http-user","password":"CMFIXO-http-password"}]}

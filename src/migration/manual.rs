@@ -758,7 +758,7 @@ impl Services for Systemd {
 
 #[cfg(test)]
 mod systemd_admission_tests {
-    use super::{guard_active_legacy_admission, Service, ServiceState};
+    use super::{Service, ServiceState, guard_active_legacy_admission};
 
     fn service(unit: &str) -> Service {
         Service {
@@ -804,7 +804,7 @@ mod process_audit_tests {
     use super::{audit_processes, check_executable_identity};
     use std::{
         fs,
-        os::unix::fs::{symlink, MetadataExt, PermissionsExt},
+        os::unix::fs::{MetadataExt, PermissionsExt, symlink},
         path::{Path, PathBuf},
         time::{SystemTime, UNIX_EPOCH},
     };

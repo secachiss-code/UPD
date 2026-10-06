@@ -2,8 +2,9 @@
 
 **2026-10-05: работа остановлена пользователем на I03.T04; Luna прервана.**
 Частичный native parser, private fetch settings и parser-to-Store pipeline сохранены;
-всего I03 42 checks prepared, итоговый cargo check --offline --locked --tests COMPILE_PASS,
-runtime NOT_RUN, binary OLD_NOT_REBUILT. [Точка остановки и остаток](WORK-STOP-2026-10-05.md).
+I03 **42 checks unit/fixture PASS** (2026-10-06, [evidence](i03-evidence/local-tests-2026-10-06/summary.json));
+compile/unit на снимке 2026-10-05 — COMPILE_PASS; **installation runtime NOT_RUN**, binary OLD_NOT_REBUILT.
+[Точка остановки и остаток](WORK-STOP-2026-10-05.md).
 Не продолжать без нового поручения пользователя. Записи ниже — история очереди.
 
 

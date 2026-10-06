@@ -56,6 +56,7 @@ pub(crate) fn fixture() -> GraphSnapshot {
                 source_generation: 1,
                 definition_digest_sha256: digest(format!("definition-{suffix}").as_bytes()),
                 protocol: NodeProtocol::Vless,
+                tls_verification: TlsVerification::NotApplicable,
                 credential_refs: vec![id(&credential_id)],
             },
         );

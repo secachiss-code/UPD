@@ -1,0 +1,1 @@
+ss://aes-128-gcm:p%40ss%2Fw%3D@edge.example.invalid:8388#edge%20ss

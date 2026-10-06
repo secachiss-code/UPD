@@ -1,0 +1,1 @@
+{"proxies":[{"name":"o-hp","type":"wireguard","server":"192.0.2.10","port":51820,"ip":"10.8.0.2/32","private-key":"Q01GSVhPLXdnLXByaXZhdGUta2V5ISEAAAAAAAAAAAA=","public-key":"Q01GSVhPLXdnLXB1YmxpYy1rZXkhISEAAAAAAAAAAAA=","amnezia-wg-option":{"header-protection-key":"Q01GSVhPLWhlYWRlci1wcm90ZWN0IQAAAAAAAAAAAAA="}}]}

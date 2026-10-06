@@ -1147,11 +1147,11 @@ impl Store {
     }
 
     fn unlink_owned_temp(&self, name: &str, identity: FileIdentity) {
-        if at_identity_optional(&self.root_fd, name).ok().flatten() == Some(identity) {
-            if let Ok(name) = cstring(name) {
-                unsafe {
-                    libc::unlinkat(self.root_fd.as_raw_fd(), name.as_ptr(), 0);
-                }
+        if at_identity_optional(&self.root_fd, name).ok().flatten() == Some(identity)
+            && let Ok(name) = cstring(name)
+        {
+            unsafe {
+                libc::unlinkat(self.root_fd.as_raw_fd(), name.as_ptr(), 0);
             }
         }
     }
@@ -1339,7 +1339,7 @@ impl Store {
             }
             let item = metadata
                 .iter()
-                .find(|item| &item.credential_ref == &credential_ref)
+                .find(|item| item.credential_ref == credential_ref)
                 .ok_or(StoreError::CorruptState)?;
             let (bytes, path_identity, path_stamp, path_file) =
                 self.read_blob_verified_with_identity(item)?;
@@ -1465,7 +1465,7 @@ fn open_absolute_directory(path: &Path) -> Result<File, StoreError> {
             ));
         }
         let next = unsafe { File::from_raw_fd(next_fd) };
-        traversed.push(&part);
+        traversed.push(part);
         let metadata = next
             .metadata()
             .map_err(|e| io_error(StoreIoOperation::Stat, e))?;
@@ -1693,17 +1693,11 @@ fn map_model_error(error: ModelError) -> StoreError {
 }
 
 fn decode_graph(bytes: &[u8]) -> Result<GraphSnapshot, StoreError> {
-    let graph: GraphSnapshot = match serde_json::from_slice(bytes) {
-        Ok(graph) => graph,
-        Err(_) => {
-            let value: serde_json::Value =
-                serde_json::from_slice(bytes).map_err(|_| StoreError::CorruptState)?;
-            if has_unsupported_schema(&value) {
-                return Err(StoreError::UnsupportedSchema);
-            }
-            return Err(StoreError::CorruptState);
-        }
-    };
+    let value: serde_json::Value =
+        serde_json::from_slice(bytes).map_err(|_| StoreError::CorruptState)?;
+    let value = migrate_graph_json(value)?;
+    let graph: GraphSnapshot =
+        serde_json::from_value(value).map_err(|_| StoreError::CorruptState)?;
     graph.validate().map_err(|error| match error {
         ModelError::UnsupportedSchemaVersion => StoreError::UnsupportedSchema,
         _ => StoreError::CorruptState,
@@ -1711,14 +1705,106 @@ fn decode_graph(bytes: &[u8]) -> Result<GraphSnapshot, StoreError> {
     Ok(graph)
 }
 
-fn has_unsupported_schema(value: &serde_json::Value) -> bool {
+fn migrate_graph_json(value: serde_json::Value) -> Result<serde_json::Value, StoreError> {
+    let version = value
+        .get("schema_version")
+        .and_then(|version| version.as_u64());
+    match version {
+        // A v1 file must be v1 throughout: a nested record of any other version is refused,
+        // never silently relabelled as v2 by the migration.
+        Some(1) if has_schema_other_than(&value, 1) => Err(StoreError::UnsupportedSchema),
+        Some(1) => Ok(migrate_graph_v1_to_v2(value)),
+        Some(2) => Ok(value),
+        Some(_) => Err(StoreError::UnsupportedSchema),
+        None => Err(StoreError::CorruptState),
+    }
+}
+
+fn migrate_graph_v1_to_v2(mut root: serde_json::Value) -> serde_json::Value {
+    root["schema_version"] = serde_json::Value::from(super::model::SCHEMA_VERSION);
+    let empty_omissions = serde_json::json!({
+        "section_names": [],
+        "skipped_lines": [],
+        "tls_verification_disabled_count": 0
+    });
+    if let Some(objects) = root
+        .get_mut("sources")
+        .and_then(|value| value.as_object_mut())
+    {
+        for source in objects.values_mut() {
+            if let Some(source) = source.as_object_mut() {
+                source.insert(
+                    "schema_version".into(),
+                    serde_json::Value::from(super::model::SCHEMA_VERSION),
+                );
+                if let Some(provenance) = source
+                    .get_mut("provenance")
+                    .and_then(|value| value.as_object_mut())
+                {
+                    provenance.insert(
+                        "schema_version".into(),
+                        serde_json::Value::from(super::model::SCHEMA_VERSION),
+                    );
+                    provenance
+                        .entry("omissions")
+                        .or_insert_with(|| empty_omissions.clone());
+                    provenance
+                        .entry("accepted_omissions_bound")
+                        .or_insert_with(|| empty_omissions.clone());
+                }
+            }
+        }
+    }
+    if let Some(objects) = root
+        .get_mut("nodes")
+        .and_then(|value| value.as_object_mut())
+    {
+        for node in objects.values_mut() {
+            node["schema_version"] = serde_json::Value::from(super::model::SCHEMA_VERSION);
+            if let Some(node) = node.as_object_mut() {
+                node.entry("tls_verification")
+                    .or_insert(serde_json::Value::String("not_applicable".into()));
+            }
+        }
+    }
+    bump_nested_schema_versions(&mut root);
+    root
+}
+
+fn bump_nested_schema_versions(value: &mut serde_json::Value) {
     match value {
         serde_json::Value::Object(map) => {
-            map.get("schema_version").is_some_and(|version| {
-                version.as_u64() != Some(super::model::SCHEMA_VERSION as u64)
-            }) || map.values().any(has_unsupported_schema)
+            if map.contains_key("schema_version") {
+                map.insert(
+                    "schema_version".into(),
+                    serde_json::Value::from(super::model::SCHEMA_VERSION),
+                );
+            }
+            for child in map.values_mut() {
+                bump_nested_schema_versions(child);
+            }
         }
-        serde_json::Value::Array(values) => values.iter().any(has_unsupported_schema),
+        serde_json::Value::Array(values) => {
+            for child in values.iter_mut() {
+                bump_nested_schema_versions(child);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn has_schema_other_than(value: &serde_json::Value, expected: u64) -> bool {
+    match value {
+        serde_json::Value::Object(map) => {
+            map.get("schema_version")
+                .is_some_and(|version| version.as_u64() != Some(expected))
+                || map
+                    .values()
+                    .any(|child| has_schema_other_than(child, expected))
+        }
+        serde_json::Value::Array(values) => values
+            .iter()
+            .any(|child| has_schema_other_than(child, expected)),
         _ => false,
     }
 }

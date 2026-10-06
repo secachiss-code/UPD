@@ -154,6 +154,23 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f079e83a288787bcd14a6aea84cee5c87a67c5a3e660c30f557a3d24761b3527"
 
 [[package]]
+name = "cm"
+version = "0.2.8"
+dependencies = [
+ "flate2",
+ "libc",
+ "ratatui",
+ "serde",
+ "serde_json",
+ "serde_yaml",
+ "sha1_smol",
+ "sha2 0.11.0",
+ "unsafe-libyaml",
+ "ureq",
+ "url",
+]
+
+[[package]]
 name = "compact_str"
 version = "0.9.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1874,23 +1891,6 @@ name = "untrusted"
 version = "0.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8ecb6da28b8a351d773b68d5825ac39017e680750f980f3a1a85cd8dd28a47c1"
-
-[[package]]
-name = "cm"
-version = "0.2.8"
-dependencies = [
- "flate2",
- "libc",
- "ratatui",
- "serde",
- "serde_json",
- "serde_yaml",
- "sha1_smol",
- "sha2 0.11.0",
- "ureq",
- "unsafe-libyaml",
- "url",
-]
 
 [[package]]
 name = "ureq"

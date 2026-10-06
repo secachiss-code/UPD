@@ -1,0 +1,2 @@
+vless://123e4567-e89b-12d3-a456-4266141740d2@edge.example.invalid:443?type=tcp&security=none#edge-list
+ss://YWVzLTEyOC1nY206bGlzdC1zZWNyZXQ=@edge.example.invalid:8388#edge-ss-list

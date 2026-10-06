@@ -1,0 +1,1 @@
+socks5://sock-user:sock-secret@edge.example.invalid:1080#edge-socks

@@ -1,0 +1,1 @@
+{"proxies":[{"name":"o-socks","type":"socks5","server":"edge.example.invalid","port":1080,"username":"CMFIXO-socks-user","password":"CMFIXO-socks-password"}]}

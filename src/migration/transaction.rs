@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::os::{
     fd::AsRawFd,
-    unix::fs::{symlink, MetadataExt, OpenOptionsExt, PermissionsExt},
+    unix::fs::{MetadataExt, OpenOptionsExt, PermissionsExt, symlink},
 };
 use std::{
     fs,
@@ -279,12 +279,11 @@ impl Executor {
                     {
                         return Err("invalid snapshot path".into());
                     }
-                    if let Kind::File { backup, .. } = &node.kind {
-                        if Path::new(backup).components().count() != 1
-                            || !backup.starts_with("blob-")
-                        {
-                            return Err("invalid backup reference".into());
-                        }
+                    if let Kind::File { backup, .. } = &node.kind
+                        && (Path::new(backup).components().count() != 1
+                            || !backup.starts_with("blob-"))
+                    {
+                        return Err("invalid backup reference".into());
                     }
                 }
             }
@@ -862,10 +861,8 @@ impl Executor {
                             let bytes = fs::read(&path).map_err(err)?;
                             let expected =
                                 fs::read(self.journal_dir()?.join(backup)).map_err(err)?;
-                            if expected.starts_with(&bytes) {
-                                if !temporaries.contains(&path) {
-                                    temporaries.push(path);
-                                }
+                            if expected.starts_with(&bytes) && !temporaries.contains(&path) {
+                                temporaries.push(path);
                             }
                         }
                         Ok(_) => return Err("foreign staging file; recovery refused".into()),

@@ -1,0 +1,1 @@
+{"proxies":[{"name":"wg-edge","type":"wireguard","server":"192.0.2.10","port":51820,"ip":"10.8.0.2/32","private-key":"IiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIi","public-key":"Q01GSVhNLXdnLXB1YmxpYy1rZXkhISEAAAAAAAAAAAA=","allowed-ips":["0.0.0.0/0"]}]}

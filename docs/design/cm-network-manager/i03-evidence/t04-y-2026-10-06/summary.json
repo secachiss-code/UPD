@@ -1,0 +1,15 @@
+{
+  "stage": "I03.T04.y/omissions-tls-confirmation",
+  "date": "2026-10-06",
+  "schema_version": 2,
+  "command": "cargo test --offline --locked --test audit_i03_omissions --test audit_i03_t04_b",
+  "outputs": [
+    "src/profiles/model.rs",
+    "src/profiles/store.rs (v1→v2 migration)",
+    "src/sources/artifact.rs",
+    "src/sources/import_confirmation.rs",
+    "src/sources/pipeline.rs",
+    "tests/audit_i03_omissions.rs"
+  ],
+  "installation_runtime": "NOT_RUN"
+}

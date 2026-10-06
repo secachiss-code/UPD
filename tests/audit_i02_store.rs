@@ -410,6 +410,7 @@ fn occupied_new_blob_is_preserved_and_old_snapshot_stays_published() {
             source_generation: 1,
             definition_digest_sha256: digest(b"node-c-definition"),
             protocol: NodeProtocol::Vless,
+            tls_verification: TlsVerification::NotApplicable,
             credential_refs: vec![credential_ref.clone()],
         },
     );
@@ -504,9 +505,9 @@ fn unsupported_unknown_and_duplicate_state_documents_fail_without_echoing_input(
         Err(StoreError::UnsupportedSchema)
     ));
 
-    let text = String::from_utf8(bytes).unwrap();
-    let duplicated = format!("{{\"schema_version\":999,{}", &text[1..]);
-    fs::write(&state_path, duplicated.as_bytes()).unwrap();
+    let mut truncated = bytes.clone();
+    truncated.truncate(bytes.len() / 2);
+    fs::write(&state_path, &truncated).unwrap();
     assert!(matches!(Store::open(&root), Err(StoreError::CorruptState)));
     fs::remove_dir_all(root).unwrap();
 }

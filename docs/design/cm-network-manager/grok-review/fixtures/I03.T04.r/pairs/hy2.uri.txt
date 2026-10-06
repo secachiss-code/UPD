@@ -1,0 +1,1 @@
+hy2://hy2-secret@edge.example.invalid:443?sni=edge.example.invalid#edge-hy2

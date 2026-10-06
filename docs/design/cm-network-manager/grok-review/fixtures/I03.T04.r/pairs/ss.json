@@ -1,0 +1,1 @@
+{"name":"edge-ss","type":"ss","server":"edge.example.invalid","port":8388,"cipher":"aes-128-gcm","password":"secret-ss"}

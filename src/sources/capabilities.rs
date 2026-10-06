@@ -272,9 +272,8 @@ pub fn classify_node_option(field: &str) -> Result<NodeOptionDisposition, Capabi
         | "dns" => Ok(NodeOptionDisposition::RestrictedNative),
         "reality-opts" => Ok(NodeOptionDisposition::PreservedNodeOption),
         "ech-opts" | "shadow-tls-opts" | "restls-opts" | "jls-opts" | "tlsmirror-opts"
-        | "mekya-opts" | "mkcp-opts" | "plugin" | "plugin-opts" => {
-            return Err(CapabilityError::UnsupportedFeature);
-        }
+        | "mekya-opts" | "mkcp-opts" | "plugin" | "plugin-opts" | "ss-opts"
+        | "amnezia-wg-option" => Err(CapabilityError::UnsupportedFeature),
         _ => Err(CapabilityError::UnsupportedField),
     }
 }

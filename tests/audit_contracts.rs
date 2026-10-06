@@ -1,3 +1,5 @@
+use cm::common::contract_fixtures::{self as fixtures, ChildGuard, EnvGuard, TempDirGuard};
+use cm::helper::{self, Event, PromptKind, Request};
 use std::io::{BufRead, Write};
 use std::os::unix::fs::PermissionsExt;
 use std::os::unix::net::{UnixListener, UnixStream};
@@ -6,8 +8,6 @@ use std::process::{Command, Stdio};
 use std::sync::mpsc;
 use std::thread;
 use std::time::{Duration, Instant};
-use cm::common::contract_fixtures::{self as fixtures, ChildGuard, EnvGuard, TempDirGuard};
-use cm::helper::{self, Event, PromptKind, Request};
 
 const FIXTURE_TIMEOUT: Duration = Duration::from_secs(8);
 
@@ -41,6 +41,16 @@ fn spawn_helper(dir: &TempDirGuard, socket: &Path, fake_cm: Option<&Path>) -> Ch
         ));
     if let Some(path) = fake_cm {
         command.env("CM_HELPER_EXE", path);
+    }
+    // Resource baselines count the helper's fds. Descriptors that the test process itself
+    // inherited without CLOEXEC (IDE terminal, agent, jobserver) must not reach the fixture.
+    unsafe {
+        use std::os::unix::process::CommandExt;
+        command.pre_exec(|| {
+            // stdio is already in place; ENOSYS on pre-5.9 kernels leaves the old behaviour.
+            libc::syscall(libc::SYS_close_range, 3u32, u32::MAX, 0u32);
+            Ok(())
+        });
     }
     let mut child = ChildGuard::spawn(&mut command).expect("spawn local helper fixture");
     wait_for_socket(&mut child, socket);
@@ -241,11 +251,7 @@ fn new_helper_rejects_legacy_mutation_without_protocol_version() {
     let socket = dir.path().join("helper.sock");
     let marker = dir.path().join("should-not-run");
     let fake_cm = dir.path().join("fake-cm");
-    std::fs::write(
-        &fake_cm,
-        format!("#!/bin/sh\ntouch {}\n", marker.display()),
-    )
-    .unwrap();
+    std::fs::write(&fake_cm, format!("#!/bin/sh\ntouch {}\n", marker.display())).unwrap();
     std::fs::set_permissions(&fake_cm, std::fs::Permissions::from_mode(0o755)).unwrap();
     let mut env = EnvGuard::new();
     env.set("CM_HELPER_SOCK", &socket);
@@ -403,44 +409,51 @@ fn helper_fixture_runs_fake_child_and_reaps_helper() {
 
     let (tx, rx) = mpsc::sync_channel(1);
     let worker = thread::spawn(move || {
-        let result = (|| -> Result<(i32, Vec<Event>, helper::StartReply, cm::summary::OpStatus), String> {
-            // Subscribe before starting so this contract fixture does not depend on packet coalescing.
-            let events = helper::attach_events()?;
-            if helper::call(&Request::Start {
-                args: vec!["install".into()],
-            })
-            .is_ok()
-            {
-                return Err("disallowed command was accepted".into());
-            }
-            let started = helper::call_as::<helper::StartReply>(&Request::Start {
-                args: vec!["check".into()],
-            })?;
-            let mut seen = Vec::new();
-            let mut code = None;
-            for item in events {
-                let frame = item?;
-                if frame.operation_id != started.operation_id {
-                    return Err("event belongs to another operation".into());
+        let result =
+            (|| -> Result<(i32, Vec<Event>, helper::StartReply, cm::summary::OpStatus), String> {
+                // Subscribe before starting so this contract fixture does not depend on packet coalescing.
+                let events = helper::attach_events()?;
+                if helper::call(&Request::Start {
+                    args: vec!["install".into()],
+                })
+                .is_ok()
+                {
+                    return Err("disallowed command was accepted".into());
                 }
-                let event = frame.event;
-                if let Event::Prompt { kind, .. } = &event {
-                    if *kind != (PromptKind::YesNo { default_yes: true }) {
-                        return Err(format!("unexpected prompt kind: {kind:?}"));
+                let started = helper::call_as::<helper::StartReply>(&Request::Start {
+                    args: vec!["check".into()],
+                })?;
+                let mut seen = Vec::new();
+                let mut code = None;
+                for item in events {
+                    let frame = item?;
+                    if frame.operation_id != started.operation_id {
+                        return Err("event belongs to another operation".into());
                     }
-                    let prompt_id = frame.prompt_id.ok_or_else(|| "prompt event has no prompt id".to_string())?;
-                    helper::call(&Request::Input { operation_id: started.operation_id.clone(), prompt_id, data: "y".into() })?;
+                    let event = frame.event;
+                    if let Event::Prompt { kind, .. } = &event {
+                        if *kind != (PromptKind::YesNo { default_yes: true }) {
+                            return Err(format!("unexpected prompt kind: {kind:?}"));
+                        }
+                        let prompt_id = frame
+                            .prompt_id
+                            .ok_or_else(|| "prompt event has no prompt id".to_string())?;
+                        helper::call(&Request::Input {
+                            operation_id: started.operation_id.clone(),
+                            prompt_id,
+                            data: "y".into(),
+                        })?;
+                    }
+                    if let Event::Exit { code: exit } = &event {
+                        code = Some(*exit);
+                        break;
+                    }
+                    seen.push(event);
                 }
-                if let Event::Exit { code: exit } = &event {
-                    code = Some(*exit);
-                    break;
-                }
-                seen.push(event);
-            }
-            let code = code.ok_or_else(|| "fake operation ended without Exit".to_string())?;
-            let status: cm::summary::OpStatus = helper::call_as(&Request::Status)?;
-            Ok((code, seen, started, status))
-        })();
+                let code = code.ok_or_else(|| "fake operation ended without Exit".to_string())?;
+                let status: cm::summary::OpStatus = helper::call_as(&Request::Status)?;
+                Ok((code, seen, started, status))
+            })();
         let _ = tx.send(result);
     });
 
