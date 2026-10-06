@@ -415,16 +415,33 @@ impl fmt::Debug for RequestSpec<'_> {
     }
 }
 
+/// Provider `subscription-userinfo` longer than this is ignored as unknown, not truncated:
+/// an odd header must not look like an exhausted quota.
+const MAX_SUBSCRIPTION_USERINFO_BYTES: usize = 512;
+
 /// A fetch response with private, redacted bytes.
 pub struct HttpResponse {
     status: u16,
     body: Vec<u8>,
+    subscription_userinfo: Option<String>,
 }
 
 impl HttpResponse {
     /// Construct a response inside the trusted fetch adapter or synthetic fixture.
     pub fn new(status: u16, body: Vec<u8>) -> Self {
-        Self { status, body }
+        Self {
+            status,
+            body,
+            subscription_userinfo: None,
+        }
+    }
+
+    /// Attach the provider `subscription-userinfo` header. The value is not formatted into errors.
+    pub fn with_subscription_userinfo(mut self, header: impl AsRef<str>) -> Self {
+        let header = header.as_ref();
+        self.subscription_userinfo =
+            (header.len() <= MAX_SUBSCRIPTION_USERINFO_BYTES).then(|| header.to_owned());
+        self
     }
 
     #[cfg(test)]
@@ -703,6 +720,9 @@ where
         remaining_budget(&mut elapsed, start_elapsed, policy.total_budget)?;
         match classified {
             Ok(parsed) => {
+                if subscription_quota_blocked(&response, start_unix_ms) {
+                    return Err(NegotiationError::QuotaRejected);
+                }
                 let body = response.body;
                 let body_hash = sha256_hex(&body);
                 let end_sample = elapsed.sample()?;
@@ -857,6 +877,57 @@ fn remaining_budget<E: FnMut() -> Duration>(
         return Err(NegotiationError::DeadlineExceeded);
     }
     Ok(total_budget - elapsed)
+}
+
+/// Exhausted quota or an expire timestamp already reached blocks publication.
+/// Unknown or absent counters do not. The header text never leaves this function.
+fn subscription_quota_blocked(response: &HttpResponse, now_unix_ms: i64) -> bool {
+    let Some(header) = response.subscription_userinfo.as_deref() else {
+        return false;
+    };
+    let mut upload = 0u64;
+    let mut download = 0u64;
+    let mut total = 0u64;
+    let mut expire = 0i64;
+    for part in header.split(';') {
+        let Some((key, value)) = part.trim().split_once('=') else {
+            continue;
+        };
+        match key.trim() {
+            "upload" => upload = userinfo_u64(value),
+            "download" => download = userinfo_u64(value),
+            "total" => total = userinfo_u64(value),
+            "expire" => expire = userinfo_i64(value),
+            _ => {}
+        }
+    }
+    if total > 0 && u128::from(upload) + u128::from(download) >= u128::from(total) {
+        return true;
+    }
+    expire > 0 && now_unix_ms >= expire.saturating_mul(1000)
+}
+
+fn userinfo_u64(value: &str) -> u64 {
+    let value = value.trim();
+    if let Ok(number) = value.parse::<u64>() {
+        return number;
+    }
+    let Ok(number) = value.parse::<f64>() else {
+        return 0;
+    };
+    if number.is_finite()
+        && number >= 0.0
+        && number.fract() == 0.0
+        && number < 9_007_199_254_740_992.0
+    {
+        number as u64
+    } else {
+        0
+    }
+}
+
+fn userinfo_i64(value: &str) -> i64 {
+    i64::try_from(userinfo_u64(value)).unwrap_or(0)
 }
 
 fn http_status_error(status: u16) -> NegotiationError {

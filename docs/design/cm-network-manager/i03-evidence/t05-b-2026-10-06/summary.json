@@ -1,0 +1,22 @@
+{
+  "stage": "I03.T05.b",
+  "date": "2026-10-06",
+  "status": "READY_FOR_COORDINATOR_REVIEW",
+  "git_revision": "f41537ba172958e00a48c86f6626aa29e7a25805",
+  "dirty_tree": true,
+  "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)",
+  "cargo_lock_sha256": "4f39f96d1ef63e06171f18f0f3808a2bffba87ec52a8c853683ffb6b2ea6f358",
+  "command": "CARGO_TARGET_DIR=/home/somovas/.cache/cm-grok-target cargo test --offline --locked --test audit_i03_failures -- --test-threads=8",
+  "result": "ok. 7 passed, 0 failed",
+  "scenarios": [
+    "html_stub_does_not_replace_working_source",
+    "exhausted_or_expired_subscription_userinfo_does_not_replace_working_source",
+    "healthy_subscription_userinfo_still_refreshes",
+    "timeout_does_not_replace_working_source",
+    "disappeared_nodes_do_not_replace_working_source",
+    "failed_refresh_of_active_source_leaves_store_unchanged",
+    "corrupt_import_does_not_replace_working_source"
+  ],
+  "full_suite": "cargo test --offline --locked: 440 passed, 0 failed",
+  "raw_logs": "not stored in git; D8 is still open"
+}

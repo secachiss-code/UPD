@@ -117,8 +117,13 @@ impl FetchTransport {
             );
         }
 
+        let userinfo = response.header("subscription-userinfo").map(str::to_owned);
         let body = read_body_bounded(response, max_body_bytes, deadline)?;
-        Ok(HttpResponse::new(status, body))
+        let mut http = HttpResponse::new(status, body);
+        if let Some(header) = userinfo {
+            http = http.with_subscription_userinfo(header);
+        }
+        Ok(http)
     }
 }
 
