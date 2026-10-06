@@ -78,5 +78,21 @@
   "not_closed": [
     "I04.T03.b not started: ADR TUN waits for review of B",
     "I04.T04.c not started: worker lifecycle waits for review of B"
-  ]
+  ],
+  "coordinator_review": {
+    "date": "2026-10-06",
+    "review": "REVIEW-2026-10-06-STAGE2-WAVE1.md",
+    "fixes": [
+      "validate_file: 20 s deadline via capture_with_policy, O_NOFOLLOW",
+      "generator refuses interface-name/routing-mark/dialer-proxy",
+      "core.sh: direct path to echo dropped, bounded wait",
+      "new test: whole corpus -> generator -> mihomo -t"
+    ],
+    "gate": {
+      "exit_code": 0,
+      "passed": 492,
+      "failed": 0,
+      "skipped_lines": 0
+    }
+  }
 }
