@@ -44,7 +44,8 @@ fn reject_dir() -> PathBuf {
 #[test]
 fn grok_rejection_catalogue() {
     use cm::sources::ParserError::*;
-    let cases: &[(&str, fn(&cm::sources::ParserError) -> bool)] = &[
+    type Case = (&'static str, fn(&cm::sources::ParserError) -> bool);
+    let cases: &[Case] = &[
         ("ipv6-bare.uri.txt", |e| matches!(e, InvalidNode { .. })),
         ("port-0.uri.txt", |e| matches!(e, InvalidNode { .. })),
         ("port-65536.uri.txt", |e| matches!(e, InvalidNode { .. })),
@@ -103,9 +104,9 @@ fn transports_and_d2_insecure_map_to_native_fields() {
     assert_eq!(ws["ws-opts"]["path"], "/ws");
     assert_eq!(ws["ws-opts"]["headers"]["Host"], "cdn.example.com");
     assert_eq!(ws["alpn"], serde_json::json!(["h2", "http/1.1"]));
-    let grpc = parse_share_uri(&format!(
-        "trojan://secret@edge.example.invalid:443?type=grpc&serviceName=svc&allowInsecure=1#g"
-    ))
+    let grpc = parse_share_uri(
+        "trojan://secret@edge.example.invalid:443?type=grpc&serviceName=svc&allowInsecure=1#g",
+    )
     .unwrap();
     assert_eq!(grpc["grpc-opts"]["grpc-service-name"], "svc");
     assert_eq!(grpc["skip-cert-verify"], true);

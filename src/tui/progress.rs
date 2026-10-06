@@ -20,19 +20,18 @@ impl Progress {
             "creazione del pacchetto:",
             "正在创建软件包：",
         ]) || low.starts_with("==> сборка пакета ");
-        let phase = if new_package || has(&["updating aur packages", "→ aur"]) {
-            self.aur = true;
-            Some("Загрузка исходников")
-        } else if makepkg
-            && has(&[
-                "retrieving sources",
-                "получение исходных",
-                "получение исходников",
-                "загрузка исходных",
-                "empfange quellen",
-                "download dei sorgenti",
-                "获取源代码",
-            ])
+        let phase = if new_package
+            || has(&["updating aur packages", "→ aur"])
+            || (makepkg
+                && has(&[
+                    "retrieving sources",
+                    "получение исходных",
+                    "получение исходников",
+                    "загрузка исходных",
+                    "empfange quellen",
+                    "download dei sorgenti",
+                    "获取源代码",
+                ]))
         {
             self.aur = true;
             Some("Загрузка исходников")

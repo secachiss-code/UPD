@@ -27,7 +27,7 @@ enum Escape {
     Charset,
     Csi,
     Osc,
-    OscEscape,
+    OscSt,
 }
 
 pub(super) struct ProcessSession {
@@ -156,12 +156,11 @@ impl ProcessSession {
         let pgid = child.id() as i32;
         let leader_start = start_time(pgid);
         #[cfg(test)]
-        if let Some(path) = std::env::var_os("CM_TUI_CHILD_PID_FILE") {
-            if let Err(error) = std::fs::write(path, pgid.to_string()) {
-                let _ = child.kill();
-                let _ = child.wait();
-                return Err(error);
-            }
+        if let Some(path) = std::env::var_os("CM_TUI_CHILD_PID_FILE")
+            && let Err(error) = std::fs::write(path, pgid.to_string()) {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err(error);
         }
         let (tx, output) = mpsc::sync_channel(128);
         // Чтение ждёт и PTY, и канал пробуждения: потомок, удерживающий PTY, не оставит поток висеть после закрытия экрана.
@@ -625,12 +624,12 @@ impl ProcessSession {
             Escape::Osc => {
                 self.escape = match ch {
                     '\x07' => Escape::Text,
-                    '\x1b' => Escape::OscEscape,
+                    '\x1b' => Escape::OscSt,
                     _ => Escape::Osc,
                 };
                 return;
             }
-            Escape::OscEscape => {
+            Escape::OscSt => {
                 self.escape = if ch == '\\' || ch == '\x07' {
                     Escape::Text
                 } else {

@@ -243,6 +243,7 @@ pub(crate) fn fixture() -> GraphSnapshot {
     graph
 }
 
+#[allow(dead_code)] // other integration-test crates include this module and call it
 pub(crate) fn source_update(old: &GraphSnapshot, same_definition: bool) -> GraphSnapshot {
     let mut new = old.clone();
     new.revision += 1;
@@ -261,6 +262,7 @@ pub(crate) fn source_update(old: &GraphSnapshot, same_definition: bool) -> Graph
     new
 }
 
+#[allow(dead_code)] // other integration-test crates include this module and call it
 pub(crate) fn net_evidence(graph: &mut GraphSnapshot, value: VerificationValue, timestamp: i64) {
     for number in [1, 2] {
         let key = format!("net-{number}");

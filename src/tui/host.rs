@@ -103,12 +103,12 @@ fn filesystem() -> Option<(u64, u64)> {
         return None;
     }
     let stat = unsafe { stat.assume_init() };
-    let size = stat.f_frsize as u64;
+    let size = stat.f_frsize;
     Some((
-        (stat.f_blocks as u64)
-            .saturating_sub(stat.f_bfree as u64)
+        stat.f_blocks
+            .saturating_sub(stat.f_bfree)
             .saturating_mul(size),
-        (stat.f_blocks as u64).saturating_mul(size),
+        stat.f_blocks.saturating_mul(size),
     ))
 }
 fn gpu() -> String {

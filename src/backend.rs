@@ -190,12 +190,10 @@ fn repo_uses(conf: &str, repo: &str, mirrorlist: &str) -> bool {
     for l in conf.lines().map(str::trim) {
         if l.starts_with('[') {
             inside = l == format!("[{repo}]");
-        } else if inside {
-            if let Some((k, v)) = l.split_once('=') {
-                if k.trim() == "Include" && v.trim() == mirrorlist {
-                    return true;
-                }
-            }
+        } else if inside
+            && let Some((k, v)) = l.split_once('=')
+            && k.trim() == "Include" && v.trim() == mirrorlist {
+            return true;
         }
     }
     false
@@ -730,10 +728,9 @@ fn recover_apt_transaction() -> Result<(), String> {
 
 fn run_apt_transaction<T>(paths: &[PathBuf], prepared_file: Option<&Path>, action: impl FnOnce() -> Result<T, String>) -> Result<T, String> {
     recover_apt_transaction()?;
-    if let Some(path) = prepared_file {
-        if !apt_temp_path_allowed(path) {
-            return Err(t!("{}: временный путь транзакции APT не разрешён", path.display()));
-        }
+    if let Some(path) = prepared_file
+        && !apt_temp_path_allowed(path) {
+        return Err(t!("{}: временный путь транзакции APT не разрешён", path.display()));
     }
     let mut files = BTreeMap::new();
     for path in paths {
@@ -897,17 +894,16 @@ fn merge_apt_source_after_apply(path: &str, original: &AptSourceBackup, current:
         None
     };
     let applied = original.applied.as_ref().or(legacy_applied.as_ref());
-    if let Some(applied) = applied {
-        if current.content == applied.content {
-            let metadata_unchanged = current.mode == applied.mode && current.uid == applied.uid && current.gid == applied.gid;
-            return Ok(AptSourceBackup {
-                content: original.content.clone(),
-                mode: if metadata_unchanged { original.mode } else { current.mode },
-                uid: if metadata_unchanged { original.uid } else { current.uid },
-                gid: if metadata_unchanged { original.gid } else { current.gid },
-                applied: None,
-            });
-        }
+    if let Some(applied) = applied
+        && current.content == applied.content {
+        let metadata_unchanged = current.mode == applied.mode && current.uid == applied.uid && current.gid == applied.gid;
+        return Ok(AptSourceBackup {
+            content: original.content.clone(),
+            mode: if metadata_unchanged { original.mode } else { current.mode },
+            uid: if metadata_unchanged { original.uid } else { current.uid },
+            gid: if metadata_unchanged { original.gid } else { current.gid },
+            applied: None,
+        });
     }
     if current.content.contains(&reference) && original_uri.is_empty() {
         return Err(t!("{0}: нет исходного URI для восстановления; backup сохранён", path));

@@ -49,13 +49,14 @@ fn invoking_user_command(user: &str, args: &[&str]) -> Result<(String, Vec<Strin
         return Err(t!("неверный HOME пользователя {0}", user));
     }
     let runtime = format!("/run/user/{uid}");
-    let mut command = if have("runuser") {
-        vec!["-u".into(), user.into(), "--".into(), "env".into()]
+    let runner = if have("runuser") {
+        "runuser"
     } else if have("sudo") {
-        vec!["-u".into(), user.into(), "--".into(), "env".into()]
+        "sudo"
     } else {
         return Err(t!("для запуска Flatpak от имени пользователя нужен runuser или sudo").into());
     };
+    let mut command = vec!["-u".into(), user.into(), "--".into(), "env".into()];
     command.push(format!("HOME={home}"));
     command.push(format!("XDG_RUNTIME_DIR={runtime}"));
     command.push("LC_ALL=C".into());
@@ -63,7 +64,7 @@ fn invoking_user_command(user: &str, args: &[&str]) -> Result<(String, Vec<Strin
         command.push(format!("DBUS_SESSION_BUS_ADDRESS=unix:path={runtime}/bus"));
     }
     command.extend(args.iter().map(|arg| (*arg).to_string()));
-    Ok((if have("runuser") { "runuser" } else { "sudo" }.into(), command))
+    Ok((runner.into(), command))
 }
 
 fn out_as_user(user: &str, args: &[&str]) -> Result<(String, i32), String> {

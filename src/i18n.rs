@@ -239,9 +239,9 @@ fn push_fmt(out: &mut String, a: &dyn Display, spec: &str) {
         '^' => (pad / 2, pad - pad / 2),
         _ => (0, pad),
     };
-    out.extend(std::iter::repeat(fill_ch).take(l));
+    out.extend(std::iter::repeat_n(fill_ch, l));
     out.push_str(&body);
-    out.extend(std::iter::repeat(fill_ch).take(r));
+    out.extend(std::iter::repeat_n(fill_ch, r));
 }
 
 /// `t!("текст")` — &'static str; `t!("шаблон {}", a, b)` — String.
@@ -395,7 +395,11 @@ mod tests {
             include_str!("backend.rs"),
             include_str!("common.rs"),
             include_str!("extras.rs"),
-            include_str!("helper.rs"),
+            include_str!("helper/protocol.rs"),
+            include_str!("helper/auth.rs"),
+            include_str!("helper/ops.rs"),
+            include_str!("helper/ops_run.rs"),
+            include_str!("helper/settings.rs"),
             include_str!("main.rs"),
             include_str!("mirrors.rs"),
             include_str!("status.rs"),
@@ -403,7 +407,13 @@ mod tests {
             include_str!("tui.rs"),
             include_str!("tui/process.rs"),
             include_str!("tui/host.rs"),
-            include_str!("vpn.rs"),
+            include_str!("vpn/subs.rs"),
+            include_str!("vpn/fetch.rs"),
+            include_str!("vpn/profile_files.rs"),
+            include_str!("vpn/state.rs"),
+            include_str!("vpn/config.rs"),
+            include_str!("vpn/core.rs"),
+            include_str!("vpn/conflicts.rs"),
             // графический интерфейс COSMIC — отдельный крейт, но переводы общие
             include_str!("../cosmic/src/applet.rs"),
             include_str!("../cosmic/src/main.rs"),

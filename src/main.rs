@@ -90,11 +90,10 @@ fn main() {
         let action = if cmd == "install" { "apply" } else { pos.first().map(String::as_str).unwrap_or("plan") };
         std::process::exit(cmd_migration(action));
     }
-    if is_root() {
-        if let Err(error) = migration::transaction::Executor::new(Path::new("/")).and_then(|e| e.startup_allowed()) {
-            eprintln!("cm: {error}");
-            std::process::exit(1);
-        }
+    if is_root()
+        && let Err(error) = migration::transaction::Executor::new(Path::new("/")).and_then(|e| e.startup_allowed()) {
+        eprintln!("cm: {error}");
+        std::process::exit(1);
     }
     // Root status/invalid commands also used to save defaults before dispatch.
     // Refuse before backend detection or privilege escalation can do any work.
@@ -387,11 +386,10 @@ fn cmd_auto(b: &dyn Backend, c: &Config) -> i32 {
         }
     };
     let ms = load_mirror_state();
-    if !changed && b.mirrors_managed() && elapsed_at_least(ms.checked, hours_secs(c.mirror_max_age_h)) {
-        if let Err(e) = check_mirrors(b, c, &stdlog, None, None) {
-            stdlog(&t!("зеркала не применены: {0}", e));
-            mirror_error = Some(e);
-        }
+    if !changed && b.mirrors_managed() && elapsed_at_least(ms.checked, hours_secs(c.mirror_max_age_h))
+        && let Err(e) = check_mirrors(b, c, &stdlog, None, None) {
+        stdlog(&t!("зеркала не применены: {0}", e));
+        mirror_error = Some(e);
     }
     vpn::maintain(c, &stdlog);
     let mut st = gather(b, c, &stdlog, true, None);
@@ -555,10 +553,9 @@ fn cmd_update(b: &dyn Backend, c: &Config) -> i32 {
         } else {
             None
         };
-        if let Some(warning) = warning {
-            if !confirm(warning, false) {
-                return 1;
-            }
+        if let Some(warning) = warning
+            && !confirm(warning, false) {
+            return 1;
         }
 
         step(3, t!("Загрузка"));
@@ -601,11 +598,10 @@ fn cmd_update(b: &dyn Backend, c: &Config) -> i32 {
         }
         let mut result = if st.list.is_empty() && !aur_by_installer { Ok(()) } else { b.upgrade(aur_by_installer) };
         let packages_installed = result.is_ok();
-        if result.is_ok() && !aur.is_empty() && !aur_by_installer {
-            if let Some(u) = &user {
-                println!("\n→ AUR");
-                result = extras::aur_upgrade(u);
-            }
+        if result.is_ok() && !aur.is_empty() && !aur_by_installer
+            && let Some(u) = &user {
+            println!("\n→ AUR");
+            result = extras::aur_upgrade(u);
         }
         if packages_installed {
             st.list.clear();
@@ -663,10 +659,9 @@ fn cmd_update(b: &dyn Backend, c: &Config) -> i32 {
                 result = Err(e.to_string());
             }
         }
-        if result.is_ok() {
-            if let Some(error) = state_check_failure(&st) {
-                result = Err(error.to_string());
-            }
+        if result.is_ok()
+            && let Some(error) = state_check_failure(&st) {
+            result = Err(error.to_string());
         }
         match &result {
             Ok(()) => println!("{}", t!("\n\x1b[32m✓ Обновление завершено\x1b[0m")),
@@ -954,22 +949,20 @@ fn cmd_vpn(c: &Config, pos: &[String]) -> i32 {
                 Ok(name) => {
                     println!("{}: «{name}»", if sub == "use" { t!("активна") } else { t!("удалена") });
                     if sub == "use" {
-                        return err_code(Config::load(c.mirrors.clone()).and_then(|latest| vpn::sysproxy(&latest, user.as_ref()).map(|_| ())).map_err(|error| { vpn::record_failure("user-proxy", &error); error }));
+                        return err_code(Config::load(c.mirrors.clone()).and_then(|latest| vpn::sysproxy(&latest, user.as_ref()).map(|_| ())).inspect_err(|error| { vpn::record_failure("user-proxy", error); }));
                     }
                     if sub == "del" {
                         match vpn::load_subs() {
                             Ok(subs) if subs.list.is_empty() => {
                                 let mut errors = Vec::new();
-                                if vpn::service_active() {
-                                    if let Err(e) = vpn::stop() {
-                                        errors.push(t!("VPN не удалось остановить: {0}", e));
-                                    }
+                                if vpn::service_active()
+                                    && let Err(e) = vpn::stop() {
+                                    errors.push(t!("VPN не удалось остановить: {0}", e));
                                 }
                                 if let Err(error) = vpn::sysproxy(&c, user.as_ref()) { errors.push(format!("VPN subscription removed, but user proxy failed: {error}")); }
-                                if c.vpn_autostart {
-                                    if let Err(e) = vpn::autostart(false) {
-                                        errors.push(t!("автозапуск VPN не удалось выключить: {0}", e));
-                                    }
+                                if c.vpn_autostart
+                                    && let Err(e) = vpn::autostart(false) {
+                                    errors.push(t!("автозапуск VPN не удалось выключить: {0}", e));
                                 }
                                 if !errors.is_empty() {
                                     eprintln!("{}", t!("подписка уже удалена; {}", errors.join("; ")));
@@ -1587,12 +1580,11 @@ fn disable_and_remove_units(dir: &str, files: &[(String, std::path::PathBuf)], g
         .iter()
         .filter_map(|(name, _)| (name.ends_with(".timer") || name.ends_with(".path") || name.as_str() == vpn::SERVICE).then_some(name.as_str()))
         .collect();
-    if systemd() {
-        if !enabled_names.is_empty() {
-            let mut args = if global { vec!["--global", "disable"] } else { vec!["disable"] };
-            args.extend(enabled_names);
-            run(true, &[], "systemctl", &args).map_err(|e| t!("{0}: не удалось отключить unit-файлы cm: {1}", dir, e))?;
-        }
+    if systemd()
+        && !enabled_names.is_empty() {
+        let mut args = if global { vec!["--global", "disable"] } else { vec!["disable"] };
+        args.extend(enabled_names);
+        run(true, &[], "systemctl", &args).map_err(|e| t!("{0}: не удалось отключить unit-файлы cm: {1}", dir, e))?;
     }
     for (name, path) in files {
         fs::remove_file(path).map_err(|e| t!("{}: не удалось удалить {1}: {2}", path.display(), name, e))?;
@@ -1759,22 +1751,20 @@ fn cmd_install(b: &dyn Backend, c: &Config, pkg: bool) -> i32 {
         }
     }
     ok(t!("бинарник: {}", l.bin));
-    if !pkg {
-        if let Some(src) = gui_source(&exe) {
-            match install_gui(&src) {
-                Ok(()) => ok(t!("интерфейс COSMIC: {0} — апплет добавляется в Настройках → Рабочий стол → Панель → Апплеты", GUI_BIN)),
-                Err(e) => println!("{}", t!("⚠ интерфейс COSMIC не установлен: {0}", e)),
-            }
+    if !pkg
+        && let Some(src) = gui_source(&exe) {
+        match install_gui(&src) {
+            Ok(()) => ok(t!("интерфейс COSMIC: {0} — апплет добавляется в Настройках → Рабочий стол → Панель → Апплеты", GUI_BIN)),
+            Err(e) => println!("{}", t!("⚠ интерфейс COSMIC не установлен: {0}", e)),
         }
     }
     let mut c = c.clone();
     // язык спрашиваем один раз: пока он не выбран (auto), и только при ручной установке из терминала
-    if !pkg && c.lang == "auto" && std::io::IsTerminal::is_terminal(&std::io::stdin()) {
-        if let Some(l) = choose_lang() {
-            c.lang = l.code().into();
-            i18n::set(l);
-            let _ = c.save();
-        }
+    if !pkg && c.lang == "auto" && std::io::IsTerminal::is_terminal(&std::io::stdin())
+        && let Some(l) = choose_lang() {
+        c.lang = l.code().into();
+        i18n::set(l);
+        let _ = c.save();
     }
     if !Path::new(&conf_path()).exists() {
         let _ = c.save();

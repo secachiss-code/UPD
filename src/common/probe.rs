@@ -10,8 +10,10 @@ use std::sync::{
 };
 use std::time::{Duration, Instant};
 
+type ProbeScope = Option<(Instant, Arc<AtomicBool>, Option<CaptureError>)>;
+
 thread_local! {
-    static SCOPE: std::cell::RefCell<Option<(Instant, Arc<AtomicBool>, Option<CaptureError>)>> = const { std::cell::RefCell::new(None) };
+    static SCOPE: std::cell::RefCell<ProbeScope> = const { std::cell::RefCell::new(None) };
 }
 /// A whole read-only job shares one deadline. Legacy optional probes cannot hide a limit failure.
 pub fn with_probe_scope<T>(
@@ -47,10 +49,10 @@ pub(super) fn record_probe_error(error: CaptureError) {
         CaptureError::Timeout(_) | CaptureError::Cancelled(_) | CaptureError::Overflow { .. }
     ) {
         SCOPE.with(|s| {
-            if let Some((_, _, e)) = s.borrow_mut().as_mut() {
-                if e.is_none() {
-                    *e = Some(error);
-                }
+            if let Some((_, _, e)) = s.borrow_mut().as_mut()
+                && e.is_none()
+            {
+                *e = Some(error);
             }
         });
     }
@@ -293,19 +295,18 @@ pub fn capture_with_policy(
         if unsafe { info.si_pid() } != 0 {
             exited_at.get_or_insert_with(Instant::now);
         }
-        if let Some(exited) = exited_at {
-            if (stdout_pipe.is_none() && stderr_pipe.is_none())
-                || exited.elapsed() >= Duration::from_millis(500)
-            {
-                owner.stop();
-                let status = owner.child.wait().map_err(io_error)?;
-                owner.reaped = true;
-                return Ok(Output {
-                    status,
-                    stdout,
-                    stderr: tail.into_iter().collect(),
-                });
-            }
+        if let Some(exited) = exited_at
+            && ((stdout_pipe.is_none() && stderr_pipe.is_none())
+                || exited.elapsed() >= Duration::from_millis(500))
+        {
+            owner.stop();
+            let status = owner.child.wait().map_err(io_error)?;
+            owner.reaped = true;
+            return Ok(Output {
+                status,
+                stdout,
+                stderr: tail.into_iter().collect(),
+            });
         }
         let mut fds: Vec<_> = [
             stdout_pipe.as_ref().map(AsRawFd::as_raw_fd),
@@ -339,6 +340,12 @@ pub fn capture(cmd: &mut Command, stdout_max: Option<u64>) -> Result<Output, Cap
         }
     });
     capture_with_policy(cmd, policy)
+}
+pub fn capture_interactive(
+    cmd: &mut Command,
+    stdout_max: Option<u64>,
+) -> Result<Output, CaptureError> {
+    capture_with_policy(cmd, CapturePolicy::interactive(stdout_max))
 }
 
 #[cfg(test)]
@@ -430,10 +437,4 @@ mod tests {
         drop(owner);
         assert_eq!(unsafe { libc::kill(pid, 0) }, -1);
     }
-}
-pub fn capture_interactive(
-    cmd: &mut Command,
-    stdout_max: Option<u64>,
-) -> Result<Output, CaptureError> {
-    capture_with_policy(cmd, CapturePolicy::interactive(stdout_max))
 }

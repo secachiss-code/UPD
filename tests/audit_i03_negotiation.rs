@@ -81,8 +81,10 @@ fn make_cached_second_candidate() -> (
     let preferred = [ua("UA-first")];
     let configured = [ua("UA-second")];
     let calls = Cell::new(0usize);
-    let mut policy = NegotiationPolicy::default();
-    policy.winner_ttl = Duration::from_secs(10);
+    let policy = NegotiationPolicy {
+        winner_ttl: Duration::from_secs(10),
+        ..NegotiationPolicy::default()
+    };
     let accepted = negotiate_with_clock(
         &endpoint,
         "v1.19.32",
@@ -252,8 +254,10 @@ fn candidate_request_and_time_budgets_are_bounded() {
     let endpoint = endpoint("https://bounds.invalid/feed");
     let preferred = [ua("UA-one")];
     let configured = [ua("UA-two")];
-    let mut policy = NegotiationPolicy::default();
-    policy.max_requests = 1;
+    let policy = NegotiationPolicy {
+        max_requests: 1,
+        ..NegotiationPolicy::default()
+    };
     let calls = Cell::new(0usize);
     let limited = negotiate_with_clock(
         &endpoint,
@@ -274,9 +278,11 @@ fn candidate_request_and_time_budgets_are_bounded() {
     assert_eq!(limited.err(), Some(NegotiationError::RequestLimitReached));
     assert_eq!(calls.get(), 1);
 
-    let mut policy = NegotiationPolicy::default();
-    policy.total_budget = Duration::from_secs(10);
-    policy.per_request_timeout = Duration::from_secs(2);
+    let policy = NegotiationPolicy {
+        total_budget: Duration::from_secs(10),
+        per_request_timeout: Duration::from_secs(2),
+        ..NegotiationPolicy::default()
+    };
     let elapsed = Cell::new(Duration::ZERO);
     let request_timeout = negotiate_with_clock(
         &endpoint,
@@ -299,9 +305,11 @@ fn candidate_request_and_time_budgets_are_bounded() {
         Some(NegotiationError::Fetch(FetchFailure::Timeout))
     );
 
-    let mut policy = NegotiationPolicy::default();
-    policy.total_budget = Duration::from_secs(5);
-    policy.per_request_timeout = Duration::from_secs(5);
+    let policy = NegotiationPolicy {
+        total_budget: Duration::from_secs(5),
+        per_request_timeout: Duration::from_secs(5),
+        ..NegotiationPolicy::default()
+    };
     let elapsed = Cell::new(Duration::ZERO);
     let total_timeout = negotiate_with_clock(
         &endpoint,
@@ -440,8 +448,10 @@ fn oversize_and_invalid_policy_fail_before_classifier_or_fetch() {
     let endpoint = endpoint("https://limits.invalid/feed");
     let candidates = [ua("UA-only")];
     let other_candidate = [ua("UA-second")];
-    let mut policy = NegotiationPolicy::default();
-    policy.max_body_bytes = 8;
+    let policy = NegotiationPolicy {
+        max_body_bytes: 8,
+        ..NegotiationPolicy::default()
+    };
     let classifier_calls = Cell::new(0usize);
     let oversize_fetch_calls = Cell::new(0usize);
     let oversize = negotiate_with_clock(
@@ -466,8 +476,10 @@ fn oversize_and_invalid_policy_fail_before_classifier_or_fetch() {
     assert_eq!(oversize_fetch_calls.get(), 1);
     assert_eq!(classifier_calls.get(), 0);
 
-    let mut invalid_policy = NegotiationPolicy::default();
-    invalid_policy.max_requests = 0;
+    let invalid_policy = NegotiationPolicy {
+        max_requests: 0,
+        ..NegotiationPolicy::default()
+    };
     let fetch_calls = Cell::new(0usize);
     let invalid = negotiate_with_clock(
         &endpoint,

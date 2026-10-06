@@ -672,27 +672,25 @@ impl<'a> App<'a> {
             self.process_output = !self.process_output;
             return true;
         }
-        if !modifiers.intersects(KeyModifiers::CONTROL | KeyModifiers::ALT) {
-            if let Some((_, _, yes)) = &mut self.process_question {
-                let submit = match key {
-                    KeyCode::Left => { *yes = true; false }
-                    KeyCode::Right => { *yes = false; false }
-                    KeyCode::Tab | KeyCode::BackTab | KeyCode::Up | KeyCode::Down => { *yes = !*yes; false }
-                    KeyCode::Enter => true,
-                    KeyCode::Char('y' | 'Y' | 'д' | 'Д') => { *yes = true; true }
-                    KeyCode::Char('n' | 'N' | 'т' | 'Т') => { *yes = false; true }
-                    _ => false,
-                };
-                if submit {
-                    if let Some(p) = &mut self.process {
-                        match p.answer_question(*yes) {
-                            Ok(()) => self.process_question = None,
-                            Err(error) => self.msg = t!("ошибка: {0}", error),
-                        }
-                    }
+        if !modifiers.intersects(KeyModifiers::CONTROL | KeyModifiers::ALT)
+            && let Some((_, _, yes)) = &mut self.process_question {
+            let submit = match key {
+                KeyCode::Left => { *yes = true; false }
+                KeyCode::Right => { *yes = false; false }
+                KeyCode::Tab | KeyCode::BackTab | KeyCode::Up | KeyCode::Down => { *yes = !*yes; false }
+                KeyCode::Enter => true,
+                KeyCode::Char('y' | 'Y' | 'д' | 'Д') => { *yes = true; true }
+                KeyCode::Char('n' | 'N' | 'т' | 'Т') => { *yes = false; true }
+                _ => false,
+            };
+            if submit
+                && let Some(p) = &mut self.process {
+                match p.answer_question(*yes) {
+                    Ok(()) => self.process_question = None,
+                    Err(error) => self.msg = t!("ошибка: {0}", error),
                 }
-                return true;
             }
+            return true;
         }
         false
     }
@@ -734,8 +732,7 @@ impl<'a> App<'a> {
                 }
             }
             stdout.flush()?;
-            loop {
-                let Some(p) = &mut self.process else { break };
+            while let Some(p) = &mut self.process {
                 for chunk in p.poll()? {
                     stdout.write_all(&chunk)?;
                 }
@@ -1227,7 +1224,7 @@ impl<'a> App<'a> {
             }
             KeyCode::Char('n') if managed => self.open_input("", String::new()),
             KeyCode::Char('x') | KeyCode::Delete if managed => {
-                let Some(url) = self.mview.as_ref().and_then(|v| v.rows.get(sel)).map(|p| p.url.clone()) else { return None };
+                let url = self.mview.as_ref().and_then(|v| v.rows.get(sel)).map(|p| p.url.clone())?;
                 let mut c = match self.cfg() {
                     Ok(c) => c,
                     Err(e) => {
@@ -1741,17 +1738,16 @@ fn terminal_label(label: &str) -> String {
     let mut out = String::with_capacity(label.len());
     while let Some(ch) = chars.next() {
         let first = ch as u32;
-        if (0x1f1e6..=0x1f1ff).contains(&first) {
-            if let Some(next) = chars.peek().copied() {
-                let second = next as u32;
-                if (0x1f1e6..=0x1f1ff).contains(&second) {
-                    chars.next();
-                    out.push('[');
-                    out.push(char::from_u32(u32::from(b'A') + first - 0x1f1e6).unwrap_or('?'));
-                    out.push(char::from_u32(u32::from(b'A') + second - 0x1f1e6).unwrap_or('?'));
-                    out.push(']');
-                    continue;
-                }
+        if (0x1f1e6..=0x1f1ff).contains(&first)
+            && let Some(next) = chars.peek().copied() {
+            let second = next as u32;
+            if (0x1f1e6..=0x1f1ff).contains(&second) {
+                chars.next();
+                out.push('[');
+                out.push(char::from_u32(u32::from(b'A') + first - 0x1f1e6).unwrap_or('?'));
+                out.push(char::from_u32(u32::from(b'A') + second - 0x1f1e6).unwrap_or('?'));
+                out.push(']');
+                continue;
             }
         }
         match ch {
@@ -1811,11 +1807,10 @@ impl App<'_> {
             self.v.nodes.select(if nodes.is_empty() { None } else { Some(selected) });
         }
         // подтверждённой записи больше нет — подтверждение снимается, а не переходит на соседнюю строку
-        if let Some((id, name)) = &self.v.confirm {
-            if !page.state.subs.iter().any(|s| &s.id == id) {
-                self.msg = t!("«{0}» уже удалена или изменилась — удаление отменено", tui_vpn_label(name));
-                self.v.confirm = None;
-            }
+        if let Some((id, name)) = &self.v.confirm
+            && !page.state.subs.iter().any(|s| &s.id == id) {
+            self.msg = t!("«{0}» уже удалена или изменилась — удаление отменено", tui_vpn_label(name));
+            self.v.confirm = None;
         }
         // список подписок мог стать короче — выбор остаётся на существующей строке
         if let Some(i) = self.v.subs.selected() {
@@ -1943,7 +1938,7 @@ impl App<'_> {
             KeyCode::Up | KeyCode::Char('k') => self.v.nodes.select(Some(sel.saturating_sub(1))),
             KeyCode::Down | KeyCode::Char('j') => self.v.nodes.select(Some((sel + 1).min(g.all.len().saturating_sub(1)))),
             KeyCode::Enter => {
-                let Some(n) = g.all.get(sel).cloned() else { return None };
+                let n = g.all.get(sel).cloned()?;
                 if g.kind != "Selector" {
                     self.msg = t!("«{}» выбирает сервер сама ({})", tui_vpn_label(&g.name), g.kind);
                     return None;
@@ -2729,8 +2724,10 @@ mod tests {
         let (b, ui) = (FixtureBackend, FixtureUiData);
         for lang in crate::i18n::ALL {
             crate::i18n::set_thread(lang);
-            let mut page = VpnPage::default();
-            page.opts = vec![Opt { key: "vpn_port", label: t!("Порт прокси"), value: "17890".into() }];
+            let page = VpnPage {
+                opts: vec![Opt { key: "vpn_port", label: t!("Порт прокси"), value: "17890".into() }],
+                ..VpnPage::default()
+            };
             let mut app = App::new(&b, &ui, None, Some(page));
             app.scr = Screen::Vpn;
             app.v.tab = 2;
@@ -2750,7 +2747,7 @@ mod tests {
         let (b, ui) = (FixtureBackend, FixtureUiData);
         let mut page = page_with_subs(&["a", "c"]);
         page.snap.running = true;
-        page.snap.groups = vec![vpn::Group { name: "🇷🇺 Group 🚀".into(), kind: "Selector".into(), now: "Server".into(), all: vec!["Server".into()], ..Default::default() }];
+        page.snap.groups = vec![vpn::Group { name: "🇷🇺 Group 🚀".into(), kind: "Selector".into(), now: "Server".into(), all: vec!["Server".into()] }];
         let mut app = App::new(&b, &ui, None, Some(page));
         app.scr = Screen::Vpn;
         app.v.nodes.select(Some(0));

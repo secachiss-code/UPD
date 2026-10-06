@@ -330,9 +330,8 @@ impl Config {
         if !Config::keys().any(|x| x == k) {
             return Err(t!("неизвестная настройка: {0}", k));
         }
-        if let (Some(schema), Ok(n)) = (number_setting(k), v.parse::<i64>()) {
-            if n < schema.min || n > schema.max { return Err(format!("{k}: value outside its allowed range")); }
-        }
+        if let (Some(schema), Ok(n)) = (number_setting(k), v.parse::<i64>())
+            && (n < schema.min || n > schema.max) { return Err(format!("{k}: value outside its allowed range")); }
         let mut candidate = self.clone();
         if !candidate.set_number(k, v) { return Err(t!("{0}: нужно целое число", k)); }
         if v.parse::<i64>().ok() != Some(candidate.value(k)) { return Err(format!("{k}: value outside its allowed range")); }
@@ -372,8 +371,8 @@ impl Config {
             "vpn_allow_lan" => self.vpn_allow_lan as i64,
             "vpn_port" => self.vpn_port as i64,
             "vpn_mode" => self.vpn_mode as i64,
-            "vpn_sub_update_h" => self.vpn_sub_update_h as i64,
-            "vpn_core_check_h" => self.vpn_core_check_h as i64,
+            "vpn_sub_update_h" => self.vpn_sub_update_h,
+            "vpn_core_check_h" => self.vpn_core_check_h,
             _ => 0,
         }
     }
@@ -601,6 +600,14 @@ pub fn atomic_write(path: &Path, data: &[u8], mode: u32) -> std::io::Result<()> 
 /// Atomically replace `path` with a file owned by the caller and the exact requested mode.
 /// A destination symlink itself is replaced; its target is never followed. APT sources use
 /// their specialized writer because those files preserve the distribution's uid/gid and mode.
+struct AtomicWriteOps<F, W, R, S, N> {
+    after_create: F,
+    write_data: W,
+    rename_file: R,
+    sync_parent: S,
+    temp_path: N,
+}
+
 fn atomic_write_with_hook(
     path: &Path,
     data: &[u8],
@@ -611,11 +618,13 @@ fn atomic_write_with_hook(
         path,
         data,
         mode,
-        after_create,
-        |file, data| file.write_all(data),
-        |from, to| fs::rename(from, to),
-        sync_directory,
-        unique_temp_path(),
+        AtomicWriteOps {
+            after_create,
+            write_data: |file: &mut fs::File, data: &[u8]| file.write_all(data),
+            rename_file: |from: &Path, to: &Path| fs::rename(from, to),
+            sync_parent: sync_directory,
+            temp_path: unique_temp_path(),
+        },
     )
 }
 
@@ -623,11 +632,7 @@ fn atomic_write_with_ops<F, W, R, S, N>(
     path: &Path,
     data: &[u8],
     mode: u32,
-    after_create: F,
-    write_data: W,
-    rename_file: R,
-    sync_parent: S,
-    mut temp_path: N,
+    ops: AtomicWriteOps<F, W, R, S, N>,
 ) -> std::io::Result<()>
 where
     F: FnOnce(),
@@ -636,6 +641,7 @@ where
     S: FnOnce(&Path) -> std::io::Result<()>,
     N: FnMut(&Path, usize) -> PathBuf,
 {
+    let AtomicWriteOps { after_create, write_data, rename_file, sync_parent, mut temp_path } = ops;
     let dir = path.parent().filter(|p| !p.as_os_str().is_empty()).unwrap_or(Path::new("."));
     let (tmp, mut file) = create_atomic_temp(dir, mode, &mut temp_path)?;
     let mut cleanup = TempPathGuard { path: tmp.clone(), armed: true };
@@ -969,9 +975,8 @@ pub fn cli_user_context() -> Result<Option<UserContext>, String> {
     if uid != 0 { return UserContext::from_uid(uid).map(Some); }
     if let Some(name) = invoking_user() {
         let context = UserContext::from_name(&name)?;
-        if let Some(sudo_uid) = std::env::var("SUDO_UID").ok().and_then(|value| value.parse::<u32>().ok()) {
-            if sudo_uid != context.uid { return Err("invoking user name and UID disagree".into()); }
-        }
+        if let Some(sudo_uid) = std::env::var("SUDO_UID").ok().and_then(|value| value.parse::<u32>().ok())
+            && sudo_uid != context.uid { return Err("invoking user name and UID disagree".into()); }
         return Ok((context.uid != 0).then_some(context));
     }
     if let Some(uid) = std::env::var("PKEXEC_UID").ok().and_then(|value| value.parse::<u32>().ok()).filter(|uid| *uid != 0) {
@@ -1093,11 +1098,10 @@ pub fn parse_rfc2822(s: &str) -> Option<i64> {
     let hms: Vec<i64> = f[3].split(':').filter_map(|x| x.parse().ok()).collect();
     let (h, mi, se) = (*hms.first()?, *hms.get(1).unwrap_or(&0), *hms.get(2).unwrap_or(&0));
     let mut off = 0;
-    if let Some(z) = f.get(4) {
-        if (z.starts_with('+') || z.starts_with('-')) && z.len() == 5 {
-            let v: i64 = z[1..].parse().ok()?;
-            off = (v / 100 * 3600 + v % 100 * 60) * if z.starts_with('-') { -1 } else { 1 };
-        }
+    if let Some(z) = f.get(4)
+        && (z.starts_with('+') || z.starts_with('-')) && z.len() == 5 {
+        let v: i64 = z[1..].parse().ok()?;
+        off = (v / 100 * 3600 + v % 100 * 60) * if z.starts_with('-') { -1 } else { 1 };
     }
     Some(days_from_civil(y, m, d) * 86400 + h * 3600 + mi * 60 + se - off)
 }
@@ -1422,10 +1426,9 @@ pub fn systemd() -> bool {
 pub fn tail_file(path: &str, max: u64) -> Vec<String> {
     let Ok(mut f) = fs::File::open(path) else { return vec![] };
     use std::io::{Read, Seek, SeekFrom};
-    if let Ok(m) = f.metadata() {
-        if m.len() > max {
-            let _ = f.seek(SeekFrom::End(-(max as i64)));
-        }
+    if let Ok(m) = f.metadata()
+        && m.len() > max {
+        let _ = f.seek(SeekFrom::End(-(max as i64)));
     }
     let mut b = vec![];
     let _ = f.read_to_end(&mut b);
@@ -1807,7 +1810,7 @@ mod contract_tests {
         let only_lib = module_dirs_from(&[usr.clone(), lib.clone()]);
         assert_eq!(only_lib, vec![fs::canonicalize(&lib).unwrap()]);
         assert!(!running_modules_missing(release, &only_lib));
-        assert!(running_modules_missing(release, &[usr.clone()]));
+        assert!(running_modules_missing(release, std::slice::from_ref(&usr)));
         fs::create_dir_all(&usr).unwrap();
         std::os::unix::fs::symlink(&lib, usr.join("same")).ok();
         let linked = usr.join("link");
@@ -2027,12 +2030,14 @@ mod atomic_write_tests {
             &output,
             b"new output",
             0o600,
-            || {},
-            |file, data| file.write_all(data),
-            |from, to| fs::rename(from, to),
-            sync_directory,
-            |parent, attempt| {
-                if attempt == 0 { temp_link.clone() } else { parent.join(format!(".safe-{attempt}.tmp")) }
+            AtomicWriteOps {
+                after_create: || {},
+                write_data: |file: &mut fs::File, data: &[u8]| file.write_all(data),
+                rename_file: |from: &Path, to: &Path| fs::rename(from, to),
+                sync_parent: sync_directory,
+                temp_path: |parent: &Path, attempt: usize| -> PathBuf {
+                    if attempt == 0 { temp_link.clone() } else { parent.join(format!(".safe-{attempt}.tmp")) }
+                },
             },
         )
         .unwrap();
@@ -2052,11 +2057,13 @@ mod atomic_write_tests {
             &path,
             b"new content",
             0o600,
-            || {},
-            |_, _| Err(std::io::Error::other("injected write failure")),
-            |from, to| fs::rename(from, to),
-            sync_directory,
-            audit_temp_names(),
+            AtomicWriteOps {
+                after_create: || {},
+                write_data: |_: &mut fs::File, _: &[u8]| Err(std::io::Error::other("injected write failure")),
+                rename_file: |from: &Path, to: &Path| fs::rename(from, to),
+                sync_parent: sync_directory,
+                temp_path: audit_temp_names(),
+            },
         )
         .unwrap_err();
         assert!(error.to_string().contains("write temporary file"), "{error}");
@@ -2085,11 +2092,13 @@ mod atomic_write_tests {
             &path,
             b"new content",
             0o600,
-            || {},
-            |file, data| file.write_all(data),
-            |from, to| fs::rename(from, to),
-            |_| Err(std::io::Error::other("injected directory sync failure")),
-            audit_temp_names(),
+            AtomicWriteOps {
+                after_create: || {},
+                write_data: |file: &mut fs::File, data: &[u8]| file.write_all(data),
+                rename_file: |from: &Path, to: &Path| fs::rename(from, to),
+                sync_parent: |_: &Path| Err(std::io::Error::other("injected directory sync failure")),
+                temp_path: audit_temp_names(),
+            },
         )
         .unwrap_err();
         assert!(error.to_string().contains("sync parent directory after rename"), "{error}");

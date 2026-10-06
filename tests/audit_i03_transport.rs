@@ -233,9 +233,11 @@ mod local_fetch {
         let path = format!("/{PATH_MARKER}/feed");
         let endpoint = endpoint(server.port, &path);
         let preferred = agents(&["cm-html", "cm-json"]);
-        let mut policy = NegotiationPolicy::default();
-        policy.per_request_timeout = Duration::from_secs(2);
-        policy.total_budget = Duration::from_secs(5);
+        let policy = NegotiationPolicy {
+            per_request_timeout: Duration::from_secs(2),
+            total_budget: Duration::from_secs(5),
+            ..NegotiationPolicy::default()
+        };
         let live = negotiate_source(
             &endpoint,
             "1.19.32",
@@ -290,9 +292,11 @@ mod local_fetch {
         let path = format!("/{PATH_MARKER}/chain");
         let endpoint = endpoint(server.port, &path);
         let preferred = agents(&["cm-one", "cm-two"]);
-        let mut policy = NegotiationPolicy::default();
-        policy.per_request_timeout = Duration::from_secs(2);
-        policy.total_budget = Duration::from_secs(5);
+        let policy = NegotiationPolicy {
+            per_request_timeout: Duration::from_secs(2),
+            total_budget: Duration::from_secs(5),
+            ..NegotiationPolicy::default()
+        };
         let live = negotiate_source(
             &endpoint,
             "1.19.32",
@@ -332,9 +336,11 @@ mod local_fetch {
         let path = format!("/{PATH_MARKER}/slow");
         let endpoint = endpoint(server.port, &path);
         let preferred = agents(&["cm-one", "cm-two"]);
-        let mut policy = NegotiationPolicy::default();
-        policy.per_request_timeout = Duration::from_millis(400);
-        policy.total_budget = Duration::from_secs(5);
+        let policy = NegotiationPolicy {
+            per_request_timeout: Duration::from_millis(400),
+            total_budget: Duration::from_secs(5),
+            ..NegotiationPolicy::default()
+        };
         let started = Instant::now();
         let live = negotiate_source(
             &endpoint,
@@ -380,10 +386,12 @@ mod local_fetch {
         let path = format!("/{PATH_MARKER}/huge");
         let endpoint = endpoint(server.port, &path);
         let preferred = agents(&["cm-one", "cm-two"]);
-        let mut policy = NegotiationPolicy::default();
-        policy.max_body_bytes = 32;
-        policy.per_request_timeout = Duration::from_secs(2);
-        policy.total_budget = Duration::from_secs(5);
+        let policy = NegotiationPolicy {
+            max_body_bytes: 32,
+            per_request_timeout: Duration::from_secs(2),
+            total_budget: Duration::from_secs(5),
+            ..NegotiationPolicy::default()
+        };
         let live = negotiate_source(
             &endpoint,
             "1.19.32",

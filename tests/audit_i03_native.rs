@@ -250,8 +250,7 @@ fn rejects_excessive_nesting_and_keeps_errors_secret_free() {
     assert_eq!(error, ParserError::TooDeep);
     assert!(!error.to_string().contains("unknown"));
 
-    let values = std::iter::repeat("0")
-        .take(MAX_NATIVE_ENTRIES + 1)
+    let values = std::iter::repeat_n("0", MAX_NATIVE_ENTRIES + 1)
         .collect::<Vec<_>>()
         .join(",");
     let too_many_values = format!(r#"{{"proxies":[],"unknown":[{values}]}}"#);
