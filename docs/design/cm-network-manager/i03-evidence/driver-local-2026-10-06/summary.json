@@ -1,0 +1,322 @@
+{
+  "installed_binary_sha256": "1a527fe1ee6568a7fc3e184e4a46cc058001282f732abda872d33d3d78799f88",
+  "cases": [
+    {
+      "id": "native_parser",
+      "argv": [
+        "cargo",
+        "test",
+        "--offline",
+        "--locked",
+        "--test",
+        "audit_i03_native"
+      ],
+      "started": 1791307473.5747943,
+      "finished": 1791307478.3514433,
+      "status": "PASS",
+      "exit_code": 0
+    },
+    {
+      "id": "strict_options",
+      "argv": [
+        "cargo",
+        "test",
+        "--offline",
+        "--locked",
+        "--test",
+        "audit_i03_t04_b"
+      ],
+      "started": 1791307478.3515515,
+      "finished": 1791307479.6203685,
+      "status": "PASS",
+      "exit_code": 0
+    },
+    {
+      "id": "tls_and_protocols",
+      "argv": [
+        "cargo",
+        "test",
+        "--offline",
+        "--locked",
+        "--test",
+        "audit_i03_tls"
+      ],
+      "started": 1791307479.6206167,
+      "finished": 1791307480.9383912,
+      "status": "PASS",
+      "exit_code": 0
+    },
+    {
+      "id": "protocols",
+      "argv": [
+        "cargo",
+        "test",
+        "--offline",
+        "--locked",
+        "--test",
+        "audit_i03_protocols"
+      ],
+      "started": 1791307480.9385726,
+      "finished": 1791307482.2061422,
+      "status": "PASS",
+      "exit_code": 0
+    },
+    {
+      "id": "secrets",
+      "argv": [
+        "cargo",
+        "test",
+        "--offline",
+        "--locked",
+        "--test",
+        "audit_i03_secrets"
+      ],
+      "started": 1791307482.2063231,
+      "finished": 1791307483.5782785,
+      "status": "PASS",
+      "exit_code": 0
+    },
+    {
+      "id": "wireguard",
+      "argv": [
+        "cargo",
+        "test",
+        "--offline",
+        "--locked",
+        "--test",
+        "audit_i03_t04_m"
+      ],
+      "started": 1791307483.5783935,
+      "finished": 1791307484.9956133,
+      "status": "PASS",
+      "exit_code": 0
+    },
+    {
+      "id": "uri",
+      "argv": [
+        "cargo",
+        "test",
+        "--offline",
+        "--locked",
+        "--test",
+        "audit_i03_uri"
+      ],
+      "started": 1791307484.9957266,
+      "finished": 1791307486.4646304,
+      "status": "PASS",
+      "exit_code": 0
+    },
+    {
+      "id": "formats",
+      "argv": [
+        "cargo",
+        "test",
+        "--offline",
+        "--locked",
+        "--test",
+        "audit_i03_formats"
+      ],
+      "started": 1791307486.4647844,
+      "finished": 1791307487.983678,
+      "status": "PASS",
+      "exit_code": 0
+    },
+    {
+      "id": "omissions",
+      "argv": [
+        "cargo",
+        "test",
+        "--offline",
+        "--locked",
+        "--test",
+        "audit_i03_omissions"
+      ],
+      "started": 1791307487.983803,
+      "finished": 1791307489.5017228,
+      "status": "PASS",
+      "exit_code": 0
+    },
+    {
+      "id": "pipeline",
+      "argv": [
+        "cargo",
+        "test",
+        "--offline",
+        "--locked",
+        "--test",
+        "audit_i03_pipeline"
+      ],
+      "started": 1791307489.5020735,
+      "finished": 1791307491.0209541,
+      "status": "PASS",
+      "exit_code": 0
+    },
+    {
+      "id": "capabilities",
+      "argv": [
+        "cargo",
+        "test",
+        "--offline",
+        "--locked",
+        "--test",
+        "audit_i03_capabilities"
+      ],
+      "started": 1791307491.0211146,
+      "finished": 1791307492.2382753,
+      "status": "PASS",
+      "exit_code": 0
+    },
+    {
+      "id": "negotiation",
+      "argv": [
+        "cargo",
+        "test",
+        "--offline",
+        "--locked",
+        "--test",
+        "audit_i03_negotiation"
+      ],
+      "started": 1791307492.2384546,
+      "finished": 1791307493.6074471,
+      "status": "PASS",
+      "exit_code": 0
+    },
+    {
+      "id": "transport",
+      "argv": [
+        "cargo",
+        "test",
+        "--offline",
+        "--locked",
+        "--test",
+        "audit_i03_transport"
+      ],
+      "started": 1791307493.6077025,
+      "finished": 1791307495.5772238,
+      "status": "PASS",
+      "exit_code": 0
+    },
+    {
+      "id": "failures",
+      "argv": [
+        "cargo",
+        "test",
+        "--offline",
+        "--locked",
+        "--test",
+        "audit_i03_failures"
+      ],
+      "started": 1791307495.5775263,
+      "finished": 1791307497.1453724,
+      "status": "PASS",
+      "exit_code": 0
+    },
+    {
+      "id": "manual_server",
+      "argv": [
+        "cargo",
+        "test",
+        "--offline",
+        "--locked",
+        "--test",
+        "audit_i03_manual"
+      ],
+      "started": 1791307497.1455047,
+      "finished": 1791307499.228905,
+      "status": "PASS",
+      "exit_code": 0
+    },
+    {
+      "id": "sources",
+      "argv": [
+        "cargo",
+        "test",
+        "--offline",
+        "--locked",
+        "--test",
+        "audit_i03_sources"
+      ],
+      "started": 1791307499.2291377,
+      "finished": 1791307500.9508944,
+      "status": "PASS",
+      "exit_code": 0
+    },
+    {
+      "id": "artifact",
+      "argv": [
+        "cargo",
+        "test",
+        "--offline",
+        "--locked",
+        "--test",
+        "audit_i03_artifact"
+      ],
+      "started": 1791307500.9512124,
+      "finished": 1791307502.5190494,
+      "status": "PASS",
+      "exit_code": 0
+    },
+    {
+      "id": "artifact_review",
+      "argv": [
+        "cargo",
+        "test",
+        "--offline",
+        "--locked",
+        "--test",
+        "audit_i03_artifact_review"
+      ],
+      "started": 1791307502.5192297,
+      "finished": 1791307505.3407185,
+      "status": "PASS",
+      "exit_code": 0
+    },
+    {
+      "id": "core_check",
+      "argv": [
+        "cargo",
+        "test",
+        "--offline",
+        "--locked",
+        "--test",
+        "audit_i03_core_check"
+      ],
+      "started": 1791307505.3413382,
+      "finished": 1791307506.6593094,
+      "status": "PASS",
+      "exit_code": 0
+    },
+    {
+      "id": "provenance",
+      "argv": [
+        "cargo",
+        "test",
+        "--offline",
+        "--locked",
+        "--test",
+        "audit_i03_provenance"
+      ],
+      "started": 1791307506.65964,
+      "finished": 1791307508.127107,
+      "status": "PASS",
+      "exit_code": 0
+    },
+    {
+      "id": "fetch_settings",
+      "argv": [
+        "cargo",
+        "test",
+        "--offline",
+        "--locked",
+        "--test",
+        "audit_i03_fetch_settings"
+      ],
+      "started": 1791307508.127365,
+      "finished": 1791307509.5952628,
+      "status": "PASS",
+      "exit_code": 0
+    }
+  ],
+  "note": "Local fixtures against dist/cm-linux-amd64 from the build manifest; not an installation run (X.04). Raw stdout/stderr are kept out of git (D8).",
+  "manifest": "docs/design/cm-network-manager/i03-evidence/build-2026-10-06/summary.json"
+}

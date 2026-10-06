@@ -51,6 +51,11 @@ DONE = [
     "I04.T02.a", "I04.T02.b", "I04.T02.c", "I04.T03.a", "I17-D.T01.a",
     # Решения D6–D10, Q01 (DECISIONS-D6-D10-Q01-2026-10-06.md).
     "V.01", "H.08", "I15-R.T01.a", "X.01",
+    # Этап 1 Grok + доводка координатором: REVIEW-2026-10-06-STAGE1.md.
+    # H.11 открыт: worker в сценарии — relay, ядро mihomo ждёт бинарник.
+    # H.10 открыт: зелёный прогон появится после push.
+    "H.03", "H.06", "H.07", "H.09",
+    "I03.T05.a", "I03.T05.d", "I03.T05.e", "I03.T05.f",
 ]
 
 MILESTONES = []  # (id, title, priority, lane, deps_text, goal, questions, gate)
