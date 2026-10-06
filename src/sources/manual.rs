@@ -39,6 +39,8 @@ pub enum ManualError {
     /// The secret input was missing, too long, not UTF-8 or contained control characters.
     InvalidSecret,
     SecretUnreadable,
+    /// The secret file is accessible to group/others or not owned by the caller.
+    InsecureCredentialFile,
     Parser(ParserError),
     Artifact(ArtifactError),
 }
@@ -52,6 +54,9 @@ impl fmt::Display for ManualError {
             Self::InvalidArguments => f.write_str("invalid manual server arguments"),
             Self::InvalidSecret => f.write_str("secret input is empty, too long or malformed"),
             Self::SecretUnreadable => f.write_str("secret input could not be read"),
+            Self::InsecureCredentialFile => f.write_str(
+                "secret file must be owned by the current user and not accessible to others",
+            ),
             Self::Parser(error) => fmt::Display::fmt(error, f),
             Self::Artifact(error) => fmt::Display::fmt(error, f),
         }
@@ -198,21 +203,23 @@ pub fn read_secret(reader: impl Read) -> Result<String, ManualError> {
 
 /// Open the secret file without following a final symlink and read it.
 ///
-/// File mode `0644` is not refused here: whether a world-readable secret file is acceptable
-/// is an open user decision (grok-review I03.T04.u).
+/// Like ssh with private keys, a file accessible to group/others or owned by another user is
+/// refused (decision 2026-10-06, I03-DECISIONS §Ручной сервер).
 pub fn read_secret_file(path: &std::path::Path) -> Result<String, ManualError> {
-    use std::os::unix::fs::OpenOptionsExt;
+    use std::os::unix::fs::{MetadataExt, OpenOptionsExt};
     let file = std::fs::OpenOptions::new()
         .read(true)
         .custom_flags(libc::O_NOFOLLOW | libc::O_CLOEXEC)
         .open(path)
         .map_err(|_| ManualError::SecretUnreadable)?;
-    if !file
-        .metadata()
-        .map_err(|_| ManualError::SecretUnreadable)?
-        .is_file()
-    {
+    let metadata = file.metadata().map_err(|_| ManualError::SecretUnreadable)?;
+    if !metadata.is_file() {
         return Err(ManualError::SecretUnreadable);
+    }
+    // SAFETY: geteuid has no preconditions and cannot fail.
+    let euid = unsafe { libc::geteuid() };
+    if metadata.mode() & 0o077 != 0 || metadata.uid() != euid {
+        return Err(ManualError::InsecureCredentialFile);
     }
     read_secret(file)
 }

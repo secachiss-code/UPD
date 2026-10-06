@@ -333,7 +333,7 @@
         "H.05"
       ],
       "what": "По ADR-YAML-draft: разбор событий `saphyr_parser::Parser::next_event` с собственным guard (дубли ключей, алиасы, теги, лимиты) вместо `serde_yaml` + FFI `unsafe_libyaml`; `Yaml::load_from_str` не использовать. `src/vpn.rs` остаётся на serde_yaml до H.06. Крейта нет в локальном кэше: нужен разовый `cargo fetch` с разрешения пользователя.",
-      "outputs": "src/sources/parser/native/common.rs, yaml_guard.rs; Cargo.toml/lock",
+      "outputs": "src/sources/parser/native/common.rs, yaml_guard.rs; Cargo.toml/lock (fetch разрешён 2026-10-06)",
       "done_when": "4 guard + 3 YAML native fixtures проходят на saphyr; `unsafe_libyaml` не используется путём импорта.",
       "decision": null,
       "wave": 2,
@@ -2968,13 +2968,13 @@
       "id": "D4",
       "title": "HTTP-клиент с общим deadline",
       "blocks": "H.04",
-      "note": "Composer реализовал вариант B (ureq 2 + резолв в потоке) до решения; **нужно подтвердить** или выбрать другой."
+      "note": "**Принято 2026-10-06:** вариант B (ureq 2 + резолв в потоке с deadline)."
     },
     {
       "id": "D5",
       "title": "YAML-стек",
       "blocks": "H.05",
-      "note": "**Принято:** saphyr на пути импорта. Для H.05.b нужен разовый `cargo fetch` (сеть) — разрешение пользователя."
+      "note": "**Принято:** saphyr на пути импорта; `cargo fetch` для H.05.b разрешён 2026-10-06."
     },
     {
       "id": "D6",

@@ -64,6 +64,15 @@ fn stdin_and_file_secrets_are_accepted() {
     let secret = read_secret_file(file).unwrap();
     assert_eq!(secret, FILE_MARKER);
     manual_source_input(PIN, manual_node(&args, &secret).unwrap(), 1_000).unwrap();
+    // Decision 2026-10-06: a secret file accessible to group/others is refused, without echo.
+    for mode in [0o644, 0o640, 0o604, 0o660] {
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(mode)).unwrap();
+        let error = read_secret_file(&path).unwrap_err();
+        assert!(matches!(error, ManualError::InsecureCredentialFile), "{mode:o}");
+        assert!(!format!("{error} {error:?}").contains(FILE_MARKER));
+    }
+    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o400)).unwrap();
+    assert_eq!(read_secret_file(&path).unwrap(), FILE_MARKER);
     let _ = std::fs::remove_file(path);
 
     // Control characters and empty input are refused without echo.
