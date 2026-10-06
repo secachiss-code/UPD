@@ -27,6 +27,7 @@ const USAGE: &str = "CM (Console Manager) — управление Linux из к
   cm clean               очистить кэш и ненужные пакеты
   cm merge               слить новые файлы настроек (.pacnew)
   cm vpn [...]           VPN (mihomo): cm vpn help
+  cm source [...]        источники подписок: cm source help
   cm aur search ЗАПРОС   найти пакет в AUR (Arch и производные)
   cm aur install ПАКЕТ…  собрать и установить из AUR через paru/yay
   cm lang [КОД]          язык интерфейса: ru en de it zh ar auto
@@ -57,6 +58,11 @@ fn main() {
     }
     i18n::set(i18n::resolve(&conf_lang()));
     let mut args: Vec<String> = std::env::args().skip(1).collect();
+    // `source` keeps its flags and does not escalate: URL never travels in argv,
+    // and only `--from-legacy` (inside the command) requires an already-root process.
+    if args.first().is_some_and(|arg| arg == "source") {
+        std::process::exit(cm::sources::cli::dispatch(&args[1..]));
+    }
     let pause = args.iter().any(|a| a == "--pause");
     let no_download = args.iter().any(|a| a == "--no-download");
     let all = args.iter().any(|a| a == "--all");

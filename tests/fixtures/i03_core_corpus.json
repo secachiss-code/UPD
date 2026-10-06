@@ -10,5 +10,6 @@
  {"name":"hy2","type":"hysteria2","server":"edge.example.invalid","port":443,"password":"p","obfs":"salamander","obfs-password":"o"},
  {"name":"tuic","type":"tuic","server":"edge.example.invalid","port":443,"uuid":"123e4567-e89b-12d3-a456-426614174000","password":"p","congestion-controller":"bbr"},
  {"name":"http","type":"http","server":"edge.example.invalid","port":8080},
- {"name":"socks","type":"socks5","server":"edge.example.invalid","port":1080,"username":"u","password":"p"}
+ {"name":"socks","type":"socks5","server":"edge.example.invalid","port":1080,"username":"u","password":"p"},
+ {"name":"wg","type":"wireguard","server":"edge.example.invalid","port":51820,"ip":"10.0.0.2/32","private-key":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=","public-key":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=","allowed-ips":["0.0.0.0/0"],"udp":true}
 ]}

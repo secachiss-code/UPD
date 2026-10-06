@@ -123,6 +123,10 @@ pub fn running() -> bool {
 }
 
 pub fn reload() -> Result<(), String> {
+    crate::core::legacy_host::dispatch_reload()
+}
+
+pub(crate) fn reload_service_body() -> Result<(), String> {
     api("PUT", "/configs?force=true", Some(serde_json::json!({ "path": config_path() }))).map(|_| ())
 }
 
@@ -253,6 +257,10 @@ fn reset_failed() {
 }
 
 pub fn start(c: &Config) -> Result<(), String> {
+    crate::core::legacy_host::dispatch_start(c)
+}
+
+pub(crate) fn start_service_body(c: &Config) -> Result<(), String> {
     let result = (|| {
         if let Some(w) = conflict(c) { return Err(w); }
         reset_failed();
@@ -281,6 +289,10 @@ fn wait_ready_with(timeout: Duration, mut probe: impl FnMut() -> Result<(), Stri
 }
 
 pub fn stop() -> Result<(), String> {
+    crate::core::legacy_host::dispatch_stop()
+}
+
+pub(crate) fn stop_service_body() -> Result<(), String> {
     run(true, &[], "systemctl", &["stop", SERVICE])
 }
 

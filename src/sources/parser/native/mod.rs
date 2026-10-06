@@ -161,6 +161,67 @@ impl ParsedSource {
     pub fn into_parts(self) -> (ImportFormat, Vec<NodeDefinitionInput>, GlobalDefaults) {
         (self.format, self.definitions, self.defaults)
     }
+
+    /// Protocol and TLS counts plus omissions. Definitions and secrets stay private.
+    pub fn counts(&self) -> SourcePreviewCounts {
+        let mut protocols = protocol_slots();
+        let mut tls = tls_slots();
+        for definition in &self.definitions {
+            add_count(&mut protocols, definition.protocol());
+            add_count(&mut tls, definition.tls_verification());
+        }
+        SourcePreviewCounts {
+            format: self.format,
+            protocols,
+            tls,
+            omissions: self.omissions.clone(),
+        }
+    }
+}
+
+fn protocol_slots() -> Vec<(NodeProtocol, u32)> {
+    [
+        NodeProtocol::Vless,
+        NodeProtocol::Vmess,
+        NodeProtocol::Shadowsocks,
+        NodeProtocol::Trojan,
+        NodeProtocol::Socks5,
+        NodeProtocol::Http,
+        NodeProtocol::Hysteria2,
+        NodeProtocol::Tuic,
+        NodeProtocol::WireGuard,
+        NodeProtocol::Other,
+    ]
+    .into_iter()
+    .map(|protocol| (protocol, 0))
+    .collect()
+}
+
+fn tls_slots() -> Vec<(TlsVerification, u32)> {
+    [
+        TlsVerification::NotApplicable,
+        TlsVerification::Verified,
+        TlsVerification::Pinned,
+        TlsVerification::Disabled,
+    ]
+    .into_iter()
+    .map(|status| (status, 0))
+    .collect()
+}
+
+fn add_count<T: Copy + Eq>(slots: &mut [(T, u32)], key: T) {
+    if let Some(slot) = slots.iter_mut().find(|(item, _)| *item == key) {
+        slot.1 = slot.1.saturating_add(1);
+    }
+}
+
+/// Safe tallies for a dry-run report. No node names, servers, or secrets.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SourcePreviewCounts {
+    pub format: ImportFormat,
+    pub protocols: Vec<(NodeProtocol, u32)>,
+    pub tls: Vec<(TlsVerification, u32)>,
+    pub omissions: ImportOmissions,
 }
 
 impl fmt::Debug for ParsedSource {

@@ -1,0 +1,82 @@
+{
+  "date": "2026-10-06",
+  "git_revision": "46dbd67f3817b36084e05e72fc031077ec6ded68",
+  "dirty_tree": true,
+  "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)",
+  "cargo_lock_sha256": "db485e8ee68cda6cf38c8d021d0e2607d3bf806b59016612768c0915c5cd6e83",
+  "target": "x86_64-unknown-linux-musl",
+  "cargo_target_dir": "/home/somovas/.cache/cm-grok-target",
+  "mihomo": "/home/somovas/.cache/cm-cores/mihomo/mihomo",
+  "command": "CARGO_TARGET_DIR=$HOME/.cache/cm-grok-target CM_TEST_MIHOMO=$HOME/.cache/cm-cores/mihomo/mihomo sh tests/check_audit.sh",
+  "log": "/home/somovas/.cache/cm-grok-stage2-gate.log",
+  "exit_code": 0,
+  "counters": {
+    "passed": 489,
+    "failed": 0,
+    "ignored": 0,
+    "test_result_lines": 38
+  },
+  "package": "B",
+  "tasks": [
+    "I04.T04.a",
+    "V.03",
+    "I04.T04.b",
+    "H.11"
+  ],
+  "status": "PASS",
+  "checks": [
+    {
+      "id": "gate",
+      "command": "sh tests/check_audit.sh",
+      "result": "PASS",
+      "detail": "exit 0; cargo test lines sum to 489 passed, 0 failed, 0 ignored; python unittest 4 OK; TUI launcher PASS; clippy -D warnings finished"
+    },
+    {
+      "id": "I04.T04.a",
+      "command": "cargo test --locked --offline --target x86_64-unknown-linux-musl --test audit_i04_mihomo_config generator_rejects_port_zero_and_bad_uuid_that_mihomo_test_accepts",
+      "result": "PASS",
+      "detail": "generator returns InvalidNode for vless port 0 and uuid bad; the same loose document is accepted by mihomo -t -d <TempDirGuard> -f <file>. No SKIPPED line: CM_TEST_MIHOMO was set"
+    },
+    {
+      "id": "V.03",
+      "command": "cargo test --locked --offline --target x86_64-unknown-linux-musl --test audit_i04_mihomo_config generate_from_store_emits_published_node_without_banned_keys",
+      "result": "PASS",
+      "detail": "one published ss node named node-marker-b is emitted; banned host keys are absent. default-nameserver omits system because a worker has no host resolver claim; 1.1.1.1 and 77.88.8.8 stay"
+    },
+    {
+      "id": "I04.T04.b",
+      "command": "cargo test --locked --offline --target x86_64-unknown-linux-musl --test audit_i04_mihomo_config validate_file_drops_config_text",
+      "result": "PASS",
+      "detail": "Display/Debug of the validation code do not contain secret-marker-b or secret-host.example; a generator config is Ok under mihomo -t. No SKIPPED line"
+    },
+    {
+      "id": "H.11",
+      "command": "timeout 90 unshare -rn sh tests/netharness/core.sh",
+      "result": "PASS",
+      "detail": "cargo test audit_h11_core with CM_TEST_MIHOMO and CM_TEST_WORKER_CONFIG asserted exit 0 and stdout contains CORE_OK. A --nocapture run did not print H.11 SKIPPED"
+    },
+    {
+      "id": "I03.T04.w",
+      "command": "cargo test --locked --offline --target x86_64-unknown-linux-musl --test audit_i03_core_check",
+      "result": "PASS",
+      "detail": "corpus including the added wireguard proxy parses with empty omissions and mihomo -t accepts it"
+    }
+  ],
+  "hashes": {
+    "src/core/mihomo/mod.rs": "8390abe3c59df8948468a894d8d7d15811b70940dea5e66adc3181ed86b3d59d",
+    "src/core/mihomo/config.rs": "e6000afd9094512c323da725f66384051215684f893097afb382734a431789a1",
+    "src/core/mihomo/validate.rs": "e6451295cbf2f0bdaaeda410b6f83d93c110281bc63140ff2ef172359c2760b2",
+    "tests/audit_i04_mihomo_config.rs": "1432c4aab40b3a5c78ef9397a8a2a6490f5396d43443110aca771a8a13c52825",
+    "tests/audit_h11_core.rs": "c3602a06f09fa5e699eb27e08d32905b2d278570de5fb8c2a7251dcd0cf59fda",
+    "tests/netharness/core.sh": "701f0c2c63ecb528d20ddeb333e212998a79090afa12c92f0b5bd363967fcf69",
+    "tests/fixtures/i03_core_corpus.json": "469abb039d4e32caa0f0e17e95e42c1fca3d64c6b1352601cd5f60c5ba246e5a"
+  },
+  "user_commands": {
+    "mihomo_test": "mihomo -t -d <sandbox> -f <file>",
+    "harness": "CM_TEST_MIHOMO=$HOME/.cache/cm-cores/mihomo/mihomo CM_TEST_WORKER_CONFIG=<generated.json> timeout 90 unshare -rn sh tests/netharness/core.sh"
+  },
+  "not_closed": [
+    "I04.T03.b not started: ADR TUN waits for review of B",
+    "I04.T04.c not started: worker lifecycle waits for review of B"
+  ]
+}

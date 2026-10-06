@@ -4,6 +4,7 @@ pub mod adapter;
 pub mod fake;
 pub mod instance;
 pub mod leases;
+pub mod legacy_host;
 pub mod mihomo;
 pub mod unit;
 pub mod worker;
@@ -13,6 +14,7 @@ pub use adapter::{
     RemoteState, RouteState,
 };
 pub use fake::{FakeAdapter, FakeOp};
+pub use legacy_host::LegacyHost;
 pub use instance::{InstanceDirs, InstanceError, InstanceId, InstanceRoot};
 pub use leases::{Lease, LeaseError, LeaseRegistry, ResourceKind};
 pub use unit::{NetPrivileges, legacy_hardening_directives, render_core_unit};

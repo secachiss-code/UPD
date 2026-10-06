@@ -10,7 +10,8 @@ pub use uri::parse_share_uri;
 
 pub use native::{
     MAX_NATIVE_DEPTH, MAX_NATIVE_ENTRIES, MAX_NATIVE_NODES, ParsedSource, ParserError,
-    audit_fixture_opts_digest, audit_parse_strict_json, audit_validate_fixture_opts, parse_native,
+    SourcePreviewCounts, audit_fixture_opts_digest, audit_parse_strict_json,
+    audit_validate_fixture_opts, parse_native,
 };
 
 /// Validate one node object (manual entry) exactly as an imported node.

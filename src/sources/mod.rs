@@ -4,6 +4,7 @@
 pub mod artifact;
 mod bounded;
 pub mod capabilities;
+pub mod cli;
 pub mod import_confirmation;
 pub mod manual;
 pub mod negotiation;

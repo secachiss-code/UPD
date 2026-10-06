@@ -1,0 +1,87 @@
+{
+  "package": "A1",
+  "task": "V.02",
+  "date": "2026-10-06",
+  "status": "PASS",
+  "git_revision": "46dbd67f3817b36084e05e72fc031077ec6ded68",
+  "dirty_tree": true,
+  "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)",
+  "cargo_lock_sha256": "db485e8ee68cda6cf38c8d021d0e2607d3bf806b59016612768c0915c5cd6e83",
+  "target": "x86_64-unknown-linux-musl",
+  "cargo_target_dir": "/home/somovas/.cache/cm-grok-target",
+  "mihomo": "/home/somovas/.cache/cm-cores/mihomo/mihomo",
+  "command": "CARGO_TARGET_DIR=$HOME/.cache/cm-grok-target CM_TEST_MIHOMO=$HOME/.cache/cm-cores/mihomo/mihomo sh tests/check_audit.sh",
+  "exit_code": 0,
+  "counters": {
+    "passed": 482,
+    "failed": 0,
+    "ignored": 0,
+    "test_result_lines": 35
+  },
+  "checks": [
+    {
+      "id": "gate",
+      "command": "sh tests/check_audit.sh",
+      "result": "PASS",
+      "detail": "exit 0; cargo test lines sum to 482 passed, 0 failed, 0 ignored; python unittest 4 OK; TUI launcher PASS; clippy -D warnings finished"
+    },
+    {
+      "id": "V.02.import-dry-run",
+      "command": "cargo test --locked --offline --target x86_64-unknown-linux-musl --test audit_v02_source",
+      "result": "PASS",
+      "detail": "local HTTP 127.0.0.1 prints format, protocol counts, D1/D2/D3, actual UA, TLS tallies; Store, legacy and state bytes and directory mtimes unchanged; URL and body marker absent from stdout, stderr and /proc/PID/cmdline"
+    },
+    {
+      "id": "V.02.url-file",
+      "command": "cm source import --dry-run --url-file",
+      "result": "PASS",
+      "detail": "mode 0644 and a symlink are refused; file contents are not printed"
+    },
+    {
+      "id": "V.02.from-legacy-nonroot",
+      "command": "cm source import --dry-run --from-legacy 1",
+      "result": "PASS",
+      "detail": "non-root exit 1, subs.json unchanged, URL not printed"
+    },
+    {
+      "id": "V.02.from-legacy-selector",
+      "command": "cargo test --lib sources::cli::tests::legacy_selector_uses_index_or_id_and_hides_urls",
+      "result": "PASS",
+      "detail": "1-based index and id: select a record; errors do not contain the URL; a name that is a URL is hidden"
+    },
+    {
+      "id": "V.02.from-legacy-as-root",
+      "command": "cm source import --dry-run --from-legacy N",
+      "result": "NOT_RUN",
+      "detail": "this process is not root, so the euid==0 branch that calls load_subs was not executed"
+    },
+    {
+      "id": "V.02.list-show-doctor",
+      "command": "cm source list|show|doctor",
+      "result": "PASS",
+      "detail": "reads an existing Store; credential marker and endpoint token are absent; store bytes and mtimes unchanged; English translation of the VPN-unchanged line checked"
+    }
+  ],
+  "user_command": "printf '%s\\n' 'https://…' | cm source import --dry-run --url-stdin",
+  "not_closed": [
+    "V.02.from-legacy-as-root: NOT_RUN, process is not root"
+  ],
+  "coordinator_review": {
+    "date": "2026-10-06",
+    "verdict": "ACCEPTED_CODE; real-subscription dry-run by user still NOT_RUN",
+    "fixes": [
+      "reverted whole-file rustfmt of src/main.rs, src/tui.rs, src/tui/process.rs, src/tui/progress.rs, src/i18n.rs (about 3.7k changed lines); semantic changes kept: 6 lines in main.rs, 1 line in i18n.rs",
+      "--url-file with a '-'-prefixed path is a usage error, not UrlInArgv"
+    ],
+    "gate": {
+      "command": "CM_TEST_MIHOMO=... sh tests/check_audit.sh",
+      "exit_code": 0,
+      "passed": 482,
+      "failed": 0
+    },
+    "open": [
+      "V.02 done_when: dry-run of a real subscription (user)",
+      "--from-legacy as root (user, sudo)"
+    ]
+  }
+}

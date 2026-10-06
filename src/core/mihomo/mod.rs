@@ -1,5 +1,13 @@
 //! Pinned mihomo descriptor. The tables are the I03 capability slices, not a second copy.
 
+pub mod config;
+pub mod validate;
+
+pub use config::{
+    ConfigError, attach_worker_listeners, generate_config, generate_from_store, profile_document,
+};
+pub use validate::{CoreValidationCode, validate_file};
+
 use crate::profiles::NodeProtocol;
 use crate::sources::{
     ImportFormat, PINNED_CORE_COMMIT, PINNED_CORE_VERSION, Transport, UriSchemeCapability,

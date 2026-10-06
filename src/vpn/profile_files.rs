@@ -326,6 +326,10 @@ impl Drop for CandidateConfig {
     fn drop(&mut self) { let _ = fs::remove_file(&self.0); }
 }
 fn validate_candidate(config: &str) -> Result<(), String> {
+    crate::core::legacy_host::dispatch_validate(config)
+}
+
+pub(crate) fn validate_candidate_body(config: &str) -> Result<(), String> {
     static SEQUENCE: AtomicU64 = AtomicU64::new(0);
     private_dir(&home())?;
     let path = Path::new(&home()).join(format!(".candidate-{}-{}.yaml", std::process::id(), SEQUENCE.fetch_add(1, Ordering::Relaxed)));
