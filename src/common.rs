@@ -841,6 +841,75 @@ pub fn spawn_thread<T: Send + 'static>(name: &str, f: impl FnOnce() -> T + Send 
     std::thread::Builder::new().name(name.into()).spawn(f).map_err(|e| t!("не удалось запустить поток: {0}", e))
 }
 
+/// Master и slave с `FD_CLOEXEC` с момента создания. `openpty` оставляет оба fd
+/// наследуемыми до отдельного `fcntl`, и fork/exec в другом потоке уносит копию PTY.
+pub fn open_pty_pair(rows: u16, cols: u16) -> std::io::Result<(std::fs::File, std::fs::File)> {
+    use std::os::fd::{AsRawFd, FromRawFd};
+    // SAFETY: posix_openpt returns a new fd or -1; O_CLOEXEC is set by the kernel before the fd is visible.
+    let master_fd = unsafe { libc::posix_openpt(libc::O_RDWR | libc::O_NOCTTY | libc::O_CLOEXEC) };
+    if master_fd < 0 {
+        return Err(std::io::Error::last_os_error());
+    }
+    let master = unsafe { std::fs::File::from_raw_fd(master_fd) };
+    // SAFETY: master is an open pty master we own. grantpt/unlockpt only change its slave lock.
+    if unsafe { libc::grantpt(master.as_raw_fd()) } != 0 || unsafe { libc::unlockpt(master.as_raw_fd()) } != 0 {
+        return Err(std::io::Error::last_os_error());
+    }
+    // TIOCGPTPEER (Linux 4.13+) opens the slave of *this* master without a path, so another
+    // devpts instance (container, private /dev, mount namespace) cannot hand back a foreign pty.
+    // SAFETY: the ioctl takes open flags and returns a new fd or -1.
+    let mut slave_fd = unsafe {
+        libc::ioctl(master.as_raw_fd(), libc::TIOCGPTPEER, libc::O_RDWR | libc::O_NOCTTY | libc::O_CLOEXEC)
+    };
+    if slave_fd < 0 {
+        let error = std::io::Error::last_os_error();
+        if !matches!(error.raw_os_error(), Some(libc::EINVAL | libc::ENOTTY)) {
+            return Err(error);
+        }
+        // Older kernel: fall back to the pts path of this master.
+        let mut pts: libc::c_uint = 0;
+        // SAFETY: TIOCGPTN writes one c_uint into pts for this master.
+        if unsafe { libc::ioctl(master.as_raw_fd(), libc::TIOCGPTN, &mut pts) } < 0 {
+            return Err(std::io::Error::last_os_error());
+        }
+        let path = std::ffi::CString::new(format!("/dev/pts/{pts}")).map_err(|_| std::io::Error::other("invalid pty path"))?;
+        // SAFETY: path is a NUL-terminated pts name; O_CLOEXEC is applied at open.
+        slave_fd = unsafe { libc::open(path.as_ptr(), libc::O_RDWR | libc::O_NOCTTY | libc::O_CLOEXEC) };
+        if slave_fd < 0 {
+            return Err(std::io::Error::last_os_error());
+        }
+    }
+    let slave = unsafe { std::fs::File::from_raw_fd(slave_fd) };
+    let size = libc::winsize { ws_row: rows.max(1), ws_col: cols.max(1), ws_xpixel: 0, ws_ypixel: 0 };
+    // SAFETY: slave is an open pty slave we own; winsize is a valid stack object.
+    if unsafe { libc::ioctl(slave.as_raw_fd(), libc::TIOCSWINSZ, &size) } < 0 {
+        return Err(std::io::Error::last_os_error());
+    }
+    set_cloexec(master.as_raw_fd())?;
+    set_cloexec(slave.as_raw_fd())?;
+    Ok((master, slave))
+}
+
+/// Дубликат fd, у которого `FD_CLOEXEC` включён атомарно (`dup` его сбрасывает).
+pub fn dup_cloexec(file: &std::fs::File) -> std::io::Result<std::fs::File> {
+    use std::os::fd::{AsRawFd, FromRawFd};
+    // SAFETY: file is open; F_DUPFD_CLOEXEC returns a new fd or -1.
+    let fd = unsafe { libc::fcntl(file.as_raw_fd(), libc::F_DUPFD_CLOEXEC, 0) };
+    if fd < 0 {
+        return Err(std::io::Error::last_os_error());
+    }
+    Ok(unsafe { std::fs::File::from_raw_fd(fd) })
+}
+
+fn set_cloexec(fd: std::os::fd::RawFd) -> std::io::Result<()> {
+    // SAFETY: fd belongs to an open File the caller owns.
+    let flags = unsafe { libc::fcntl(fd, libc::F_GETFD) };
+    if flags < 0 || unsafe { libc::fcntl(fd, libc::F_SETFD, flags | libc::FD_CLOEXEC) } < 0 {
+        return Err(std::io::Error::last_os_error());
+    }
+    Ok(())
+}
+
 pub fn lines(s: &str) -> Vec<String> {
     s.lines().filter(|l| !l.trim().is_empty()).map(String::from).collect()
 }
@@ -2046,5 +2115,87 @@ mod setting_schema_tests {
             assert_eq!(schema.step, 1);
         }
         assert_eq!(number_setting("vpn_sub_update_h").unwrap().unit, SettingUnit::Hours);
+    }
+}
+
+#[cfg(test)]
+mod pty_cloexec_tests {
+    use super::*;
+    use std::os::fd::AsRawFd;
+    use std::process::{Command, Stdio};
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::Arc;
+    use std::time::{Duration, Instant};
+
+    fn fd_is_cloexec(fd: std::os::fd::RawFd) -> bool {
+        let flags = unsafe { libc::fcntl(fd, libc::F_GETFD) };
+        flags >= 0 && flags & libc::FD_CLOEXEC != 0
+    }
+
+    fn inherited_pty_fds(pid: u32) -> Vec<String> {
+        let mut found = Vec::new();
+        let dir = match std::fs::read_dir(format!("/proc/{pid}/fd")) {
+            Ok(dir) => dir,
+            Err(_) => return found,
+        };
+        for entry in dir.flatten() {
+            if let Ok(target) = std::fs::read_link(entry.path()) {
+                let text = target.to_string_lossy();
+                if text.contains("/dev/pts/") || text.contains("/dev/ptmx") {
+                    found.push(text.into_owned());
+                }
+            }
+        }
+        found
+    }
+
+    fn wait_until_exec(pid: u32, name: &str) {
+        let deadline = Instant::now() + Duration::from_secs(2);
+        loop {
+            let comm = std::fs::read_to_string(format!("/proc/{pid}/comm")).unwrap_or_default();
+            if comm.trim() == name {
+                return;
+            }
+            assert!(Instant::now() < deadline, "pid {pid} did not exec {name}, comm={comm:?}");
+            std::thread::sleep(Duration::from_millis(1));
+        }
+    }
+
+    #[test]
+    fn parallel_spawn_during_pty_open_does_not_inherit_pty() {
+        let stop = Arc::new(AtomicBool::new(false));
+        let opener_stop = stop.clone();
+        let opener = std::thread::spawn(move || {
+            let mut held = open_pty_pair(24, 80).expect("pty");
+            while !opener_stop.load(Ordering::Acquire) {
+                held = open_pty_pair(24, 80).expect("pty");
+            }
+            held
+        });
+        std::thread::sleep(Duration::from_millis(30));
+        let mut child = Command::new("sleep")
+            .arg("30")
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .expect("sleep");
+        let pid = child.id();
+        let check = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            wait_until_exec(pid, "sleep");
+            let leaked = inherited_pty_fds(pid);
+            assert!(leaked.is_empty(), "parallel child inherited pty fds: {leaked:?}");
+        }));
+        stop.store(true, Ordering::Release);
+        let (master, slave) = opener.join().expect("opener");
+        assert!(fd_is_cloexec(master.as_raw_fd()));
+        assert!(fd_is_cloexec(slave.as_raw_fd()));
+        let copied = dup_cloexec(&slave).expect("dup");
+        assert!(fd_is_cloexec(copied.as_raw_fd()));
+        let _ = child.kill();
+        let _ = child.wait();
+        if let Err(payload) = check {
+            std::panic::resume_unwind(payload);
+        }
     }
 }

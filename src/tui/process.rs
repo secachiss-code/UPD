@@ -4,7 +4,7 @@ use ratatui::crossterm::event::{KeyCode, KeyModifiers};
 use std::collections::VecDeque;
 use std::fs::File;
 use std::io::{self, Read, Write};
-use std::os::fd::{AsRawFd, FromRawFd};
+use std::os::fd::AsRawFd;
 use std::os::unix::process::CommandExt;
 use std::process::{Child, Command, Stdio};
 use std::sync::mpsc::{self, Receiver, TryRecvError, TrySendError};
@@ -122,31 +122,8 @@ impl ProcessSession {
         rows: u16,
         cols: u16,
     ) -> io::Result<Self> {
-        let size = libc::winsize {
-            ws_row: rows.max(1),
-            ws_col: cols.max(1),
-            ws_xpixel: 0,
-            ws_ypixel: 0,
-        };
-        let (mut master_fd, mut slave_fd) = (-1, -1);
-        // openpty создаёт отдельный терминал: sudo/pacman/apt видят настоящий TTY.
-        if unsafe {
-            libc::openpty(
-                &mut master_fd,
-                &mut slave_fd,
-                std::ptr::null_mut(),
-                std::ptr::null(),
-                &size,
-            )
-        } != 0
-        {
-            return Err(io::Error::last_os_error());
-        }
-        let master = unsafe { File::from_raw_fd(master_fd) };
-        let slave = unsafe { File::from_raw_fd(slave_fd) };
-        if unsafe { libc::fcntl(master.as_raw_fd(), libc::F_SETFD, libc::FD_CLOEXEC) } < 0 {
-            return Err(io::Error::last_os_error());
-        }
+        // Отдельный терминал: sudo/pacman/apt видят настоящий TTY. Оба конца сразу с FD_CLOEXEC.
+        let (master, slave) = cm::common::open_pty_pair(rows, cols)?;
         let flags = unsafe { libc::fcntl(master.as_raw_fd(), libc::F_GETFL) };
         if flags < 0
             || unsafe { libc::fcntl(master.as_raw_fd(), libc::F_SETFL, flags | libc::O_NONBLOCK) }
@@ -154,18 +131,15 @@ impl ProcessSession {
         {
             return Err(io::Error::last_os_error());
         }
-        let mut reader = master.try_clone()?;
-        if unsafe { libc::fcntl(reader.as_raw_fd(), libc::F_SETFD, libc::FD_CLOEXEC) } < 0 {
-            return Err(io::Error::last_os_error());
-        }
+        let mut reader = cm::common::dup_cloexec(&master)?;
         let mut command = Command::new(program);
         command
             .args(args)
             .env("NO_COLOR", "1")
             .env("PAGER", "cat")
             .env("GIT_PAGER", "cat");
-        command.stdin(Stdio::from(slave.try_clone()?));
-        command.stdout(Stdio::from(slave.try_clone()?));
+        command.stdin(Stdio::from(cm::common::dup_cloexec(&slave)?));
+        command.stdout(Stdio::from(cm::common::dup_cloexec(&slave)?));
         command.stderr(Stdio::from(slave));
         // Новый сеанс делает slave управляющим терминалом и сохраняет /dev/tty для дочерних программ.
         unsafe {

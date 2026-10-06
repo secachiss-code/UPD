@@ -912,16 +912,7 @@ fn cancel_operation(shared: &Shared, owner: u32, operation_id: &OperationId) -> 
 
 /// Запуск `cm ARGS` в отдельном PTY: pacman, apt и sudo видят настоящий терминал.
 fn spawn_pty(args: &[String], env: &[(String, String)]) -> std::io::Result<(std::process::Child, File)> {
-    let size = libc::winsize { ws_row: 40, ws_col: 120, ws_xpixel: 0, ws_ypixel: 0 };
-    let (mut m, mut s) = (-1, -1);
-    if unsafe { libc::openpty(&mut m, &mut s, std::ptr::null_mut(), std::ptr::null(), &size) } != 0 {
-        return Err(std::io::Error::last_os_error());
-    }
-    let master = unsafe { File::from_raw_fd(m) };
-    let slave = unsafe { File::from_raw_fd(s) };
-    unsafe {
-        libc::fcntl(master.as_raw_fd(), libc::F_SETFD, libc::FD_CLOEXEC);
-    }
+    let (master, slave) = open_pty_pair(40, 120)?;
     // в тестовом режиме вместо cm можно подставить свою программу (сквозной тест протокола)
     let exe = match std::env::var_os("CM_HELPER_EXE").filter(|_| test_mode()) {
         Some(p) => std::path::PathBuf::from(p),
@@ -933,7 +924,7 @@ fn spawn_pty(args: &[String], env: &[(String, String)]) -> std::io::Result<(std:
     for (k, v) in env {
         cmd.env(k, v);
     }
-    cmd.stdin(Stdio::from(slave.try_clone()?)).stdout(Stdio::from(slave.try_clone()?)).stderr(Stdio::from(slave));
+    cmd.stdin(Stdio::from(dup_cloexec(&slave)?)).stdout(Stdio::from(dup_cloexec(&slave)?)).stderr(Stdio::from(slave));
     unsafe {
         cmd.pre_exec(|| {
             if libc::setsid() < 0 || libc::ioctl(0, libc::TIOCSCTTY as _, 0) < 0 {
@@ -2720,16 +2711,13 @@ mod frame_tests {
 
     #[test]
     fn full_pty_input_expires_without_blocking_state_or_cancel() {
-        let (mut master, mut slave) = (-1, -1);
-        assert_eq!(unsafe { libc::openpty(&mut master, &mut slave, std::ptr::null_mut(), std::ptr::null(), std::ptr::null()) }, 0);
-        let mut input = unsafe { File::from_raw_fd(master) };
-        let slave = unsafe { File::from_raw_fd(slave) };
+        let (mut input, slave) = open_pty_pair(24, 80).unwrap();
         let mut attributes: libc::termios = unsafe { std::mem::zeroed() };
         assert_eq!(unsafe { libc::tcgetattr(slave.as_raw_fd(), &mut attributes) }, 0);
         unsafe { libc::cfmakeraw(&mut attributes); }
         assert_eq!(unsafe { libc::tcsetattr(slave.as_raw_fd(), libc::TCSANOW, &attributes) }, 0);
-        let flags = unsafe { libc::fcntl(master, libc::F_GETFL) };
-        assert_eq!(unsafe { libc::fcntl(master, libc::F_SETFL, flags | libc::O_NONBLOCK) }, 0);
+        let flags = unsafe { libc::fcntl(input.as_raw_fd(), libc::F_GETFL) };
+        assert_eq!(unsafe { libc::fcntl(input.as_raw_fd(), libc::F_SETFL, flags | libc::O_NONBLOCK) }, 0);
         let fill = vec![b'x'; 8192]; let fill_deadline = Instant::now() + Duration::from_secs(2);
         let mut full_rounds = 0;
         while full_rounds < 10 {
