@@ -1,0 +1,28 @@
+{
+  "stage": "I03.T05.c",
+  "date": "2026-10-06",
+  "status": "READY_FOR_COORDINATOR_REVIEW",
+  "git_revision": "f41537ba172958e00a48c86f6626aa29e7a25805",
+  "dirty_tree": true,
+  "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)",
+  "cargo_lock_sha256": "4f39f96d1ef63e06171f18f0f3808a2bffba87ec52a8c853683ffb6b2ea6f358",
+  "cargo_target_dir": "/home/somovas/.cache/cm-grok-target",
+  "focused": {
+    "command": "CARGO_TARGET_DIR=$HOME/.cache/cm-grok-target cargo test --offline --locked --test audit_i03_transport",
+    "result": "ok. 6 passed, 0 failed"
+  },
+  "gate": {
+    "steps": "check_audit.sh steps: musl build+test in ~/.cache/cm-grok-target; cosmic build+test with CARGO_TARGET_DIR unset so cosmic/target stays the path the script checks; python artifacts, shell -n, rustfmt, tui launcher, clippy of new modules",
+    "result": "GATE_OK",
+    "tests": "460 passed, 0 failed across 31 suites (cm + COSMIC)"
+  },
+  "scenarios": [
+    "user_agent_bodies_match_the_mock_retry",
+    "redirect_chain_is_terminal_like_the_mock",
+    "slow_response_returns_before_the_server_finishes",
+    "oversized_body_is_not_retried"
+  ],
+  "deadline": "per_request_timeout 400ms, server holds 5s, elapsed under 2s, error Fetch(Timeout)",
+  "oversized": "FetchTransport refuses a body above max_body_bytes as FetchFailure::Transport (H.04). negotiate_source surfaces Fetch(Transport) and does not retry. That matches a mock adapter returning the same failure. NegotiationError::BodyTooLarge remains the class when a callback itself returns an oversized body.",
+  "raw_logs": "not stored in git; D8 is still open"
+}
