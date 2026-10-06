@@ -1041,6 +1041,7 @@ mod contract_tests {
         let base = std::env::temp_dir().join(format!("cm-mirror-state-{}", std::process::id()));
         fs::create_dir_all(&base).unwrap();
         let _iso = crate::common::contract_fixtures::isolation_lock();
+        // SAFETY: test fixture; environment writes are serialized by contract_fixtures::isolation_lock.
         unsafe {
             std::env::set_var("CM_STATE_DIR", base.to_str().unwrap());
         }
@@ -1124,6 +1125,7 @@ mod contract_tests {
         let saved: MirrorState = load_json("mirrors.json");
         assert!(saved.pending_apply);
         assert!(!saved.pending_fingerprint.is_empty());
+        // SAFETY: test fixture; environment writes are serialized by contract_fixtures::isolation_lock.
         unsafe {
             std::env::remove_var("CM_STATE_DIR");
         }
@@ -1220,6 +1222,7 @@ mod contract_tests {
         let base = std::env::temp_dir().join(format!("cm-space-{}", std::process::id()));
         fs::create_dir_all(&base).unwrap();
         let _iso = crate::common::contract_fixtures::isolation_lock();
+        // SAFETY: test fixture; environment writes are serialized by contract_fixtures::isolation_lock.
         unsafe {
             std::env::set_var("CM_STATE_DIR", base.to_str().unwrap());
         }
@@ -1232,6 +1235,7 @@ mod contract_tests {
         st.skipped.clear();
         download(&spy, &Config::defaults(vec![]), &mut st, &|_| {}, true, false);
         assert!(spy.called.load(std::sync::atomic::Ordering::SeqCst));
+        // SAFETY: test fixture; environment writes are serialized by contract_fixtures::isolation_lock.
         unsafe {
             std::env::remove_var("CM_STATE_DIR");
         }

@@ -11,8 +11,10 @@ impl Peer {
 }
 
 fn peer_of(s: &UnixStream) -> Option<Peer> {
+    // SAFETY: plain C struct; the all-zero bit pattern is a valid value.
     let mut cred: libc::ucred = unsafe { std::mem::zeroed() };
     let mut len = std::mem::size_of::<libc::ucred>() as libc::socklen_t;
+    // SAFETY: cred and len describe a live ucred-sized buffer.
     let r = unsafe { libc::getsockopt(s.as_raw_fd(), libc::SOL_SOCKET, libc::SO_PEERCRED, &mut cred as *mut _ as *mut libc::c_void, &mut len) };
     (r == 0 && cred.pid > 0).then_some(Peer { pid: cred.pid, uid: cred.uid })
 }
@@ -24,13 +26,16 @@ fn start_time(pid: i32) -> Option<u64> {
 }
 
 pub fn user_name(uid: u32) -> Option<String> {
+    // SAFETY: plain C struct; the all-zero bit pattern is a valid value.
     let mut pw: libc::passwd = unsafe { std::mem::zeroed() };
     let mut buf = vec![0 as libc::c_char; 4096];
     let mut res: *mut libc::passwd = std::ptr::null_mut();
+    // SAFETY: passwd, buffer and result are valid for the call; buffer outlives every pointer stored in passwd.
     let r = unsafe { libc::getpwuid_r(uid, &mut pw, buf.as_mut_ptr(), buf.len(), &mut res) };
     if r != 0 || res.is_null() {
         return None;
     }
+    // SAFETY: getpw*_r succeeded, so pw_name points to a NUL-terminated string inside the still-live buffer.
     Some(unsafe { std::ffi::CStr::from_ptr(pw.pw_name) }.to_string_lossy().into_owned())
 }
 

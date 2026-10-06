@@ -51,6 +51,7 @@ fn stdlog(s: &str) {
 
 fn main() {
     // `cm list | head` не должен падать с паникой на закрытом канале
+    // SAFETY: only switches SIGPIPE between SIG_DFL and a previous disposition; no Rust handler is installed.
     unsafe {
         libc::signal(libc::SIGPIPE, libc::SIG_DFL);
     }
@@ -1959,14 +1960,18 @@ mod contract_tests {
         let _isolation = cm::common::contract_fixtures::isolation_lock();
         let exe = Path::new(PKG_BIN);
         let previous = std::env::var_os(PACKAGE_SCRIPT_ENV);
+        // SAFETY: test fixture; environment writes are serialized by contract_fixtures::isolation_lock.
         unsafe { std::env::remove_var(PACKAGE_SCRIPT_ENV); }
         assert!(!package_script_context(exe));
+        // SAFETY: test fixture; environment writes are serialized by contract_fixtures::isolation_lock.
         unsafe {
             std::env::set_var(PACKAGE_SCRIPT_ENV, "1");
         }
         let allowed = package_script_context(exe);
         match previous {
+            // SAFETY: test fixture; environment writes are serialized by contract_fixtures::isolation_lock.
             Some(value) => unsafe { std::env::set_var(PACKAGE_SCRIPT_ENV, value); },
+            // SAFETY: test fixture; environment writes are serialized by contract_fixtures::isolation_lock.
             None => unsafe { std::env::remove_var(PACKAGE_SCRIPT_ENV); },
         }
         assert_eq!(allowed, fs::canonicalize(PKG_BIN).map(|p| p.as_path() == exe).unwrap_or(false));
@@ -2162,6 +2167,7 @@ mod contract_tests {
         });
         fs::write(etc.join("subs.json"), subs.to_string()).unwrap();
         fs::write(home.join("profiles").join("a1.yaml"), "proxies: []\n").unwrap();
+        // SAFETY: test fixture; environment writes are serialized by contract_fixtures::isolation_lock.
         unsafe {
             std::env::set_var("CM_VPN_ETC", etc.to_str().unwrap());
             std::env::set_var("CM_VPN_HOME", home.to_str().unwrap());
@@ -2173,6 +2179,7 @@ mod contract_tests {
             cmd_vpn(&Config::defaults(vec![]), &["del".into(), "1".into()])
         };
         let recorded = fs::read_to_string(&log).unwrap_or_default();
+        // SAFETY: test fixture; environment writes are serialized by contract_fixtures::isolation_lock.
         unsafe {
             std::env::remove_var("CM_VPN_ETC");
             std::env::remove_var("CM_VPN_HOME");
@@ -2197,6 +2204,7 @@ mod contract_tests {
         write_stub(&bin, "gsettings", "#!/bin/sh\nexit 0\n");
         write_stub(&bin, "runuser", "#!/bin/sh\nexit 0\n");
         fs::write(etc.join("subs.json"), r#"{"active":"a1","list":[{"id":"a1","name":"one","url":"https://example.com/sub","interval_h":24,"updated":0,"nodes":0,"kind":"yaml"}]}"#).unwrap();
+        // SAFETY: test fixture; environment writes are serialized by contract_fixtures::isolation_lock.
         unsafe {
             std::env::set_var("CM_VPN_ETC", etc.to_str().unwrap());
             std::env::set_var("CM_VPN_HOME", home.to_str().unwrap());
@@ -2207,6 +2215,7 @@ mod contract_tests {
             let _path = cm::common::contract_fixtures::prepend_path(&bin);
             cmd_vpn(&Config::defaults(vec![]), &["del".into(), "1".into()])
         };
+        // SAFETY: test fixture; environment writes are serialized by contract_fixtures::isolation_lock.
         unsafe {
             std::env::remove_var("CM_VPN_ETC");
             std::env::remove_var("CM_VPN_HOME");

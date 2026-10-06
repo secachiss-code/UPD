@@ -90,6 +90,7 @@ impl SubscriberQueue {
 
     fn wake(&self) {
         let byte = 1u8;
+        // SAFETY: the pointer and length describe a live slice; MSG_NOSIGNAL prevents SIGPIPE.
         unsafe {
             libc::send(
                 self.wake_write.as_raw_fd(),
@@ -272,6 +273,7 @@ impl ConnectionWorker {
             let _ = self.handle.take().unwrap().join();
         }
         // musl join can return just before the kernel removes the exiting task.
+        // SAFETY: signal 0 only probes the thread id; no memory is accessed.
         self.handle.is_none() && unsafe { libc::syscall(libc::SYS_tgkill, std::process::id(), self.tid, 0) } < 0
     }
 }
@@ -282,6 +284,7 @@ fn spawn_connection_worker(f: impl FnOnce() + Send + 'static) -> Result<Connecti
     }
     let (tx, rx) = std::sync::mpsc::sync_channel(1);
     let handle = spawn_thread("helper-conn", move || {
+        // SAFETY: gettid takes no arguments and accesses no memory.
         let _ = tx.send(unsafe { libc::syscall(libc::SYS_gettid) as libc::pid_t });
         f();
     })?;
@@ -470,6 +473,7 @@ fn spawn_pty(args: &[String], env: &[(String, String)]) -> std::io::Result<(std:
         cmd.env(k, v);
     }
     cmd.stdin(Stdio::from(dup_cloexec(&slave)?)).stdout(Stdio::from(dup_cloexec(&slave)?)).stderr(Stdio::from(slave));
+    // SAFETY: the closure only calls async-signal-safe setsid and ioctl(TIOCSCTTY) and allocates nothing.
     unsafe {
         cmd.pre_exec(|| {
             if libc::setsid() < 0 || libc::ioctl(0, libc::TIOCSCTTY as _, 0) < 0 {
@@ -520,6 +524,7 @@ fn read_operation(
             libc::pollfd { fd, events: libc::POLLIN | libc::POLLHUP | libc::POLLERR, revents: 0 },
             libc::pollfd { fd: wake_fd, events: libc::POLLIN, revents: 0 },
         ];
+        // SAFETY: the pollfd pointer and count describe live entries for the whole call.
         let ready = unsafe { libc::poll(fds.as_mut_ptr(), fds.len() as libc::nfds_t, READER_POLL) };
         if ready < 0 {
             let error = std::io::Error::last_os_error();
@@ -571,6 +576,7 @@ impl RunnerResources {
     fn terminate_child(&mut self) {
         if let Some(mut child) = self.child.take() {
             if let Some(pgid) = self.pgid.take() {
+                // SAFETY: sending a signal accesses no memory; the target group is a child we have not reaped yet.
                 unsafe { libc::killpg(pgid, libc::SIGKILL) };
             }
             let _ = child.kill();
@@ -588,6 +594,7 @@ impl Drop for RunnerResources {
 
 fn signal_runner_group(resources: &RunnerResources, signal: i32) -> Result<(), String> {
     let pgid = resources.pgid.ok_or_else(|| "operation process group is no longer available".to_string())?;
+    // SAFETY: sending a signal accesses no memory; the target group is a child we have not reaped yet.
     if unsafe { libc::killpg(pgid, signal) } == 0 {
         Ok(())
     } else {
@@ -635,9 +642,12 @@ fn runner_loop(shared: &Shared, operation_id: &OperationId, resources: &mut Runn
                         let _ = reply.send(Err("operation cannot accept input now".into()));
                     } else {
                         // Disable terminal echo before delivering any user answer.
+                        // SAFETY: plain C struct; the all-zero bit pattern is a valid value.
                         let mut attributes: libc::termios = unsafe { std::mem::zeroed() };
+                        // SAFETY: attributes is a live termios and the fd is an open terminal.
                         if unsafe { libc::tcgetattr(resources.input.as_raw_fd(), &mut attributes) } == 0 {
                             attributes.c_lflag &= !(libc::ECHO | libc::ECHONL);
+                            // SAFETY: attributes is a live termios and the fd is an open terminal.
                             if unsafe { libc::tcsetattr(resources.input.as_raw_fd(), libc::TCSANOW, &attributes) } != 0 {
                                 let _ = reply.send(Err("cannot disable terminal echo".into()));
                                 continue;

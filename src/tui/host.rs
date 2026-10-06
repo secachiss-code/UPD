@@ -99,9 +99,11 @@ fn net(text: &str) -> BTreeMap<String, (u64, u64)> {
 }
 fn filesystem() -> Option<(u64, u64)> {
     let mut stat = std::mem::MaybeUninit::<libc::statvfs>::uninit();
+    // SAFETY: path is NUL-terminated and the out-pointer refers to a live statvfs.
     if unsafe { libc::statvfs(c"/".as_ptr(), stat.as_mut_ptr()) } != 0 {
         return None;
     }
+    // SAFETY: statvfs returned 0, so it initialized the whole struct.
     let stat = unsafe { stat.assume_init() };
     let size = stat.f_frsize;
     Some((

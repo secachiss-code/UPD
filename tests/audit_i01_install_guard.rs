@@ -194,7 +194,7 @@ fn i01_non_directory_ancestor_and_invalid_root_are_fail_closed() {
 #[test]
 fn i01_metadata_permission_error_and_symlink_root_are_refused() {
     assert_ne!(
-        unsafe { libc::geteuid() },
+        cm::common::sys::euid(),
         0,
         "permission fixture requires normal user"
     );

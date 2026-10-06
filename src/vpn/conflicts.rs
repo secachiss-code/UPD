@@ -167,7 +167,7 @@ pub fn sysproxy(c: &Config, user: Option<&UserContext>) -> Result<SysproxyStatus
         cmds.push(vec!["org.gnome.system.proxy".into(), "ignore-hosts".into(), "['localhost', '127.0.0.0/8', '::1', '192.168.0.0/16', '10.0.0.0/8', '172.16.0.0/12']".into()]);
     }
     for a in cmds {
-        let result = if unsafe { libc::geteuid() } == user.uid {
+        let result = if crate::common::sys::euid() == user.uid {
             let mut args = vec!["set"]; args.extend(a.iter().map(String::as_str));
             run(true, &[("XDG_RUNTIME_DIR", &runtime), ("DBUS_SESSION_BUS_ADDRESS", &bus)], "gsettings", &args)
         } else {

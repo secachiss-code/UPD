@@ -44,6 +44,7 @@ fn spawn_helper(dir: &TempDirGuard, socket: &Path, fake_cm: Option<&Path>) -> Ch
     }
     // Resource baselines count the helper's fds. Descriptors that the test process itself
     // inherited without CLOEXEC (IDE terminal, agent, jobserver) must not reach the fixture.
+    // SAFETY: the closure only calls async-signal-safe setsid and ioctl(TIOCSCTTY) and allocates nothing.
     unsafe {
         use std::os::unix::process::CommandExt;
         command.pre_exec(|| {
@@ -102,6 +103,7 @@ struct ProcessGuard(Option<i32>);
 impl ProcessGuard {
     fn kill(&mut self) {
         if let Some(pid) = self.0.take() {
+            // SAFETY: sending a signal accesses no memory; pid is the fixture child spawned by this test.
             unsafe { libc::kill(pid, libc::SIGKILL) };
         }
     }
@@ -1101,7 +1103,7 @@ fn explicit_user_context_keeps_proxy_uids_and_environment_separate() {
     ]
     .map(|key| (key, std::env::var_os(key)))
     .into();
-    let first = cm::common::UserContext::from_uid(unsafe { libc::geteuid() }).unwrap();
+    let first = cm::common::UserContext::from_uid(cm::common::sys::euid()).unwrap();
     let second = cm::common::UserContext::from_uid(65534).unwrap();
     let config = cm::common::Config::defaults(vec![]);
     for user in [&first, &second] {
@@ -1183,7 +1185,7 @@ fn cli_and_inline_configset_use_same_peer_proxy_context_and_report_errors() {
         thread::sleep(Duration::from_millis(10));
     }
     let cli = std::fs::read_to_string(&log).unwrap();
-    let uid = unsafe { libc::geteuid() };
+    let uid = cm::common::sys::euid();
     let expected = format!("/run/user/{uid}|unix:path=/run/user/{uid}/bus");
     assert!(inline.lines().all(|line| line.starts_with(&expected)));
     assert!(cli.lines().all(|line| line.starts_with(&expected)));
@@ -1236,7 +1238,7 @@ fn helper_subprocess_receives_peer_identity_without_ambient_daemon_user() {
         .map(|frame| frame.unwrap())
         .take_while(|frame| !matches!(frame.event, Event::ReplayComplete))
         .collect();
-    let user = cm::common::UserContext::from_uid(unsafe { libc::geteuid() }).unwrap();
+    let user = cm::common::UserContext::from_uid(cm::common::sys::euid()).unwrap();
     let expected = format!(
         "{}|{}|/run/user/{}|unix:path=/run/user/{}/bus",
         user.uid, user.name, user.uid, user.uid
@@ -1387,6 +1389,7 @@ fn helper_overload_has_resource_plateau_and_returns_fds_threads_children() {
         let mut slow = UnixStream::connect(&socket).unwrap();
         let buffer: libc::c_int = 4096;
         assert_eq!(
+            // SAFETY: the option value pointer and length describe a live c_int.
             unsafe {
                 libc::setsockopt(
                     slow.as_raw_fd(),

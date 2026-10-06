@@ -1522,6 +1522,7 @@ mod contract_tests {
 
         fn set(&mut self, key: &str, val: &str) {
             self.saved.push((key.to_string(), std::env::var(key).ok()));
+            // SAFETY: test fixture; environment writes are serialized by contract_fixtures::isolation_lock.
             unsafe {
                 std::env::set_var(key, val);
             }
@@ -1532,9 +1533,11 @@ mod contract_tests {
         fn drop(&mut self) {
             for (k, v) in &self.saved {
                 match v {
+                    // SAFETY: test fixture; environment writes are serialized by contract_fixtures::isolation_lock.
                     Some(val) => unsafe {
                         std::env::set_var(k, val);
                     },
+                    // SAFETY: test fixture; environment writes are serialized by contract_fixtures::isolation_lock.
                     None => unsafe {
                         std::env::remove_var(k);
                     },

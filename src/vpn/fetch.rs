@@ -153,7 +153,7 @@ fn proc_uid(pid_dir: &Path) -> Option<u32> {
 
 /// Чьим прокси можно доверить адрес подписки: root и пользователь, запустивший cm.
 fn trusted_uids() -> Vec<u32> {
-    let mut uids = vec![0, unsafe { libc::getuid() }];
+    let mut uids = vec![0, crate::common::sys::uid()];
     for k in ["SUDO_UID", "PKEXEC_UID"] {
         if let Some(uid) = std::env::var(k).ok().and_then(|v| v.parse().ok()) {
             uids.push(uid);

@@ -737,6 +737,7 @@ fn lock_in(dir: &str, name: &str, block: bool) -> Result<Lock, String> {
         .map_err(|e| format!("{}: {e}", path.display()))?;
     use std::os::fd::AsRawFd;
     let op = if block { libc::LOCK_EX } else { libc::LOCK_EX | libc::LOCK_NB };
+    // SAFETY: flock on an open fd borrowed for the call; it accesses no memory.
     if unsafe { libc::flock(f.as_raw_fd(), op) } != 0 {
         return Err("busy".into());
     }
@@ -765,6 +766,7 @@ pub fn config_lock(block: bool) -> Result<Lock, String> {
         .open(parent.join(format!(".{name}.lock"))).map_err(|e| e.to_string())?;
     use std::os::fd::AsRawFd;
     let flags = libc::LOCK_EX | if block { 0 } else { libc::LOCK_NB };
+    // SAFETY: flock on an open fd borrowed for the call; it accesses no memory.
     if unsafe { libc::flock(file.as_raw_fd(), flags) } != 0 { return Err("config busy".into()); }
     Ok(Lock(file))
 }
@@ -783,6 +785,7 @@ pub const OUT_MAX: u64 = 16 << 20;
 const ERR_TAIL: usize = 64 << 10;
 
 mod probe;
+pub mod sys;
 pub use probe::{capture, capture_interactive, capture_with_policy, CaptureError, CapturePolicy, with_probe_scope};
 
 /// Запуск с захватом stdout (не больше OUT_MAX); код выхода (-1, если не запустилось или вывод превысил предел).
@@ -856,6 +859,7 @@ pub fn open_pty_pair(rows: u16, cols: u16) -> std::io::Result<(std::fs::File, st
     if master_fd < 0 {
         return Err(std::io::Error::last_os_error());
     }
+    // SAFETY: the fd was just returned by the syscall above, checked >= 0, and nothing else owns it.
     let master = unsafe { std::fs::File::from_raw_fd(master_fd) };
     // SAFETY: master is an open pty master we own. grantpt/unlockpt only change its slave lock.
     if unsafe { libc::grantpt(master.as_raw_fd()) } != 0 || unsafe { libc::unlockpt(master.as_raw_fd()) } != 0 {
@@ -885,6 +889,7 @@ pub fn open_pty_pair(rows: u16, cols: u16) -> std::io::Result<(std::fs::File, st
             return Err(std::io::Error::last_os_error());
         }
     }
+    // SAFETY: the fd was just returned by the syscall above, checked >= 0, and nothing else owns it.
     let slave = unsafe { std::fs::File::from_raw_fd(slave_fd) };
     let size = libc::winsize { ws_row: rows.max(1), ws_col: cols.max(1), ws_xpixel: 0, ws_ypixel: 0 };
     // SAFETY: slave is an open pty slave we own; winsize is a valid stack object.
@@ -904,12 +909,14 @@ pub fn dup_cloexec(file: &std::fs::File) -> std::io::Result<std::fs::File> {
     if fd < 0 {
         return Err(std::io::Error::last_os_error());
     }
+    // SAFETY: the fd was just returned by the syscall above, checked >= 0, and nothing else owns it.
     Ok(unsafe { std::fs::File::from_raw_fd(fd) })
 }
 
 fn set_cloexec(fd: std::os::fd::RawFd) -> std::io::Result<()> {
     // SAFETY: fd belongs to an open File the caller owns.
     let flags = unsafe { libc::fcntl(fd, libc::F_GETFD) };
+    // SAFETY: fcntl on an open fd borrowed for the call; F_GETFL/F_SETFL/F_GETFD do not access memory.
     if flags < 0 || unsafe { libc::fcntl(fd, libc::F_SETFD, flags | libc::FD_CLOEXEC) } < 0 {
         return Err(std::io::Error::last_os_error());
     }
@@ -943,20 +950,25 @@ pub struct UserContext { pub uid: u32, pub name: String, pub runtime_dir: PathBu
 
 impl UserContext {
     pub fn from_uid(uid: u32) -> Result<Self, String> {
+        // SAFETY: plain C struct; the all-zero bit pattern is a valid value.
         let mut passwd: libc::passwd = unsafe { std::mem::zeroed() };
         let mut buffer = vec![0 as libc::c_char; 64 << 10];
         let mut result = std::ptr::null_mut();
+        // SAFETY: passwd, buffer and result are valid for the call; buffer outlives every pointer stored in passwd.
         let error = unsafe { libc::getpwuid_r(uid, &mut passwd, buffer.as_mut_ptr(), buffer.len(), &mut result) };
         if error != 0 || result.is_null() { return Err(format!("cannot resolve user UID {uid} through NSS")); }
+        // SAFETY: getpw*_r succeeded, so pw_name points to a NUL-terminated string inside the still-live buffer.
         let name = unsafe { std::ffi::CStr::from_ptr(passwd.pw_name) }.to_string_lossy().into_owned();
         Ok(Self { uid, name, runtime_dir: PathBuf::from(format!("/run/user/{uid}")) })
     }
 
     pub fn from_name(name: &str) -> Result<Self, String> {
         let name = std::ffi::CString::new(name).map_err(|_| "invalid invoking user name".to_string())?;
+        // SAFETY: plain C struct; the all-zero bit pattern is a valid value.
         let mut passwd: libc::passwd = unsafe { std::mem::zeroed() };
         let mut buffer = vec![0 as libc::c_char; 64 << 10];
         let mut result = std::ptr::null_mut();
+        // SAFETY: passwd, buffer and result are valid for the call; buffer outlives every pointer stored in passwd.
         let error = unsafe { libc::getpwnam_r(name.as_ptr(), &mut passwd, buffer.as_mut_ptr(), buffer.len(), &mut result) };
         if error != 0 || result.is_null() { return Err("cannot resolve invoking user through NSS".into()); }
         Self::from_uid(passwd.pw_uid)
@@ -971,7 +983,7 @@ impl UserContext {
 
 /// Interactive CLI identity only; background callers explicitly pass None to VPN apply.
 pub fn cli_user_context() -> Result<Option<UserContext>, String> {
-    let uid = unsafe { libc::geteuid() };
+    let uid = crate::common::sys::euid();
     if uid != 0 { return UserContext::from_uid(uid).map(Some); }
     if let Some(name) = invoking_user() {
         let context = UserContext::from_name(&name)?;
@@ -986,7 +998,7 @@ pub fn cli_user_context() -> Result<Option<UserContext>, String> {
 }
 
 pub fn is_root() -> bool {
-    unsafe { libc::geteuid() == 0 }
+    sys::euid() == 0
 }
 
 pub fn confirm(q: &str, default_yes: bool) -> bool {
@@ -1056,7 +1068,9 @@ pub fn fmt_time(ts: i64) -> String {
         return t!("не было").into();
     }
     let t = ts as _;
+    // SAFETY: plain C struct; the all-zero bit pattern is a valid value.
     let mut tm: libc::tm = unsafe { std::mem::zeroed() };
+    // SAFETY: both pointers refer to live stack objects.
     unsafe { libc::localtime_r(&t, &mut tm) };
     format!("{:04}-{:02}-{:02} {:02}:{:02}", tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday, tm.tm_hour, tm.tm_min)
 }
@@ -1067,7 +1081,9 @@ pub fn fmt_clock(ts: i64) -> String {
         return "—".into();
     }
     let t = ts as _;
+    // SAFETY: plain C struct; the all-zero bit pattern is a valid value.
     let mut tm: libc::tm = unsafe { std::mem::zeroed() };
+    // SAFETY: both pointers refer to live stack objects.
     unsafe { libc::localtime_r(&t, &mut tm) };
     format!("{:02}:{:02}:{:02}", tm.tm_hour, tm.tm_min, tm.tm_sec)
 }
@@ -1302,7 +1318,9 @@ pub fn on_battery() -> bool {
 
 pub fn free_space(path: &str) -> std::io::Result<u64> {
     let c = std::ffi::CString::new(path).map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidInput, e))?;
+    // SAFETY: plain C struct; the all-zero bit pattern is a valid value.
     let mut s: libc::statvfs = unsafe { std::mem::zeroed() };
+    // SAFETY: path is NUL-terminated and the out-pointer refers to a live statvfs.
     if unsafe { libc::statvfs(c.as_ptr(), &mut s) } != 0 {
         return Err(std::io::Error::last_os_error());
     }
@@ -1574,6 +1592,7 @@ pub mod contract_fixtures {
 
     impl Drop for PathGuard {
         fn drop(&mut self) {
+            // SAFETY: test fixture; environment writes are serialized by contract_fixtures::isolation_lock.
             unsafe {
                 std::env::set_var("PATH", &self.old);
             }
@@ -1583,6 +1602,7 @@ pub mod contract_fixtures {
     /// Меняет PATH; вызывать только под `isolation_lock` или из `with_prepend_path`.
     pub fn prepend_path(bin_dir: &Path) -> PathGuard {
         let old = std::env::var("PATH").unwrap_or_default();
+        // SAFETY: test fixture; environment writes are serialized by contract_fixtures::isolation_lock.
         unsafe {
             std::env::set_var("PATH", format!("{}:{}", bin_dir.display(), old));
         }
@@ -1616,6 +1636,7 @@ pub mod contract_fixtures {
             let key = key.as_ref();
             self.remember(key);
             // Environment mutation is serialized by the shared isolation_lock in fixture tests.
+            // SAFETY: test fixture; environment writes are serialized by contract_fixtures::isolation_lock.
             unsafe { std::env::set_var(key, value.as_ref()) };
         }
 
@@ -1623,6 +1644,7 @@ pub mod contract_fixtures {
             let key = key.as_ref();
             self.remember(key);
             // Environment mutation is serialized by the shared isolation_lock in fixture tests.
+            // SAFETY: test fixture; environment writes are serialized by contract_fixtures::isolation_lock.
             unsafe { std::env::remove_var(key) };
         }
     }
@@ -1631,6 +1653,7 @@ pub mod contract_fixtures {
         fn drop(&mut self) {
             for (key, value) in self.old.drain(..) {
                 // Environment mutation is serialized by the shared isolation_lock in fixture tests.
+                // SAFETY: test fixture; environment writes are serialized by contract_fixtures::isolation_lock.
                 unsafe {
                     if let Some(value) = value {
                         std::env::set_var(key, value);
@@ -1824,11 +1847,13 @@ mod contract_tests {
     // --- DATA-04 ---
     #[test]
     fn data04_unreadable_config_is_error_without_clobber() {
+        let _isolation = crate::common::contract_fixtures::isolation_lock();
         let base = std::env::temp_dir().join(format!("cm-conf-{}", std::process::id()));
         fs::create_dir_all(&base).unwrap();
         let conf = base.join("cm.conf");
         fs::write(&conf, "keep=7\n").unwrap();
         let before = fs::read_to_string(&conf).unwrap();
+        // SAFETY: test fixture; environment writes are serialized by contract_fixtures::isolation_lock.
         unsafe {
             std::env::set_var("CM_CONF", conf.to_str().unwrap());
         }
@@ -1838,6 +1863,7 @@ mod contract_tests {
         assert_eq!(fs::read_to_string(&conf).unwrap(), before);
         let c = Config::load(vec![]).unwrap();
         assert_eq!(c.keep, 7);
+        // SAFETY: test fixture; environment writes are serialized by contract_fixtures::isolation_lock.
         unsafe {
             std::env::remove_var("CM_CONF");
         }
@@ -2013,8 +2039,8 @@ mod atomic_write_tests {
         assert_eq!(fs::read(&link).unwrap(), b"replacement");
         let metadata = fs::metadata(&link).unwrap();
         assert_eq!(metadata.permissions().mode() & 0o777, 0o600);
-        assert_eq!(metadata.uid(), unsafe { libc::geteuid() });
-        assert_eq!(metadata.gid(), unsafe { libc::getegid() });
+        assert_eq!(metadata.uid(), crate::common::sys::euid());
+        assert_eq!(metadata.gid(), crate::common::sys::egid());
     }
 
     #[test]
@@ -2137,6 +2163,7 @@ mod pty_cloexec_tests {
     use std::time::{Duration, Instant};
 
     fn fd_is_cloexec(fd: std::os::fd::RawFd) -> bool {
+        // SAFETY: fcntl on an open fd borrowed for the call; F_GETFL/F_SETFL/F_GETFD do not access memory.
         let flags = unsafe { libc::fcntl(fd, libc::F_GETFD) };
         flags >= 0 && flags & libc::FD_CLOEXEC != 0
     }

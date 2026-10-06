@@ -129,6 +129,7 @@ impl OwnedChild {
     fn stop(&mut self) {
         // The leader is still unreaped, so its PID (and thus this PGID) cannot be reused.
         if let Some(group) = self.group.take() {
+            // SAFETY: sending a signal accesses no memory; the target group is a child we have not reaped yet.
             unsafe {
                 libc::kill(-group, libc::SIGKILL);
             }
@@ -145,7 +146,9 @@ impl Drop for OwnedChild {
     }
 }
 fn nonblocking(fd: i32) -> io::Result<()> {
+    // SAFETY: fcntl on an open fd borrowed for the call; F_GETFL/F_SETFL/F_GETFD do not access memory.
     let flags = unsafe { libc::fcntl(fd, libc::F_GETFL) };
+    // SAFETY: fcntl on an open fd borrowed for the call; F_GETFL/F_SETFL/F_GETFD do not access memory.
     if flags < 0 || unsafe { libc::fcntl(fd, libc::F_SETFL, flags | libc::O_NONBLOCK) } < 0 {
         return Err(io::Error::last_os_error());
     }
@@ -216,6 +219,7 @@ pub fn capture_with_policy(
     };
     if policy.own_group {
         let pid = owner.child.id() as i32;
+        // SAFETY: takes no pointers and accesses no memory.
         if unsafe { libc::getpgid(pid) } != pid {
             return Err(io_error(io::Error::other(
                 "probe process group was not established",
@@ -277,7 +281,9 @@ pub fn capture_with_policy(
                 limit: policy.stderr_max,
             });
         }
+        // SAFETY: plain C struct; the all-zero bit pattern is a valid value.
         let mut info: libc::siginfo_t = unsafe { std::mem::zeroed() };
+        // SAFETY: info is a live out-pointer; WNOWAIT leaves the child for Child::wait.
         let rc = unsafe {
             libc::waitid(
                 libc::P_PID,
@@ -292,6 +298,7 @@ pub fn capture_with_policy(
                 return Err(io_error(e));
             }
         }
+        // SAFETY: waitid filled info (or it stayed zeroed), so the SIGCHLD fields are initialized.
         if unsafe { info.si_pid() } != 0 {
             exited_at.get_or_insert_with(Instant::now);
         }
@@ -321,6 +328,7 @@ pub fn capture_with_policy(
         })
         .collect();
         // Once the leader exits, descendants may hold pipes; the bounded drain above closes them.
+        // SAFETY: the pollfd pointer and count describe live entries for the whole call.
         let rc = unsafe { libc::poll(fds.as_mut_ptr(), fds.len() as _, 20) };
         if rc < 0 {
             let e = io::Error::last_os_error();
@@ -359,6 +367,7 @@ mod tests {
     }
     #[test]
     fn sleeping_probe_times_out_and_preserves_caller_group() {
+        // SAFETY: takes no pointers and accesses no memory.
         let group = unsafe { libc::getpgrp() };
         let start = Instant::now();
         assert!(matches!(
@@ -366,6 +375,7 @@ mod tests {
             Err(CaptureError::Timeout(_))
         ));
         assert!(start.elapsed() < Duration::from_secs(2));
+        // SAFETY: takes no pointers and accesses no memory.
         assert_eq!(unsafe { libc::getpgrp() }, group);
     }
     #[test]
@@ -435,6 +445,7 @@ mod tests {
         };
         assert!(nonblocking(-1).is_err());
         drop(owner);
+        // SAFETY: signal 0 only checks whether the pid exists; no memory is accessed.
         assert_eq!(unsafe { libc::kill(pid, 0) }, -1);
     }
 }

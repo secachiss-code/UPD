@@ -155,6 +155,7 @@ impl HeldLocks {
         if !file.metadata().map_err(err)?.is_file() {
             return Err("lock is not a regular file".into());
         }
+        // SAFETY: flock on an open fd borrowed for the call; it accesses no memory.
         if unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) } != 0 {
             return Err(format!("migration busy: {}", path.display()));
         }
@@ -504,6 +505,7 @@ impl Executor {
             .open(path)
         {
             Ok(file) => {
+                // SAFETY: flock on an open fd borrowed for the call; it accesses no memory.
                 if unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_SH | libc::LOCK_NB) } != 0 {
                     return Err("migration in progress; command refused".into());
                 }
@@ -611,7 +613,7 @@ impl Executor {
                         relative: PathBuf::new(),
                         mode: 0o777,
                         uid: self.owner,
-                        gid: unsafe { libc::getegid() },
+                        gid: crate::common::sys::egid(),
                         kind: Kind::Link(target.clone()),
                     }],
                 },
@@ -630,7 +632,7 @@ impl Executor {
                             relative: PathBuf::new(),
                             mode: *mode,
                             uid: self.owner,
-                            gid: unsafe { libc::getegid() },
+                            gid: crate::common::sys::egid(),
                             kind: Kind::File {
                                 backup,
                                 sha256: hex(&Sha256::digest(bytes)),
@@ -971,6 +973,7 @@ fn sync(path: &Path) -> Result<()> {
 fn chown(path: &Path, uid: u32, gid: u32) -> Result<()> {
     use std::os::unix::ffi::OsStrExt;
     let name = std::ffi::CString::new(path.as_os_str().as_bytes()).map_err(err)?;
+    // SAFETY: name is a NUL-terminated CString alive for the call.
     if unsafe { libc::lchown(name.as_ptr(), uid, gid) } != 0 {
         return Err(err(std::io::Error::last_os_error()));
     }
@@ -1010,6 +1013,7 @@ fn atomic(path: &Path, bytes: &[u8], mode: u32, uid: u32, gid: u32) -> Result<()
         .map_err(err)?;
     let result = (|| {
         f.write_all(bytes).map_err(err)?;
+        // SAFETY: fchown on an open fd borrowed for the call; no pointers are passed.
         if unsafe { libc::fchown(f.as_raw_fd(), uid, gid) } != 0 {
             return Err(err(std::io::Error::last_os_error()));
         }

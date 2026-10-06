@@ -298,7 +298,7 @@ fn success_copies_bytes_owner_mode_and_service_state() {
     let target = d.at("var/lib/cm/vpn/config.yaml");
     let meta = fs::metadata(&target).unwrap();
     assert_eq!(fs::read(&target).unwrap(), b"credentials: sentinel\n");
-    assert_eq!(meta.uid(), unsafe { libc::getuid() });
+    assert_eq!(meta.uid(), cm::common::sys::uid());
     assert_eq!(meta.mode() & 0o777, 0o600);
     assert!(!d.at("var/lib/upd").exists());
     assert_eq!(sv.inspect(&old).unwrap(), ServiceState::default());
@@ -334,6 +334,7 @@ fn rejects_foreign_ancestor_and_busy_flock_without_mutation() {
         .open(&lock)
         .unwrap();
     assert_eq!(
+        // SAFETY: flock on an open fd borrowed for the call; it accesses no memory.
         unsafe {
             libc::flock(
                 std::os::fd::AsRawFd::as_raw_fd(&held),
@@ -358,6 +359,7 @@ fn rejects_foreign_ancestor_and_busy_flock_without_mutation() {
         .open(&legacy_lock)
         .unwrap();
     assert_eq!(
+        // SAFETY: flock on an open fd borrowed for the call; it accesses no memory.
         unsafe {
             libc::flock(
                 std::os::fd::AsRawFd::as_raw_fd(&held),

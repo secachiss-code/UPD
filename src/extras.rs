@@ -211,11 +211,11 @@ fn as_user_for_uid(current_uid: u32, user: &UserContext, cmd: &str, args: &[&str
     Ok((runner.into(), command))
 }
 fn as_user(user: &str, cmd: &str, args: &[&str]) -> Result<(String, Vec<String>), String> {
-    as_user_for_uid(unsafe { libc::geteuid() }, &UserContext::from_name(user)?, cmd, args)
+    as_user_for_uid(crate::common::sys::euid(), &UserContext::from_name(user)?, cmd, args)
 }
 
 pub fn aur_updates(user: &str) -> Result<Vec<String>, String> {
-    validate_aur_identity(unsafe { libc::geteuid() }, &UserContext::from_name(user)?)?;
+    validate_aur_identity(crate::common::sys::euid(), &UserContext::from_name(user)?)?;
     let Some(h) = aur_helper() else { return Ok(vec![]) };
     let (cmd, args) = as_user(user, h, &["-Qua"])?;
     let a: Vec<&str> = args.iter().map(String::as_str).collect();
@@ -355,7 +355,7 @@ pub fn aur_install(user: Option<&str>, pkgs: &[String]) -> Result<(), String> {
     if pkgs.is_empty() {
         return Err(t!("не указан пакет").into());
     }
-    let current_uid = unsafe { libc::geteuid() };
+    let current_uid = crate::common::sys::euid();
     let target = match user {
         Some(name) => UserContext::from_name(name)?,
         None if current_uid != 0 => UserContext::from_uid(current_uid)?,
@@ -643,10 +643,13 @@ mod contract_tests {
         let dir = bin_fixture("flatpak-absent");
         let _guard = DirGuard::new(dir.clone());
         let old_path = std::env::var_os("PATH");
+        // SAFETY: test fixture; environment writes are serialized by contract_fixtures::isolation_lock.
         unsafe { std::env::set_var("PATH", &dir); }
         let result = flatpak_updates(None);
         match old_path {
+            // SAFETY: test fixture; environment writes are serialized by contract_fixtures::isolation_lock.
             Some(path) => unsafe { std::env::set_var("PATH", path); },
+            // SAFETY: test fixture; environment writes are serialized by contract_fixtures::isolation_lock.
             None => unsafe { std::env::remove_var("PATH"); },
         }
         assert!(result.updates.is_empty());
@@ -748,7 +751,7 @@ mod contract_tests {
         write_executable(&dir.join("paru"), "#!/bin/sh\nexit 1\n");
         write_executable(&dir.join("runuser"), "#!/bin/sh\nshift; shift; shift; exec \"$@\"\n");
         let _g = DirGuard::new(dir.clone());
-        assert!(crate::common::contract_fixtures::with_prepend_path(&dir, || aur_updates(&UserContext::from_uid({ let uid = unsafe { libc::geteuid() }; if uid == 0 { 65534 } else { uid } }).unwrap().name)).unwrap().is_empty());
+        assert!(crate::common::contract_fixtures::with_prepend_path(&dir, || aur_updates(&UserContext::from_uid({ let uid = crate::common::sys::euid(); if uid == 0 { 65534 } else { uid } }).unwrap().name)).unwrap().is_empty());
     }
 
     #[test]
@@ -757,7 +760,7 @@ mod contract_tests {
         write_executable(&dir.join("paru"), "#!/bin/sh\necho 'error: failed to connect' >&2\nexit 1\n");
         write_executable(&dir.join("runuser"), "#!/bin/sh\nshift; shift; shift; exec \"$@\"\n");
         let _g = DirGuard::new(dir.clone());
-        let err = crate::common::contract_fixtures::with_prepend_path(&dir, || aur_updates(&UserContext::from_uid({ let uid = unsafe { libc::geteuid() }; if uid == 0 { 65534 } else { uid } }).unwrap().name)).unwrap_err();
+        let err = crate::common::contract_fixtures::with_prepend_path(&dir, || aur_updates(&UserContext::from_uid({ let uid = crate::common::sys::euid(); if uid == 0 { 65534 } else { uid } }).unwrap().name)).unwrap_err();
         assert!(err.contains("failed to connect"), "{err}");
     }
 
@@ -767,7 +770,7 @@ mod contract_tests {
         write_executable(&dir.join("paru"), "#!/bin/sh\nexit 0\n");
         write_executable(&dir.join("runuser"), "#!/bin/sh\nshift; shift; shift; exec \"$@\"\n");
         let _g = DirGuard::new(dir.clone());
-        let updates = crate::common::contract_fixtures::with_prepend_path(&dir, || aur_updates(&UserContext::from_uid({ let uid = unsafe { libc::geteuid() }; if uid == 0 { 65534 } else { uid } }).unwrap().name)).unwrap();
+        let updates = crate::common::contract_fixtures::with_prepend_path(&dir, || aur_updates(&UserContext::from_uid({ let uid = crate::common::sys::euid(); if uid == 0 { 65534 } else { uid } }).unwrap().name)).unwrap();
         assert!(updates.is_empty());
     }
 
@@ -777,7 +780,7 @@ mod contract_tests {
         write_executable(&dir.join("paru"), "#!/bin/sh\nexit 4\n");
         write_executable(&dir.join("runuser"), "#!/bin/sh\nshift; shift; shift; exec \"$@\"\n");
         let _g = DirGuard::new(dir.clone());
-        let err = crate::common::contract_fixtures::with_prepend_path(&dir, || aur_updates(&UserContext::from_uid({ let uid = unsafe { libc::geteuid() }; if uid == 0 { 65534 } else { uid } }).unwrap().name)).unwrap_err();
+        let err = crate::common::contract_fixtures::with_prepend_path(&dir, || aur_updates(&UserContext::from_uid({ let uid = crate::common::sys::euid(); if uid == 0 { 65534 } else { uid } }).unwrap().name)).unwrap_err();
         assert!(err.contains('4'), "{err}");
     }
 
@@ -822,7 +825,7 @@ mod aur_identity_tests {
     }
     #[test]
     fn current_user_runs_directly_and_keeps_arguments() {
-        let uid = unsafe { libc::geteuid() };
+        let uid = crate::common::sys::euid();
         if uid == 0 { return; } // Root switching is exercised separately, never run an AUR build as root.
         let user = UserContext::from_uid(uid).unwrap();
         let dir = TempDirGuard::new("aur-current-uid").unwrap();

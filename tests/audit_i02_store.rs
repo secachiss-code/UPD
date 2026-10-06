@@ -283,12 +283,14 @@ fn separate_store_handles_observe_one_cas_winner_and_busy_lock_is_bounded() {
         .open(root.join(".lock"))
         .unwrap();
     assert_eq!(
+        // SAFETY: flock on an open fd borrowed for the call; it accesses no memory.
         unsafe { libc::flock(external_lock.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) },
         0
     );
     assert!(matches!(busy.read_snapshot(), Err(StoreError::Busy)));
     drop(busy);
     assert_eq!(
+        // SAFETY: flock on an open fd borrowed for the call; it accesses no memory.
         unsafe { libc::flock(external_lock.as_raw_fd(), libc::LOCK_UN) },
         0
     );

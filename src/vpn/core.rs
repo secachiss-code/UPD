@@ -2,7 +2,7 @@
 
 /// Владелец сокета и процесса mihomo: служба работает от root; в тестах — текущий пользователь.
 fn service_uid() -> u32 {
-    if test_mode() { unsafe { libc::geteuid() } } else { 0 }
+    if test_mode() { crate::common::sys::euid() } else { 0 }
 }
 
 /// Сокет API — наш: сокет и его каталог принадлежат службе, каталог закрыт для группы и остальных.
@@ -25,6 +25,7 @@ fn peer_uid(s: &std::os::unix::net::UnixStream) -> Option<u32> {
     use std::os::fd::AsRawFd;
     let mut cred = libc::ucred { pid: 0, uid: 0, gid: 0 };
     let mut len = std::mem::size_of::<libc::ucred>() as libc::socklen_t;
+    // SAFETY: cred and len describe a live ucred-sized buffer.
     let r = unsafe { libc::getsockopt(s.as_raw_fd(), libc::SOL_SOCKET, libc::SO_PEERCRED, &mut cred as *mut _ as *mut libc::c_void, &mut len) };
     (r == 0).then_some(cred.uid)
 }

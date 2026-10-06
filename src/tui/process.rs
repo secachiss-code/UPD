@@ -124,8 +124,10 @@ impl ProcessSession {
     ) -> io::Result<Self> {
         // Отдельный терминал: sudo/pacman/apt видят настоящий TTY. Оба конца сразу с FD_CLOEXEC.
         let (master, slave) = cm::common::open_pty_pair(rows, cols)?;
+        // SAFETY: fcntl on an open fd borrowed for the call; F_GETFL/F_SETFL/F_GETFD do not access memory.
         let flags = unsafe { libc::fcntl(master.as_raw_fd(), libc::F_GETFL) };
         if flags < 0
+            // SAFETY: fcntl on an open fd borrowed for the call; F_GETFL/F_SETFL/F_GETFD do not access memory.
             || unsafe { libc::fcntl(master.as_raw_fd(), libc::F_SETFL, flags | libc::O_NONBLOCK) }
                 < 0
         {
@@ -142,6 +144,7 @@ impl ProcessSession {
         command.stdout(Stdio::from(cm::common::dup_cloexec(&slave)?));
         command.stderr(Stdio::from(slave));
         // Новый сеанс делает slave управляющим терминалом и сохраняет /dev/tty для дочерних программ.
+        // SAFETY: the closure only calls async-signal-safe setsid and ioctl(TIOCSCTTY) and allocates nothing.
         unsafe {
             command.pre_exec(|| {
                 if libc::setsid() < 0 || libc::ioctl(0, libc::TIOCSCTTY, 0) < 0 {
@@ -188,6 +191,7 @@ impl ProcessSession {
                         revents: 0,
                     },
                 ];
+                // SAFETY: the pollfd pointer and count describe live entries for the whole call.
                 if unsafe { libc::poll(fds.as_mut_ptr(), 2, -1) } < 0 {
                     if io::Error::last_os_error().kind() == io::ErrorKind::Interrupted {
                         continue;
@@ -231,6 +235,7 @@ impl ProcessSession {
                                 events: libc::POLLIN,
                                 revents: 0,
                             };
+                            // SAFETY: the pollfd pointer and count describe live entries for the whole call.
                             if unsafe { libc::poll(&mut wake_fd, 1, 10) } > 0 {
                                 return;
                             }
@@ -254,6 +259,7 @@ impl ProcessSession {
             Ok(reader) => reader,
             Err(error) => {
                 // The child is still owned/unreaped, so its PGID cannot be recycled.
+                // SAFETY: sending a signal accesses no memory; the target group is a child we have not reaped yet.
                 unsafe {
                     libc::killpg(pgid, libc::SIGKILL);
                 }
@@ -319,7 +325,9 @@ impl ProcessSession {
         }
         if self.exit_code.is_none() && !self.child_reaped {
             // Observe without reaping: reserve leader PID until group cleanup.
+            // SAFETY: plain C struct; the all-zero bit pattern is a valid value.
             let mut info: libc::siginfo_t = unsafe { std::mem::zeroed() };
+            // SAFETY: info is a live out-pointer; WNOWAIT leaves the child for Child::wait.
             if unsafe {
                 libc::waitid(
                     libc::P_PID,
@@ -331,7 +339,9 @@ impl ProcessSession {
             {
                 return Err(io::Error::last_os_error());
             }
+            // SAFETY: waitid filled info (or it stayed zeroed), so the SIGCHLD fields are initialized.
             if unsafe { info.si_pid() } != 0 {
+                // SAFETY: waitid filled info (or it stayed zeroed), so the SIGCHLD fields are initialized.
                 let status = unsafe { info.si_status() };
                 self.exit_code = Some(if info.si_code == libc::CLD_EXITED {
                     status
@@ -466,6 +476,7 @@ impl ProcessSession {
                         events: libc::POLLOUT,
                         revents: 0,
                     };
+                    // SAFETY: the pollfd pointer and count describe live entries for the whole call.
                     let result = unsafe {
                         libc::poll(&mut fd, 1, remaining.as_millis().saturating_add(1) as i32)
                     };
@@ -487,6 +498,7 @@ impl ProcessSession {
             ws_xpixel: 0,
             ws_ypixel: 0,
         };
+        // SAFETY: size is a live winsize; the fd is an open pty.
         if unsafe { libc::ioctl(self.master.as_raw_fd(), libc::TIOCSWINSZ, &size) } < 0 {
             return Err(io::Error::last_os_error());
         }
@@ -727,6 +739,7 @@ impl ProcessSession {
     }
     fn stop_reader(&mut self) {
         self.reader_stop.store(true, Ordering::Release);
+        // SAFETY: the pointer and length describe a live slice; MSG_NOSIGNAL prevents SIGPIPE.
         unsafe {
             libc::send(
                 self.wake.as_raw_fd(),
@@ -744,6 +757,7 @@ impl ProcessSession {
             return;
         }
         if self.group_is_ours() {
+            // SAFETY: sending a signal accesses no memory; the target group is a child we have not reaped yet.
             unsafe {
                 libc::killpg(self.pgid, libc::SIGKILL);
             }
@@ -887,6 +901,7 @@ mod tests {
     #[test]
     fn b06_drop_after_reader_exit_does_not_raise_sigpipe() {
         let _isolation = cm::common::contract_fixtures::isolation_lock();
+        // SAFETY: only switches SIGPIPE between SIG_DFL and a previous disposition; no Rust handler is installed.
         let old = unsafe { libc::signal(libc::SIGPIPE, libc::SIG_DFL) };
         let mut s = spawn_with("true", &[], 24, 80).unwrap();
         let t0 = Instant::now();
@@ -896,6 +911,7 @@ mod tests {
         }
         std::thread::sleep(std::time::Duration::from_millis(200));
         drop(s);
+        // SAFETY: only switches SIGPIPE between SIG_DFL and a previous disposition; no Rust handler is installed.
         unsafe { libc::signal(libc::SIGPIPE, old) };
     }
 

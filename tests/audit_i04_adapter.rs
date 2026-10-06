@@ -267,6 +267,7 @@ fn lease_lock_gives_up_instead_of_hanging() {
     std::fs::create_dir_all(&dir).unwrap();
     let registry = LeaseRegistry::create(&dir).unwrap();
     let holder = std::fs::File::open(dir.join("leases.lock")).unwrap();
+    // SAFETY: flock on an open fd borrowed for the call; it accesses no memory.
     assert_eq!(unsafe { libc::flock(holder.as_raw_fd(), libc::LOCK_EX) }, 0);
     let started = std::time::Instant::now();
     assert_eq!(registry.allocate("app-one", ResourceKind::Port).unwrap_err(), LeaseError::Busy);

@@ -217,7 +217,7 @@ pub fn read_secret_file(path: &std::path::Path) -> Result<String, ManualError> {
         return Err(ManualError::SecretUnreadable);
     }
     // SAFETY: geteuid has no preconditions and cannot fail.
-    let euid = unsafe { libc::geteuid() };
+    let euid = crate::common::sys::euid();
     if metadata.mode() & 0o077 != 0 || metadata.uid() != euid {
         return Err(ManualError::InsecureCredentialFile);
     }

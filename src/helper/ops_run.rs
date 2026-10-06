@@ -13,6 +13,7 @@ fn start_command(shared: &Shared, args: Vec<String>, p: Peer, lang: &str) -> Res
         }
     };
     let pgid = child.id() as i32;
+    // SAFETY: takes no pointers and accesses no memory.
     let actual_pgid = unsafe { libc::getpgid(pgid) };
     if actual_pgid != pgid {
         let error = if actual_pgid < 0 {
@@ -25,8 +26,11 @@ fn start_command(shared: &Shared, args: Vec<String>, p: Peer, lang: &str) -> Res
         finish(shared, &operation_id, 127);
         return Err(t!("не удалось запустить cm: {0}", error));
     }
+    // SAFETY: fcntl on an open fd borrowed for the call; F_GETFL/F_SETFL/F_GETFD do not access memory.
     let flags = unsafe { libc::fcntl(master.as_raw_fd(), libc::F_GETFL) };
+    // SAFETY: fcntl on an open fd borrowed for the call; F_GETFL/F_SETFL/F_GETFD do not access memory.
     if flags < 0 || unsafe { libc::fcntl(master.as_raw_fd(), libc::F_SETFL, flags | libc::O_NONBLOCK) } < 0 {
+        // SAFETY: sending a signal accesses no memory; the target group is a child we have not reaped yet.
         unsafe { libc::killpg(pgid, libc::SIGKILL) };
         let _ = child.kill(); let _ = child.wait(); finish(shared, &operation_id, 127);
         return Err("cannot configure nonblocking PTY input".into());
@@ -40,6 +44,7 @@ fn start_command(shared: &Shared, args: Vec<String>, p: Peer, lang: &str) -> Res
     let reader = match reader {
         Ok(reader) => reader,
         Err(error) => {
+            // SAFETY: sending a signal accesses no memory; the target group is a child we have not reaped yet.
             unsafe { libc::killpg(pgid, libc::SIGKILL) };
             let _ = child.kill();
             let _ = child.wait();
@@ -50,6 +55,7 @@ fn start_command(shared: &Shared, args: Vec<String>, p: Peer, lang: &str) -> Res
     let (wake_read, wake_write) = match UnixStream::pair() {
         Ok(pair) => pair,
         Err(error) => {
+            // SAFETY: sending a signal accesses no memory; the target group is a child we have not reaped yet.
             unsafe { libc::killpg(pgid, libc::SIGKILL) };
             let _ = child.kill();
             let _ = child.wait();
@@ -68,6 +74,7 @@ fn start_command(shared: &Shared, args: Vec<String>, p: Peer, lang: &str) -> Res
     }) {
         Ok(handle) => handle,
         Err(error) => {
+            // SAFETY: sending a signal accesses no memory; the target group is a child we have not reaped yet.
             unsafe { libc::killpg(pgid, libc::SIGKILL) };
             let _ = child.kill();
             let _ = child.wait();
@@ -88,6 +95,7 @@ fn start_command(shared: &Shared, args: Vec<String>, p: Peer, lang: &str) -> Res
         }
     };
     if !installed {
+        // SAFETY: sending a signal accesses no memory; the target group is a child we have not reaped yet.
         unsafe { libc::killpg(pgid, libc::SIGKILL) };
         let _ = child.kill();
         let _ = child.wait();
@@ -184,6 +192,7 @@ fn poll_until(fd: i32, events: i16, deadline: Instant) -> std::io::Result<i16> {
         }
         let timeout = remaining.as_millis().saturating_add(1).min(i32::MAX as u128) as i32;
         let mut descriptor = libc::pollfd { fd, events, revents: 0 };
+        // SAFETY: the pollfd pointer and count describe live entries for the whole call.
         let ready = unsafe { libc::poll(&mut descriptor, 1, timeout) };
         if ready > 0 {
             return Ok(descriptor.revents);
@@ -399,6 +408,7 @@ fn write_bytes_until(stream: &UnixStream, bytes: &[u8], deadline: Instant) -> st
     let mut written = 0usize;
     while written < bytes.len() {
         let _ = poll_until(stream.as_raw_fd(), libc::POLLOUT | libc::POLLERR | libc::POLLHUP, deadline)?;
+        // SAFETY: the pointer and length describe a live slice; MSG_NOSIGNAL prevents SIGPIPE.
         let result = unsafe {
             libc::send(
                 stream.as_raw_fd(),
@@ -487,6 +497,7 @@ fn wait_for_subscription(stream: &UnixStream, wake: &mut UnixStream) -> std::io:
         libc::pollfd { fd: wake.as_raw_fd(), events: libc::POLLIN | libc::POLLHUP | libc::POLLERR, revents: 0 },
     ];
     loop {
+        // SAFETY: the pollfd pointer and count describe live entries for the whole call.
         let ready = unsafe { libc::poll(descriptors.as_mut_ptr(), descriptors.len() as libc::nfds_t, -1) };
         if ready > 0 {
             break;
@@ -505,6 +516,7 @@ fn wait_for_subscription(stream: &UnixStream, wake: &mut UnixStream) -> std::io:
     }
     if peer & libc::POLLIN != 0 {
         let mut byte = 0u8;
+        // SAFETY: reads at most one byte into a live stack byte.
         let read = unsafe { libc::recv(stream.as_raw_fd(), &mut byte as *mut u8 as *mut libc::c_void, 1, libc::MSG_PEEK | libc::MSG_DONTWAIT) };
         if read >= 0 || std::io::Error::last_os_error().kind() != std::io::ErrorKind::WouldBlock {
             return Ok(false);
@@ -591,6 +603,7 @@ fn listener() -> Result<UnixListener, String> {
     let from_systemd = std::env::var("LISTEN_PID").ok().and_then(|p| p.parse::<u32>().ok()) == Some(std::process::id())
         && std::env::var("LISTEN_FDS").ok().and_then(|n| n.parse::<u32>().ok()).unwrap_or(0) >= 1;
     if from_systemd {
+        // SAFETY: LISTEN_PID/LISTEN_FDS name this process, so systemd passed the listener as fd 3 and nothing else owns it.
         return Ok(unsafe { UnixListener::from_raw_fd(3) });
     }
     let path = socket_path();
@@ -627,6 +640,7 @@ pub fn serve() -> i32 {
     let mut workers: Vec<(u32, ConnectionWorker)> = Vec::new();
     loop {
     let mut pfd = libc::pollfd { fd, events: libc::POLLIN, revents: 0 };
+        // SAFETY: the pollfd pointer and count describe live entries for the whole call.
         let r = unsafe { libc::poll(&mut pfd, 1, 1000) };
         if r <= 0 {
             let st = lock(&shared);
@@ -716,17 +730,21 @@ fn connect_once(req: &Request) -> Result<(BufReader<UnixStream>, Reply), String>
 fn connect_socket(path: &str, deadline: Instant) -> std::io::Result<UnixStream> {
     use std::os::fd::OwnedFd;
     let bytes = path.as_bytes();
+    // SAFETY: plain C struct; the all-zero bit pattern is a valid value.
     let mut address: libc::sockaddr_un = unsafe { std::mem::zeroed() };
     if bytes.len() >= address.sun_path.len() || bytes.contains(&0) {
         return Err(std::io::Error::new(std::io::ErrorKind::InvalidInput, "invalid helper socket path"));
     }
     address.sun_family = libc::AF_UNIX as _;
     for (target, byte) in address.sun_path.iter_mut().zip(bytes) { *target = *byte as _; }
+    // SAFETY: socket takes no pointers and returns a new fd or -1.
     let raw = unsafe { libc::socket(libc::AF_UNIX, libc::SOCK_STREAM | libc::SOCK_CLOEXEC | libc::SOCK_NONBLOCK, 0) };
     if raw < 0 { return Err(std::io::Error::last_os_error()); }
+    // SAFETY: the fd was just returned by the syscall above, checked >= 0, and nothing else owns it.
     let fd = unsafe { OwnedFd::from_raw_fd(raw) };
     loop {
         if Instant::now() >= deadline { return Err(std::io::Error::new(std::io::ErrorKind::TimedOut, "helper connect deadline exceeded")); }
+        // SAFETY: address is a fully initialized sockaddr_un and the length is its size.
         let rc = unsafe { libc::connect(fd.as_raw_fd(), &address as *const _ as *const libc::sockaddr, std::mem::size_of_val(&address) as _) };
         if rc == 0 { break; }
         let error = std::io::Error::last_os_error();
@@ -735,10 +753,12 @@ fn connect_socket(path: &str, deadline: Instant) -> std::io::Result<UnixStream> 
                 poll_until(fd.as_raw_fd(), libc::POLLOUT | libc::POLLERR | libc::POLLHUP, deadline)?;
                 let mut error = 0i32;
                 let mut len = std::mem::size_of_val(&error) as libc::socklen_t;
+                // SAFETY: error and len describe a live c_int buffer.
                 if unsafe { libc::getsockopt(fd.as_raw_fd(), libc::SOL_SOCKET, libc::SO_ERROR, &mut error as *mut _ as _, &mut len) } < 0 { return Err(std::io::Error::last_os_error()); }
                 if error != 0 { return Err(std::io::Error::from_raw_os_error(error)); }
                 break;
             }
+            // SAFETY: poll with zero descriptors is a plain sleep; the null pointer is never read.
             Some(libc::EAGAIN) | Some(libc::EINTR) => { unsafe { libc::poll(std::ptr::null_mut(), 0, 10); } }
             _ => return Err(error),
         }

@@ -304,6 +304,7 @@ impl TuiSession {
         let path = directory.join(format!("{}.lock", std::process::id()));
         let file = std::fs::OpenOptions::new().create(true).truncate(false).read(true).write(true).open(&path)?;
         std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o644))?;
+        // SAFETY: flock on an open fd borrowed for the call; it accesses no memory.
         if unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) } != 0 {
             return Err(std::io::Error::last_os_error());
         }
@@ -320,6 +321,7 @@ pub fn tui_running() -> bool {
     let Ok(entries) = std::fs::read_dir(directory) else { return false; };
     entries.flatten().any(|entry| {
         let Ok(file) = std::fs::File::open(entry.path()) else { return false; };
+        // SAFETY: flock on an open fd borrowed for the call; it accesses no memory.
         if unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_SH | libc::LOCK_NB) } == 0 {
             false
         } else {

@@ -312,7 +312,8 @@ impl Store {
             .map_err(|e| io_error(StoreIoOperation::Stat, e))?;
         verify_safe_ancestor(&parent_metadata, parent_path)?;
         let name = cstring(name)?;
-        let uid = unsafe { libc::geteuid() };
+        let uid = crate::common::sys::euid();
+        // SAFETY: the directory fd is open and every path is a NUL-terminated CString alive for the call.
         if unsafe { libc::mkdirat(parent_fd.as_raw_fd(), name.as_ptr(), STORE_DIRECTORY_MODE) } != 0
         {
             let error = io::Error::last_os_error();
@@ -334,6 +335,7 @@ impl Store {
         fchmod_exact(&root_fd, STORE_DIRECTORY_MODE)?;
         verify_directory(&root_fd, uid, STORE_DIRECTORY_MODE)?;
 
+        // SAFETY: the directory fd is open and every path is a NUL-terminated CString alive for the call.
         if unsafe {
             libc::mkdirat(
                 root_fd.as_raw_fd(),
@@ -400,7 +402,7 @@ impl Store {
         let path = validate_root_argument(root.as_ref())?;
         validate_ancestor_chain(&path)?;
         let root_fd = open_absolute_directory(&path)?;
-        let uid = unsafe { libc::geteuid() };
+        let uid = crate::common::sys::euid();
         verify_directory(&root_fd, uid, STORE_DIRECTORY_MODE)?;
         let credentials_fd = openat_file(
             &root_fd,
@@ -796,6 +798,7 @@ impl Store {
         };
         let start = Instant::now();
         loop {
+            // SAFETY: flock on an open fd borrowed for the call; it accesses no memory.
             let result = unsafe { libc::flock(lock.as_raw_fd(), operation | libc::LOCK_NB) };
             if result == 0 {
                 self.verify_bindings()?;
@@ -1079,6 +1082,7 @@ impl Store {
             let state_name = cstring(STATE_FILE)?;
             test_fault!(self, StateRename);
             let renamed = if old_state.is_none() {
+                // SAFETY: the directory fd is open and every path is a NUL-terminated CString alive for the call.
                 unsafe {
                     libc::syscall(
                         libc::SYS_renameat2,
@@ -1090,6 +1094,7 @@ impl Store {
                     ) as i32
                 }
             } else {
+                // SAFETY: the directory fd is open and every path is a NUL-terminated CString alive for the call.
                 unsafe {
                     libc::renameat(
                         self.root_fd.as_raw_fd(),
@@ -1150,6 +1155,7 @@ impl Store {
         if at_identity_optional(&self.root_fd, name).ok().flatten() == Some(identity)
             && let Ok(name) = cstring(name)
         {
+            // SAFETY: the directory fd is open and every path is a NUL-terminated CString alive for the call.
             unsafe {
                 libc::unlinkat(self.root_fd.as_raw_fd(), name.as_ptr(), 0);
             }
@@ -1374,6 +1380,7 @@ impl Store {
                 }
                 verify_private_file(&path_file, self.uid, PRIVATE_FILE_MODE)?;
                 let name = cstring(&blob_name(&credential_ref))?;
+                // SAFETY: the directory fd is open and every path is a NUL-terminated CString alive for the call.
                 if unsafe { libc::unlinkat(self.credentials_fd.as_raw_fd(), name.as_ptr(), 0) } != 0
                 {
                     let error = io::Error::last_os_error();
@@ -1407,6 +1414,7 @@ struct StoreLockGuard {
 
 impl Drop for StoreLockGuard {
     fn drop(&mut self) {
+        // SAFETY: flock on an open fd borrowed for the call; it accesses no memory.
         unsafe {
             libc::flock(self.file.as_raw_fd(), libc::LOCK_UN);
         }
@@ -1451,6 +1459,7 @@ fn open_absolute_directory(path: &Path) -> Result<File, StoreError> {
     let mut traversed = PathBuf::from("/");
     for (index, part) in parts.iter().enumerate() {
         let name = cstring_bytes(part.as_bytes())?;
+        // SAFETY: the directory fd is open and every path is a NUL-terminated CString alive for the call.
         let next_fd = unsafe {
             libc::openat(
                 current.as_raw_fd(),
@@ -1464,6 +1473,7 @@ fn open_absolute_directory(path: &Path) -> Result<File, StoreError> {
                 StoreIoOperation::Open,
             ));
         }
+        // SAFETY: the fd was just returned by the syscall above, checked >= 0, and nothing else owns it.
         let next = unsafe { File::from_raw_fd(next_fd) };
         traversed.push(part);
         let metadata = next
@@ -1481,6 +1491,7 @@ fn open_absolute_directory(path: &Path) -> Result<File, StoreError> {
 }
 
 fn open_path_root() -> Result<File, StoreError> {
+    // SAFETY: the directory fd is open and every path is a NUL-terminated CString alive for the call.
     let fd = unsafe {
         libc::open(
             c"/".as_ptr(),
@@ -1490,6 +1501,7 @@ fn open_path_root() -> Result<File, StoreError> {
     if fd < 0 {
         return Err(io_error(StoreIoOperation::Open, io::Error::last_os_error()));
     }
+    // SAFETY: the fd was just returned by the syscall above, checked >= 0, and nothing else owns it.
     Ok(unsafe { File::from_raw_fd(fd) })
 }
 
@@ -1511,7 +1523,7 @@ fn verify_safe_ancestor(metadata: &fs::Metadata, path: &Path) -> Result<(), Stor
         && metadata.uid() == 0
         && mode & 0o1000 != 0
         && mode & 0o0002 != 0;
-    let uid = unsafe { libc::geteuid() };
+    let uid = crate::common::sys::euid();
     if metadata.uid() != 0 && metadata.uid() != uid {
         return Err(StoreError::UnsafeFilesystem);
     }
@@ -1524,10 +1536,12 @@ fn verify_safe_ancestor(metadata: &fs::Metadata, path: &Path) -> Result<(), Stor
 fn openat_file(dir: &File, name: &str, flags: i32, mode: u32) -> io::Result<File> {
     let name =
         CString::new(name.as_bytes()).map_err(|_| io::Error::from(io::ErrorKind::InvalidInput))?;
+    // SAFETY: the directory fd is open and every path is a NUL-terminated CString alive for the call.
     let fd = unsafe { libc::openat(dir.as_raw_fd(), name.as_ptr(), flags, mode as libc::mode_t) };
     if fd < 0 {
         return Err(io::Error::last_os_error());
     }
+    // SAFETY: the fd was just returned by the syscall above, checked >= 0, and nothing else owns it.
     Ok(unsafe { File::from_raw_fd(fd) })
 }
 
@@ -1581,6 +1595,7 @@ fn file_stamp(metadata: &fs::Metadata) -> FileStamp {
 }
 
 fn fchmod_exact(file: &File, mode: u32) -> Result<(), StoreError> {
+    // SAFETY: fchmod on an open fd borrowed for the call; no pointers are passed.
     if unsafe { libc::fchmod(file.as_raw_fd(), mode as libc::mode_t) } != 0 {
         return Err(io_error(
             StoreIoOperation::Write,
@@ -1602,7 +1617,9 @@ fn file_identity(file: &File) -> Result<FileIdentity, StoreError> {
 
 fn at_identity(dir: &File, name: &str, directory: bool) -> Result<FileIdentity, StoreError> {
     let c_name = cstring(name)?;
+    // SAFETY: plain C struct; the all-zero bit pattern is a valid value.
     let mut stat: libc::stat = unsafe { std::mem::zeroed() };
+    // SAFETY: the directory fd is open and every path is a NUL-terminated CString alive for the call.
     if unsafe {
         libc::fstatat(
             dir.as_raw_fd(),
@@ -1631,7 +1648,9 @@ fn at_identity(dir: &File, name: &str, directory: bool) -> Result<FileIdentity, 
 
 fn at_identity_optional(dir: &File, name: &str) -> Result<Option<FileIdentity>, StoreError> {
     let c_name = cstring(name)?;
+    // SAFETY: plain C struct; the all-zero bit pattern is a valid value.
     let mut stat: libc::stat = unsafe { std::mem::zeroed() };
+    // SAFETY: the directory fd is open and every path is a NUL-terminated CString alive for the call.
     if unsafe {
         libc::fstatat(
             dir.as_raw_fd(),
@@ -1914,6 +1933,7 @@ pub(crate) fn fresh_id(graph: &GraphSnapshot, prefix: &str) -> Result<Id, StoreE
         let mut bytes = [0u8; 16];
         let mut filled = 0;
         while filled < bytes.len() {
+            // SAFETY: writes at most len bytes into the unfilled tail of the live buffer.
             let got = unsafe {
                 libc::getrandom(bytes[filled..].as_mut_ptr().cast(), bytes.len() - filled, 0)
             };

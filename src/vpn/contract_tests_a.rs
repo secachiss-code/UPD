@@ -43,6 +43,7 @@
             let mut saved = Vec::new();
             for (k, v) in pairs {
                 saved.push((k.to_string(), std::env::var(k).ok()));
+                // SAFETY: test fixture; environment writes are serialized by contract_fixtures::isolation_lock.
                 unsafe {
                     std::env::set_var(k, v);
                 }
@@ -55,9 +56,11 @@
         fn drop(&mut self) {
             for (k, v) in &self.saved {
                 match v {
+                    // SAFETY: test fixture; environment writes are serialized by contract_fixtures::isolation_lock.
                     Some(val) => unsafe {
                         std::env::set_var(k, val);
                     },
+                    // SAFETY: test fixture; environment writes are serialized by contract_fixtures::isolation_lock.
                     None => unsafe {
                         std::env::remove_var(k);
                     },

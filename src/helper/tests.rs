@@ -483,11 +483,17 @@ mod frame_tests {
     #[test]
     fn full_pty_input_expires_without_blocking_state_or_cancel() {
         let (mut input, slave) = open_pty_pair(24, 80).unwrap();
+        // SAFETY: plain C struct; the all-zero bit pattern is a valid value.
         let mut attributes: libc::termios = unsafe { std::mem::zeroed() };
+        // SAFETY: attributes is a live termios and the fd is an open terminal.
         assert_eq!(unsafe { libc::tcgetattr(slave.as_raw_fd(), &mut attributes) }, 0);
+        // SAFETY: attributes is a live termios and the fd is an open terminal.
         unsafe { libc::cfmakeraw(&mut attributes); }
+        // SAFETY: attributes is a live termios and the fd is an open terminal.
         assert_eq!(unsafe { libc::tcsetattr(slave.as_raw_fd(), libc::TCSANOW, &attributes) }, 0);
+        // SAFETY: fcntl on an open fd borrowed for the call; F_GETFL/F_SETFL/F_GETFD do not access memory.
         let flags = unsafe { libc::fcntl(input.as_raw_fd(), libc::F_GETFL) };
+        // SAFETY: fcntl on an open fd borrowed for the call; F_GETFL/F_SETFL/F_GETFD do not access memory.
         assert_eq!(unsafe { libc::fcntl(input.as_raw_fd(), libc::F_SETFL, flags | libc::O_NONBLOCK) }, 0);
         let fill = vec![b'x'; 8192]; let fill_deadline = Instant::now() + Duration::from_secs(2);
         let mut full_rounds = 0;
