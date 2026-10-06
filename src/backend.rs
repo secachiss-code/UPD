@@ -1608,8 +1608,9 @@ mod contract_tests {
     // --- CM-05 ---
     #[test]
     fn upd05_zypper_failure_is_not_empty_list() {
-        let bin = std::env::temp_dir().join(format!("cm-zypper-bin-{}", std::process::id()));
-        fs::create_dir_all(&bin).unwrap();
+        // Unique private directory, removed on drop: the fake zypper is first in PATH.
+        let guard = crate::common::contract_fixtures::TempDirGuard::new("cm-zypper-bin").unwrap();
+        let bin = guard.path().to_path_buf();
         write_executable(&bin.join("zypper"), "#!/bin/sh\nexit 9\n");
         let err = crate::common::contract_fixtures::with_prepend_path(&bin, || Rpm::zypper(&zypper_osr()).updates()).unwrap_err();
         assert!(err.contains("9"), "ожидали код ошибки в сообщении: {err}");
@@ -1617,16 +1618,18 @@ mod contract_tests {
 
     #[test]
     fn upd05_zypper_empty_stdout_is_ok() {
-        let bin = std::env::temp_dir().join(format!("cm-zypper-empty-{}", std::process::id()));
-        fs::create_dir_all(&bin).unwrap();
+        // Unique private directory, removed on drop: the fake zypper is first in PATH.
+        let guard = crate::common::contract_fixtures::TempDirGuard::new("cm-zypper-empty").unwrap();
+        let bin = guard.path().to_path_buf();
         write_executable(&bin.join("zypper"), "#!/bin/sh\nexit 0\n");
         assert!(crate::common::contract_fixtures::with_prepend_path(&bin, || Rpm::zypper(&zypper_osr()).updates()).unwrap().is_empty());
     }
 
     #[test]
     fn upd05_zypper_parses_update_lines() {
-        let bin = std::env::temp_dir().join(format!("cm-zypper-parse-{}", std::process::id()));
-        fs::create_dir_all(&bin).unwrap();
+        // Unique private directory, removed on drop: the fake zypper is first in PATH.
+        let guard = crate::common::contract_fixtures::TempDirGuard::new("cm-zypper-parse").unwrap();
+        let bin = guard.path().to_path_buf();
         write_executable(
             &bin.join("zypper"),
             "#!/bin/sh\necho 'v | i | nano | 7.2-1.1 | 7.2-1.2 | repo'\nexit 0\n",
