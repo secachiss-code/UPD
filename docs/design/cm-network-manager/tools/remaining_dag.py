@@ -44,6 +44,8 @@ DONE = [
     "I03.T04.i", "I03.T04.j", "I03.T04.k", "I03.T04.l", "I03.T04.m", "I03.T04.n",
     "I03.T04.o", "I03.T04.q", "I03.T04.r", "I03.T04.s", "I03.T04.t", "I03.T04.u",
     "I03.T04.v", "I03.T04.w",
+    # Блок 3, часть 1 (Grok + доводка координатором): REVIEW-2026-10-06-BLOCK3-PART1.md.
+    "H.12", "I03.T05.b",
 ]
 
 MILESTONES = []  # (id, title, priority, lane, deps_text, goal, questions, gate)
