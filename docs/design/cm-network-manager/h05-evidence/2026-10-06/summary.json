@@ -1,0 +1,17 @@
+{
+  "stage": "H.05.b",
+  "date": "2026-10-06",
+  "status": "READY_FOR_COORDINATOR_REVIEW",
+  "git_revision": "f41537ba172958e00a48c86f6626aa29e7a25805",
+  "dirty_tree": true,
+  "cargo_lock_sha256": "db485e8ee68cda6cf38c8d021d0e2607d3bf806b59016612768c0915c5cd6e83",
+  "added": [
+    "saphyr-parser 0.1.0 (MIT OR Apache-2.0, no build.rs, no encoding feature)",
+    "arraydeque 0.5.1 (MIT/Apache-2.0), required by saphyr-parser"
+  ],
+  "removed_direct": "unsafe-libyaml is no longer a direct dependency of cm. serde_yaml still pulls it for src/vpn.rs until H.06.",
+  "import_path": "yaml_guard walks saphyr_parser::Parser::next_event. parse_yaml still uses serde_yaml::Deserializer and StrictValueSeed, so a duplicate key stays ParserError::DuplicateKey without the key text. Yaml::load_from_str is not used.",
+  "tests": "4 yaml_guard tests and 9 audit_i03_native tests passed",
+  "cosmic_lock": "cosmic/Cargo.lock gains the same two crates on the path dependency cm. Other pins were not moved.",
+  "raw_logs": "not stored in git; D8 is still open"
+}

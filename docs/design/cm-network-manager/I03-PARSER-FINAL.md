@@ -8,7 +8,7 @@
 
 | Формат | Вход | Код |
 |---|---|---|
-| mihomo YAML / JSON | `parse_native`; один ведущий BOM снимается; YAML через потоковый guard | `src/sources/parser/native/` |
+| mihomo YAML / JSON | `parse_native`; один ведущий BOM снимается; YAML-guard читает `saphyr_parser::Parser::next_event`, дерево и дубль ключа остаются на `StrictValueSeed` | `src/sources/parser/yaml_guard.rs`, `native/` |
 | Список URI | `parse_uri_list(UriList)`; каждая строка — тот же валидатор узла, что native | `src/sources/parser/list.rs` |
 | base64-список | std и url-safe алфавит, padding необязателен, переносы строк допустимы; не больше двух слоёв | `list.rs` |
 | Автоопределение | `detect_body` + `parse_source`; используется `pipeline::negotiate_source` | `list.rs`, `pipeline.rs` |
@@ -58,4 +58,4 @@ CLI-подкоманда `cm source add-server` в `main.rs` не подключ
 ## Открыто
 
 - `.w` — прогнать с `CM_TEST_MIHOMO`, когда доступен бинарник ядра pinned версии.
-- `H.05.b` — миграция YAML на saphyr (`cargo fetch` разрешён 2026-10-06).
+- `H.05.b` — код guard на `saphyr-parser` 0.1.0 написан, ждёт ревью координатора. Прямой `unsafe-libyaml` из пути импорта убран. Транзитивный остаётся, пока `src/vpn.rs` на `serde_yaml` (до H.06). `Yaml::load_from_str` не используется. Feature `encoding` не включена.
