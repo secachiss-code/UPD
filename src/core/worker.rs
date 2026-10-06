@@ -7,6 +7,24 @@ use serde_json::{Map, Value};
 
 const FORBIDDEN: &[&str] = &["auto-route", "auto-redirect", "dns-hijack"];
 
+/// mihomo keys that open a listener or controller outside the leased one. A worker owns
+/// exactly one leased loopback inbound; any of these is refused, never dropped.
+const HOST_LISTENER_KEYS: &[&str] = &[
+    "mixed-port",
+    "socks-port",
+    "redir-port",
+    "tproxy-port",
+    "external-controller",
+    "external-controller-tls",
+    "external-controller-unix",
+    "external-controller-pipe",
+    "external-ui",
+    "allow-lan",
+    "bind-address",
+    "tun",
+    "tunnels",
+];
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum WorkerError {
     Forbidden,
@@ -68,15 +86,27 @@ fn reject_foreign_listeners(value: &Value, leased_port: u16) -> Result<(), Worke
     let Some(object) = value.as_object() else {
         return Ok(());
     };
-    if let Some(listen) = object.get("listen").and_then(Value::as_str) {
-        if listen != "127.0.0.1" && listen != "localhost" {
-            return Err(WorkerError::ExternalListener);
-        }
+    if object.keys().any(|key| HOST_LISTENER_KEYS.contains(&key.as_str())) {
+        return Err(WorkerError::ExternalListener);
     }
-    if let Some(port) = object.get("port").and_then(Value::as_u64) {
-        if port != u64::from(leased_port) {
-            return Err(WorkerError::UnleasedListener);
-        }
+    // Resolver settings are allowed; a DNS *listener* is not.
+    if object
+        .get("dns")
+        .and_then(Value::as_object)
+        .is_some_and(|dns| dns.contains_key("listen"))
+    {
+        return Err(WorkerError::ExternalListener);
+    }
+    if let Some(listen) = object.get("listen")
+        && !matches!(listen.as_str(), Some("127.0.0.1" | "localhost"))
+    {
+        return Err(WorkerError::ExternalListener);
+    }
+    // Any port that is not exactly the leased number (including `"7890"` as a string).
+    if let Some(port) = object.get("port")
+        && port.as_u64() != Some(u64::from(leased_port))
+    {
+        return Err(WorkerError::UnleasedListener);
     }
     if let Some(listeners) = object.get("listeners").and_then(Value::as_array) {
         for listener in listeners {

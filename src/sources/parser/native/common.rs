@@ -218,27 +218,6 @@ pub(crate) fn parse_json(bytes: &[u8]) -> Result<Value, ParserError> {
     }
 }
 
-pub(crate) fn parse_yaml(text: &str) -> Result<Value, ParserError> {
-    let mut documents = serde_yaml::Deserializer::from_str(text);
-    let Some(document) = documents.next() else {
-        return Err(ParserError::InvalidSyntax);
-    };
-    let mut budget = ParseBudget::default();
-    let parsed = StrictValueSeed {
-        budget: &mut budget,
-        depth: 1,
-    }
-    .deserialize(document);
-    let value = match parsed {
-        Ok(value) => value,
-        Err(_) => return Err(budget.failure.unwrap_or(ParserError::InvalidSyntax)),
-    };
-    if documents.next().is_some() {
-        return Err(ParserError::MultipleDocuments);
-    }
-    Ok(value.into_json())
-}
-
 pub(crate) fn required_string<'a>(
     object: &'a serde_json::Map<String, Value>,
     field: &str,

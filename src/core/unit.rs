@@ -5,6 +5,10 @@
 
 use super::instance::{InstanceId, SYSTEM_ROOT};
 
+/// Verified core binaries live outside every instance's writable directory: a compromised
+/// core cannot replace the binary it will be restarted from.
+pub const CORE_BIN: &str = "/var/lib/cm/cores/mihomo/mihomo";
+
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct NetPrivileges {
     pub admin: bool,
@@ -20,6 +24,12 @@ pub fn render_core_unit(id: &InstanceId, privileges: NetPrivileges) -> String {
     } else {
         format!("CapabilityBoundingSet={caps}\nAmbientCapabilities={caps}\n")
     };
+    // TUN needs /dev/net/tun only when the instance may administer the network.
+    let device_lines = if privileges.admin {
+        "DevicePolicy=closed\nDeviceAllow=/dev/net/tun rw\n"
+    } else {
+        "PrivateDevices=yes\n"
+    };
     format!(
         "[Unit]\n\
          Description=cm core instance {id}\n\
@@ -28,7 +38,7 @@ pub fn render_core_unit(id: &InstanceId, privileges: NetPrivileges) -> String {
          \n\
          [Service]\n\
          Type=simple\n\
-         ExecStart=/var/lib/cm/instances/{id}/bin/mihomo -d {root} -f {root}/config/config.yaml\n\
+         ExecStart={bin} -d {root} -f {root}/config/config.yaml\n\
          Restart=on-failure\n\
          RestartSec=5\n\
          TimeoutStartSec=5min\n\
@@ -44,10 +54,22 @@ pub fn render_core_unit(id: &InstanceId, privileges: NetPrivileges) -> String {
          PrivateTmp=yes\n\
          ProtectKernelModules=yes\n\
          ProtectControlGroups=yes\n\
+         ProtectKernelTunables=yes\n\
+         ProtectKernelLogs=yes\n\
+         ProtectClock=yes\n\
+         ProtectHostname=yes\n\
+         RestrictNamespaces=yes\n\
+         RestrictRealtime=yes\n\
+         RestrictSUIDSGID=yes\n\
+         LockPersonality=yes\n\
+         SystemCallArchitectures=native\n\
+         RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK\n\
+         {device_lines}\
          \n\
          [Install]\n\
          WantedBy=multi-user.target\n",
         id = id.as_str(),
+        bin = CORE_BIN,
     )
 }
 

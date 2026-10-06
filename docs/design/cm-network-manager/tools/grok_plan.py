@@ -26,18 +26,14 @@ P0_TASKS = {"H.05.b", "H.09", "H.12", "V.02", "V.04", "I04.T04.c", "I05.T04.a", 
 
 # Задачи, которые решает или выполняет не Grok.
 USER_DECIDES = {
-    "H.08": "пользователь решает (D8); Grok готовит предложение",
-    "H.10": "пользователь решает (D9, внешнее действие); Grok пишет workflow после решения",
-    "V.01": "Grok пишет ADR; пользователь решает D7",
+    "H.10": "workflow готов (D9); зелёный прогон — после push пользователем",
     "I08.T01.a": "Grok готовит варианты Q09; пользователь решает",
-    "I15-R.T01.a": "Grok готовит формулировки Q01; пользователь решает",
     "I15-R.T04.a": "Grok исследует; пользователь решает Q26/Q27",
     "I15-R.T05.a": "Grok пишет ADR; пользователь утверждает go/no-go",
     "I18.T05.a": "пользователь: ready/blocked",
-    "X.01": "пользователь: разрешение и среда установки (D10)",
 }
 ON_HOST = {"X.02", "X.03", "X.04", "X.05", "X.06", "X.08", "V.05"}
-NEEDS_HARNESS_DECISION = "H.11"  # D6: rootless netns или VM
+NEEDS_HARNESS_DECISION = "H.11"  # D6 принято: rootless netns; осталось — сценарий с ядром
 
 
 def executor(task):
@@ -47,7 +43,7 @@ def executor(task):
     if tid in ON_HOST:
         return "пользователь на хосте выполняет; Grok готовит driver и разбирает evidence"
     if tid == NEEDS_HARNESS_DECISION:
-        return "Grok, после выбора среды пользователем (D6)"
+        return "Grok: сценарий с тестовым сервером ядра на основе tests/netharness (D6 принято)"
     return "Grok"
 
 
@@ -132,7 +128,7 @@ def main():
     for tid, text in USER_DECIDES.items():
         if tid not in DONE:
             w(f"| `{tid}` | {text} |")
-    w(f"| `{NEEDS_HARNESS_DECISION}` | D6: среда сетевых проверок (rootless netns или VM) — блокирует все L2 |")
+    w(f"| `{NEEDS_HARNESS_DECISION}` | D6 принято (rootless netns); для сценария с ядром нужен бинарник mihomo/xray |")
     w("| `X.*`, `V.05` | выполнение на реальном хосте по поручению |")
     covered = set(USER_DECIDES) | {NEEDS_HARNESS_DECISION}
     for d in PLAN["decisions"]:

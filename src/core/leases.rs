@@ -247,6 +247,7 @@ fn publish(path: &Path, document: &Document) -> Result<(), LeaseError> {
         .create(true)
         .truncate(true)
         .mode(FILE_MODE)
+        .custom_flags(libc::O_NOFOLLOW | libc::O_CLOEXEC)
         .open(&temp)
         .map_err(|_| LeaseError::Io)?;
     write_document(&mut file, document)?;
@@ -258,12 +259,24 @@ fn publish(path: &Path, document: &Document) -> Result<(), LeaseError> {
     Ok(())
 }
 
+/// A hung holder must not stall every allocation: give up after this long.
+const LOCK_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
+
 fn lock_exclusive(file: &File) -> Result<(), LeaseError> {
-    let result = unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX) };
-    if result == 0 {
-        Ok(())
-    } else {
-        Err(LeaseError::Io)
+    let deadline = std::time::Instant::now() + LOCK_TIMEOUT;
+    loop {
+        // SAFETY: flock on an fd owned by `file`; LOCK_NB never blocks.
+        if unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) } == 0 {
+            return Ok(());
+        }
+        let error = std::io::Error::last_os_error();
+        if error.raw_os_error() != Some(libc::EWOULDBLOCK) {
+            return Err(LeaseError::Io);
+        }
+        if std::time::Instant::now() >= deadline {
+            return Err(LeaseError::Busy);
+        }
+        std::thread::sleep(std::time::Duration::from_millis(10));
     }
 }
 
@@ -273,6 +286,7 @@ pub enum LeaseError {
     Exhausted,
     Conflict,
     Corrupt,
+    Busy,
     Io,
 }
 
@@ -283,6 +297,7 @@ impl std::fmt::Display for LeaseError {
             Self::Exhausted => "lease pool is exhausted",
             Self::Conflict => "lease update conflicted",
             Self::Corrupt => "lease table is corrupt",
+            Self::Busy => "lease table is locked by another holder",
             Self::Io => "lease table operation failed",
         })
     }

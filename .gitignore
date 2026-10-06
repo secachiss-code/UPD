@@ -45,3 +45,10 @@ AGENTS.md
 __pycache__/
 *.py[cod]
 .audit/
+
+# D8 (2026-10-06): evidence keeps only summary.json + hashes in git; raw build/test logs stay
+# outside the tree. Already committed logs are untouched (rule applies to new evidence).
+docs/design/cm-network-manager/**/*-evidence/**/*.log
+docs/design/cm-network-manager/**/*-evidence/**/*.exit
+docs/design/cm-network-manager/*-evidence/**/*.log
+docs/design/cm-network-manager/*-evidence/**/*.exit

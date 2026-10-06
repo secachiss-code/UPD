@@ -1,0 +1,55 @@
+# Local gate in CI (decision D9, 2026-10-06). No installation, no host network changes,
+# no secrets: only build, tests, clippy/rustfmt of new modules, script syntax.
+name: check
+
+on:
+  push:
+    branches: [master, "feature/**"]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: check-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  cm:
+    name: cm (musl, tests, clippy, rustfmt)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - name: Toolchain
+        run: |
+          rustup toolchain install stable --profile minimal --component clippy,rustfmt
+          rustup target add x86_64-unknown-linux-musl
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends musl-tools
+      - name: Fetch locked dependencies
+        run: cargo fetch --locked
+      - name: Gate without COSMIC
+        env:
+          CM_SKIP_COSMIC: "1"
+        run: sh tests/check_audit.sh
+
+  cosmic:
+    name: COSMIC applet
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    # The applet needs Wayland/xkb system libraries; a failure here is reported, not hidden.
+    steps:
+      - uses: actions/checkout@v4
+      - name: Toolchain and system libraries
+        run: |
+          rustup toolchain install stable --profile minimal
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libxkbcommon-dev libwayland-dev libinput-dev libudev-dev libseat-dev pkg-config
+      - name: Build and test
+        working-directory: cosmic
+        run: |
+          cargo fetch --locked
+          cargo build --locked --offline --target x86_64-unknown-linux-gnu
+          cargo test --locked --offline --target x86_64-unknown-linux-gnu

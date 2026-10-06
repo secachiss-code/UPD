@@ -21,7 +21,7 @@ use crate::sources::capabilities::{
 };
 use common::{
     MAX_NAME_BYTES, build_fixture_opts, fixture_opts_definition_digest, map_capability, parse_json,
-    parse_yaml, required_host, required_port, required_string,
+    required_host, required_port, required_string,
 };
 use serde_json::Value;
 use sha2::{Digest, Sha256};
@@ -200,8 +200,8 @@ pub fn parse_native(
     let parsed = match format {
         ImportFormat::MihomoJson => parse_json(text.as_bytes())?,
         ImportFormat::MihomoYaml => {
-            yaml_guard::validate(text.as_bytes()).map_err(map_yaml_guard_error)?;
-            parse_yaml(text)?
+            // One saphyr event stream is both checked and loaded (no second YAML parser).
+            yaml_guard::load(text.as_bytes()).map_err(map_yaml_guard_error)?
         }
         _ => return Err(ParserError::UnsupportedFormat),
     };
@@ -475,6 +475,7 @@ fn map_yaml_guard_error(error: yaml_guard::GuardError) -> ParserError {
         yaml_guard::GuardError::UnsupportedYaml => ParserError::YamlFeaturesRejected,
         yaml_guard::GuardError::TooDeep => ParserError::TooDeep,
         yaml_guard::GuardError::TooManyValues => ParserError::TooManyEntries,
+        yaml_guard::GuardError::DuplicateKey => ParserError::DuplicateKey,
     }
 }
 

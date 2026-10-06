@@ -219,3 +219,59 @@ fn worker_generator_rejects_host_routing_and_foreign_listeners() {
     assert!(!config.contains("dns-hijack"));
     assert!(!config.contains("0.0.0.0"));
 }
+
+// ---- Coordinator review 2026-10-06 ----
+
+#[test]
+fn worker_refuses_every_host_listener_key() {
+    use cm::core::{WorkerError, generate_worker};
+    use serde_json::json;
+    for requested in [
+        json!({"mixed-port": 7890}),
+        json!({"socks-port": 7891}),
+        json!({"external-controller": "0.0.0.0:9090"}),
+        json!({"allow-lan": true}),
+        json!({"tun": {"enable": true}}),
+        json!({"dns": {"listen": "0.0.0.0:53"}}),
+        json!({"listeners": [{"listen": "127.0.0.1", "port": "7890"}]}),
+        json!({"listeners": [{"listen": "::", "port": 20000}]}),
+    ] {
+        let error = generate_worker(&requested, 20000).unwrap_err();
+        assert!(matches!(error, WorkerError::ExternalListener | WorkerError::UnleasedListener), "{requested}");
+    }
+    generate_worker(&json!({"dns": {"nameserver": ["1.1.1.1"]}}), 20000).expect("resolver settings are not a listener");
+}
+
+#[test]
+fn core_unit_runs_binary_outside_writable_paths() {
+    use cm::core::{InstanceId, NetPrivileges, render_core_unit};
+    let id = InstanceId::new("app-one").unwrap();
+    let unit = render_core_unit(&id, NetPrivileges { admin: true, raw: false, bind_service: false });
+    let exec = unit.lines().find(|line| line.starts_with("ExecStart=")).unwrap();
+    let rw = unit.lines().find(|line| line.starts_with("ReadWritePaths=")).unwrap();
+    let binary = exec.trim_start_matches("ExecStart=").split_whitespace().next().unwrap();
+    assert!(!binary.starts_with(rw.trim_start_matches("ReadWritePaths=-")), "{exec} / {rw}");
+    for directive in ["ProtectKernelTunables=yes", "RestrictNamespaces=yes", "DeviceAllow=/dev/net/tun rw", "SystemCallArchitectures=native"] {
+        assert!(unit.contains(directive), "{directive}");
+    }
+    let plain = render_core_unit(&id, NetPrivileges::default());
+    assert!(plain.contains("PrivateDevices=yes") && plain.contains("CapabilityBoundingSet=\n"));
+}
+
+#[test]
+fn lease_lock_gives_up_instead_of_hanging() {
+    use cm::core::{LeaseError, LeaseRegistry, ResourceKind};
+    use std::os::fd::AsRawFd;
+    let dir = std::env::temp_dir().join(format!("cm-i04-lease-lock-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let registry = LeaseRegistry::create(&dir).unwrap();
+    let holder = std::fs::File::open(dir.join("leases.lock")).unwrap();
+    assert_eq!(unsafe { libc::flock(holder.as_raw_fd(), libc::LOCK_EX) }, 0);
+    let started = std::time::Instant::now();
+    assert_eq!(registry.allocate("app-one", ResourceKind::Port).unwrap_err(), LeaseError::Busy);
+    assert!(started.elapsed() < std::time::Duration::from_secs(10));
+    drop(holder);
+    registry.allocate("app-one", ResourceKind::Port).unwrap();
+    let _ = std::fs::remove_dir_all(dir);
+}
