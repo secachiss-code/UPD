@@ -1,0 +1,44 @@
+[
+  {
+    "name": "host-off",
+    "host": "off",
+    "apps": "separate",
+    "condition": "unknown",
+    "axes": { "net": "unknown", "region": "unknown", "state": "unknown", "app": "unknown" }
+  },
+  {
+    "name": "host-proxy",
+    "host": "proxy",
+    "apps": "separate",
+    "condition": "degraded",
+    "axes": { "net": "partial", "region": "verified", "state": "verified", "app": "unknown" }
+  },
+  {
+    "name": "host-tunnel",
+    "host": "tunnel",
+    "apps": "shared",
+    "condition": "unknown",
+    "axes": { "net": "verified", "region": "partial", "state": "partial", "app": "partial" }
+  },
+  {
+    "name": "apps-separate-blocked",
+    "host": "tunnel",
+    "apps": "separate",
+    "condition": "blocked",
+    "axes": { "net": "blocked", "region": "blocked", "state": "blocked", "app": "blocked" }
+  },
+  {
+    "name": "host-off-app-active",
+    "host": "off",
+    "apps": "separate",
+    "condition": "degraded",
+    "axes": { "net": "blocked", "region": "error", "state": "verified", "app": "verified" }
+  },
+  {
+    "name": "shared-unknown",
+    "host": "proxy",
+    "apps": "shared",
+    "condition": "unknown",
+    "axes": { "net": "error", "region": "unknown", "state": "error", "app": "error" }
+  }
+]
