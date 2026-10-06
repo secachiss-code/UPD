@@ -54,7 +54,7 @@ fn core_harness_reaches_remote_through_generated_worker() {
     drop(file);
     let script = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/netharness/core.sh");
     let output = Command::new("timeout")
-        .args(["90", "unshare", "-rn", "sh", script])
+        .args(["140", "unshare", "-rn", "sh", script])
         .env("CM_TEST_MIHOMO", &mihomo)
         .env("CM_TEST_WORKER_CONFIG", &config)
         .output()

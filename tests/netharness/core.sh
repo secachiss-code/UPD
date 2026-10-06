@@ -24,9 +24,9 @@ cleanup() {
 }
 trap cleanup EXIT
 
-unshare -n sh -c 'echo $$ > "$0"; exec sleep 80' "$base/remote.pid" &
+unshare -n sh -c 'echo $$ > "$0"; exec sleep 150' "$base/remote.pid" &
 holder_r=$!
-unshare -n sh -c 'echo $$ > "$0"; exec sleep 80' "$base/worker.pid" &
+unshare -n sh -c 'echo $$ > "$0"; exec sleep 150' "$base/worker.pid" &
 holder_w=$!
 i=0
 while [ "$i" -lt 100 ]; do
@@ -70,6 +70,9 @@ worker_pid=$!
 nsenter -t "$worker" -n nft add table inet cm
 nsenter -t "$worker" -n nft add chain inet cm out '{ type filter hook output priority 0; policy accept; }'
 nsenter -t "$worker" -n nft add rule inet cm out ip daddr 10.98.2.2 tcp dport 17890 counter
+# The echo is reachable from the worker namespace directly; close that path so a pong
+# can only arrive through the remote mihomo inbound.
+nsenter -t "$worker" -n nft add rule inet cm out ip daddr 10.98.2.2 tcp dport 7007 drop
 
 probe() {
     nsenter -t "$worker" -n python3 - <<'PY'
@@ -77,16 +80,17 @@ import urllib.request
 proxy = urllib.request.ProxyHandler({"http": "http://127.0.0.1:18080"})
 opener = urllib.request.build_opener(proxy)
 try:
-    data = opener.open("http://10.98.2.2:7007/", timeout=2).read()
+    data = opener.open("http://10.98.2.2:7007/", timeout=1).read()
 except Exception:
     raise SystemExit(1)
 raise SystemExit(0 if data == b"pong" else 1)
 PY
 }
 
+# Bounded wait (about 50 s): a worker that never forwards must end in FAIL, not in a hang.
 i=0
 ok=0
-while [ "$i" -lt 100 ]; do
+while [ "$i" -lt 40 ]; do
     if probe; then
         ok=1
         break
@@ -102,4 +106,11 @@ nsenter -t "$worker" -n nft list chain inet cm out | grep -q 'counter packets [1
     echo "FAIL: nft counter did not see worker to remote mixed-port packets"
     exit 1
 }
+if nsenter -t "$worker" -n python3 -c '
+import socket
+socket.create_connection(("10.98.2.2", 7007), timeout=1)
+' 2>/dev/null; then
+    echo "FAIL: direct path from the worker namespace to the echo is open"
+    exit 1
+fi
 echo CORE_OK

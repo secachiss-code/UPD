@@ -348,3 +348,79 @@ fn validate_file_drops_config_text() {
     let sandbox = TempDirGuard::new("cm-i04-validate-ok").unwrap();
     validate_file(std::path::Path::new(&binary), sandbox.path(), &ok).expect("generator config");
 }
+
+#[test]
+fn nodes_that_bypass_cm_routing_are_forbidden() {
+    for key in ["interface-name", "routing-mark", "dialer-proxy"] {
+        let mut node = ss("ss-marker");
+        node[key] = json!("eth0");
+        let error = generate_config(
+            std::slice::from_ref(&node),
+            &dns(false, false),
+            18084,
+            &[],
+            false,
+        )
+        .unwrap_err();
+        assert!(matches!(error, ConfigError::Forbidden), "{key}");
+        assert_closed(&error, "eth0");
+    }
+}
+
+#[test]
+fn validate_file_does_not_follow_a_planted_symlink() {
+    let sandbox = TempDirGuard::new("cm-i04-validate-link").unwrap();
+    let outside = TempDirGuard::new("cm-i04-validate-outside").unwrap();
+    let target = outside.path().join("victim");
+    std::fs::write(&target, b"keep").unwrap();
+    std::os::unix::fs::symlink(&target, sandbox.path().join("config.json")).unwrap();
+    // The binary is never reached: opening the planted link fails first.
+    let error =
+        validate_file(std::path::Path::new("/nonexistent"), sandbox.path(), b"{}").unwrap_err();
+    assert!(matches!(error, CoreValidationCode::Unavailable));
+    assert_eq!(std::fs::read(&target).unwrap(), b"keep");
+}
+
+/// I04.T04.a done_when: the whole I03 corpus goes parser → generator → `mihomo -t`.
+#[test]
+fn whole_corpus_passes_generator_and_pinned_core() {
+    let corpus = std::fs::read(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/tests/fixtures/i03_core_corpus.json"
+    ))
+    .unwrap();
+    let parsed = parse_native("1.19.32", ImportFormat::MihomoJson, &corpus).expect("corpus");
+    let (_, nodes, _) = parsed.into_parts();
+    let proxies: Vec<Value> = nodes
+        .iter()
+        .map(|node| node.full_definition().clone())
+        .collect();
+    let mut types: Vec<&str> = proxies
+        .iter()
+        .filter_map(|proxy| proxy["type"].as_str())
+        .collect();
+    types.sort_unstable();
+    types.dedup();
+    for expected in [
+        "http",
+        "hysteria2",
+        "socks5",
+        "ss",
+        "trojan",
+        "tuic",
+        "vless",
+        "vmess",
+        "wireguard",
+    ] {
+        assert!(types.contains(&expected), "corpus lacks {expected}");
+    }
+    let config = generate_config(&proxies, &dns(true, true), 18085, &[], true)
+        .expect("generator accepts every parser-accepted node");
+    let Some(binary) = std::env::var_os("CM_TEST_MIHOMO") else {
+        eprintln!("I04.T04.a core half SKIPPED: CM_TEST_MIHOMO not set");
+        return;
+    };
+    let sandbox = TempDirGuard::new("cm-i04-corpus").unwrap();
+    validate_file(std::path::Path::new(&binary), sandbox.path(), &config)
+        .expect("pinned core accepts the generated corpus config");
+}

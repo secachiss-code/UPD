@@ -23,6 +23,10 @@ const ALLOWED_TYPES: &[&str] = &[
     "wireguard",
 ];
 
+/// Node keys that send traffic around CM routing or through another outbound.
+/// The I03 parser never emits them; raw callers are refused here as well.
+const HOST_ESCAPE_KEYS: &[&str] = &["interface-name", "routing-mark", "dialer-proxy"];
+
 /// Fixed failure classes. Display and Debug are phrases with no node payload.
 #[derive(Clone, Copy, Eq, PartialEq)]
 pub enum ConfigError {
@@ -241,6 +245,9 @@ fn check_proxy(value: &Value) -> Result<(), ConfigError> {
         .ok_or(ConfigError::InvalidNode)?;
     if !ALLOWED_TYPES.contains(&kind) {
         return Err(ConfigError::InvalidNode);
+    }
+    if HOST_ESCAPE_KEYS.iter().any(|key| object.contains_key(*key)) {
+        return Err(ConfigError::Forbidden);
     }
     let name = object
         .get("name")

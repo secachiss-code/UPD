@@ -7,6 +7,13 @@ use std::io::Write;
 use std::os::unix::fs::OpenOptionsExt;
 use std::path::Path;
 use std::process::Command;
+use std::time::{Duration, Instant};
+
+use crate::common::{CapturePolicy, capture_with_policy};
+
+/// `-t` only parses; a slower run means the core went for network data (GEOIP/GEOSITE).
+const VALIDATION_TIMEOUT: Duration = Duration::from_secs(20);
+const OUTPUT_MAX: u64 = 64 << 10;
 
 /// Why `mihomo -t` did not accept a file. Display and Debug are the variant name.
 #[derive(Clone, Copy, Eq, PartialEq)]
@@ -53,24 +60,32 @@ pub fn validate_file(
     config: &[u8],
 ) -> Result<(), CoreValidationCode> {
     let path = sandbox.join("config.json");
+    // A planted symlink in the sandbox must not redirect the write.
     let mut file = OpenOptions::new()
         .write(true)
         .create(true)
         .truncate(true)
         .mode(0o600)
+        .custom_flags(libc::O_NOFOLLOW | libc::O_CLOEXEC)
         .open(&path)
         .map_err(|_| CoreValidationCode::Unavailable)?;
     file.write_all(config)
         .map_err(|_| CoreValidationCode::Unavailable)?;
     drop(file);
-    let output = Command::new(binary)
-        .arg("-t")
-        .arg("-d")
-        .arg(sandbox)
-        .arg("-f")
-        .arg(&path)
-        .output()
-        .map_err(|_| CoreValidationCode::Unavailable)?;
+    let mut policy = CapturePolicy::background(Some(OUTPUT_MAX));
+    policy.deadline = Instant::now() + VALIDATION_TIMEOUT;
+    policy.stderr_max = OUTPUT_MAX;
+    let output = capture_with_policy(
+        Command::new(binary)
+            .arg("-t")
+            .arg("-d")
+            .arg(sandbox)
+            .arg("-f")
+            .arg(&path)
+            .env("LC_ALL", "C"),
+        policy,
+    )
+    .map_err(|_| CoreValidationCode::Unavailable)?;
     if output.status.success() {
         return Ok(());
     }
