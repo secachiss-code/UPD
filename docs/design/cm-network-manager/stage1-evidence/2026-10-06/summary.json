@@ -1,0 +1,35 @@
+{
+  "stage": "1",
+  "date": "2026-10-06",
+  "status": "PARTIAL_READY_FOR_REVIEW",
+  "git_revision": "55f2b920a9d622c285f1f234dc671ea90b2519bd",
+  "dirty_tree": true,
+  "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)",
+  "cargo_lock_sha256": "db485e8ee68cda6cf38c8d021d0e2607d3bf806b59016612768c0915c5cd6e83",
+  "target": "x86_64-unknown-linux-musl",
+  "cargo_target_dir": "/home/somovas/.cache/cm-grok-target",
+  "checks": [
+    {
+      "id": "H.03",
+      "command": "cargo clippy --locked --offline --all-targets -- -D warnings",
+      "result": "0 warnings"
+    },
+    {
+      "id": "H.03",
+      "command": "cargo test --locked --offline --all-targets -- --test-threads=8",
+      "result": "459 passed, 0 failed (after vpn/helper split and the H.11 worker test)"
+    },
+    {
+      "id": "H.11",
+      "command": "unshare -rn sh tests/netharness/worker.sh",
+      "result": "WORKER_OK"
+    },
+    {
+      "id": "I03.T05.e",
+      "command": "python3 tests/check_i03_regressions.py",
+      "result": "NOT_RUN dry-run, no network"
+    }
+  ],
+  "not_closed": ["H.09", "H.10 green CI run", "I03.T05.d", "I03.T05.e --run", "I03.T05.f"],
+  "raw_logs": "not stored in git (D8)"
+}
