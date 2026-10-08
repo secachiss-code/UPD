@@ -16,13 +16,13 @@
     "brave": "Brave Browser 154.1.96.61",
     "librewolf": "LibreWolf 157.0-1"
   },
-  "reproducibility": "base protocol: two consecutive runs identical in 12 of 12 rows; CDP protocol: two consecutive runs identical in 6 of 6 rows",
+  "reproducibility": "base protocol incl. env-local: two consecutive runs identical in 18 of 18 rows; CDP protocol: 6 of 6",
   "files": {
-    "runs.json": "8fefef5f0f4a01df2ca63a692299d9607ed63aba807a52cd29693cc50e4b1497",
-    "observations.json": "24f92be1228345356e24bb5f2f226c6617c4944e9cae3ae829a0056f2951d165",
+    "runs.json": "0c58ab333b4dca9cdd8ddfa91af17390a7ca1c1f39c8e93efd6bec64087250de",
+    "observations.json": "d76d5f3e963f02116cc26e5987bc8124b38ac0c0f3c6d08b0a63f99c0bdf8e07",
     "cdp-runs.json": "bd61492a4591d28113d45d6ebc00a959d69de4229579f10a325cb225a6fca170",
     "cdp-observations.json": "9829e66af6b064d499744e1bc7000671f9e7de65bde634b8efedf719ad62aef9",
-    "tools/i15r_lab.py": "add2646eb086a0d3f393005946040012b9014424164d21b1b4e034fd16cd9ffe",
+    "tools/i15r_lab.py": "01fa9c70d8d87f0770477057fe39812cc849fcbb60d712abc033d2155163a025",
     "tools/i15r_cdp_lab.py": "91fb080307600ab103ce48985256d41f3f8ba57f8874bf3f59a9396a7d3bdb8b"
   },
   "report": "../../I15R-LAB.md",
@@ -33,5 +33,6 @@
     "Q26/Q27 are the user's decisions in I15-R.T04.a."
   ],
   "findings_cdp": "CDP over --remote-debugging-pipe with navigation after overrides gives consistent UA, Client Hints, language and timezone on the first request, window, worker and tab in Chrome and Brave. CDP alone exposes navigator.webdriver=true in window and tab (false in worker); --disable-blink-features=AutomationControlled removes it everywhere.",
-  "mechanisms": "../../ADR-BROWSER-IDENTITY.md"
+  "mechanisms": "../../ADR-BROWSER-IDENTITY.md",
+  "findings_env_local": "Strategy local without CDP and without UA change: --lang, --accept-lang list, TZ and LANG env give consistent language, timezone and Intl locale on the first request, window, worker and tab in Chrome 155 and Brave 154; webdriver false. A plain restart returns all values to the host's (no mixed state). Brave reduces navigator.languages to one tag and varies q."
 }

@@ -2,6 +2,356 @@
   {
     "browser": "chrome",
     "version": "Google Chrome 155.0.8059.39",
+    "mechanism": "env-local",
+    "resist_fingerprinting": null,
+    "step": "first-launch",
+    "controls_from_launcher": true,
+    "verdict": {
+      "first_request": {
+        "ua": false,
+        "lang": true,
+        "client_hints": {
+          "sec-ch-ua": "\"Google Chrome\";v=\"155\", \"Chromium\";v=\"155\", \"Not(A:Brand\";v=\"24\"",
+          "sec-ch-ua-mobile": "?0",
+          "sec-ch-ua-platform": "\"Linux\""
+        }
+      },
+      "window": {
+        "ua": false,
+        "ua_untouched": true,
+        "intl_locale_matches": true,
+        "webdriver": false,
+        "lang": true,
+        "tz": true,
+        "offset": true,
+        "request_ua": false
+      },
+      "worker": {
+        "ua": false,
+        "ua_untouched": true,
+        "intl_locale_matches": true,
+        "webdriver": false,
+        "lang": true,
+        "tz": true,
+        "offset": true,
+        "request_ua": false
+      },
+      "tab": {
+        "ua": false,
+        "ua_untouched": true,
+        "intl_locale_matches": true,
+        "webdriver": false,
+        "lang": true,
+        "tz": true,
+        "offset": true,
+        "request_ua": false
+      },
+      "worker_script_request": {
+        "ua": false,
+        "lang": true
+      },
+      "tab_request": {
+        "ua": false,
+        "lang": true
+      }
+    }
+  },
+  {
+    "browser": "chrome",
+    "version": "Google Chrome 155.0.8059.39",
+    "mechanism": "env-local",
+    "resist_fingerprinting": null,
+    "step": "cold-restart-same-launcher",
+    "controls_from_launcher": true,
+    "verdict": {
+      "first_request": {
+        "ua": false,
+        "lang": true,
+        "client_hints": {
+          "sec-ch-ua": "\"Google Chrome\";v=\"155\", \"Chromium\";v=\"155\", \"Not(A:Brand\";v=\"24\"",
+          "sec-ch-ua-mobile": "?0",
+          "sec-ch-ua-platform": "\"Linux\"",
+          "sec-ch-ua-platform-version": "\"\"",
+          "sec-ch-ua-full-version-list": "\"Google Chrome\";v=\"155.0.8059.39\", \"Chromium\";v=\"155.0.8059.39\", \"Not(A:Brand\";v=\"24.0.0.0\""
+        }
+      },
+      "window": {
+        "ua": false,
+        "ua_untouched": true,
+        "intl_locale_matches": true,
+        "webdriver": false,
+        "lang": true,
+        "tz": true,
+        "offset": true,
+        "request_ua": false
+      },
+      "worker": {
+        "ua": false,
+        "ua_untouched": true,
+        "intl_locale_matches": true,
+        "webdriver": false,
+        "lang": true,
+        "tz": true,
+        "offset": true,
+        "request_ua": false
+      },
+      "tab": {
+        "ua": false,
+        "ua_untouched": true,
+        "intl_locale_matches": true,
+        "webdriver": false,
+        "lang": true,
+        "tz": true,
+        "offset": true,
+        "request_ua": false
+      },
+      "worker_script_request": {
+        "ua": false,
+        "lang": true
+      },
+      "tab_request": {
+        "ua": false,
+        "lang": true
+      }
+    }
+  },
+  {
+    "browser": "chrome",
+    "version": "Google Chrome 155.0.8059.39",
+    "mechanism": "env-local",
+    "resist_fingerprinting": null,
+    "step": "cold-restart-plain",
+    "controls_from_launcher": false,
+    "verdict": {
+      "first_request": {
+        "ua": false,
+        "lang": false,
+        "client_hints": {
+          "sec-ch-ua": "\"Google Chrome\";v=\"155\", \"Chromium\";v=\"155\", \"Not(A:Brand\";v=\"24\"",
+          "sec-ch-ua-mobile": "?0",
+          "sec-ch-ua-platform": "\"Linux\"",
+          "sec-ch-ua-platform-version": "\"\"",
+          "sec-ch-ua-full-version-list": "\"Google Chrome\";v=\"155.0.8059.39\", \"Chromium\";v=\"155.0.8059.39\", \"Not(A:Brand\";v=\"24.0.0.0\""
+        }
+      },
+      "window": {
+        "ua": false,
+        "ua_untouched": true,
+        "intl_locale_matches": false,
+        "webdriver": false,
+        "lang": false,
+        "tz": false,
+        "offset": false,
+        "request_ua": false
+      },
+      "worker": {
+        "ua": false,
+        "ua_untouched": true,
+        "intl_locale_matches": false,
+        "webdriver": false,
+        "lang": false,
+        "tz": false,
+        "offset": false,
+        "request_ua": false
+      },
+      "tab": {
+        "ua": false,
+        "ua_untouched": true,
+        "intl_locale_matches": false,
+        "webdriver": false,
+        "lang": false,
+        "tz": false,
+        "offset": false,
+        "request_ua": false
+      },
+      "worker_script_request": {
+        "ua": false,
+        "lang": false
+      },
+      "tab_request": {
+        "ua": false,
+        "lang": false
+      }
+    }
+  },
+  {
+    "browser": "brave",
+    "version": "Brave Browser 154.1.96.61",
+    "mechanism": "env-local",
+    "resist_fingerprinting": null,
+    "step": "first-launch",
+    "controls_from_launcher": true,
+    "verdict": {
+      "first_request": {
+        "ua": false,
+        "lang": true,
+        "client_hints": {
+          "sec-ch-ua": "\"Chromium\";v=\"154\", \"Brave\";v=\"154\", \"Not A(Brand\";v=\"99\"",
+          "sec-ch-ua-mobile": "?0",
+          "sec-ch-ua-platform": "\"Linux\""
+        }
+      },
+      "window": {
+        "ua": false,
+        "ua_untouched": true,
+        "intl_locale_matches": true,
+        "webdriver": false,
+        "lang": true,
+        "tz": true,
+        "offset": true,
+        "request_ua": false
+      },
+      "worker": {
+        "ua": false,
+        "ua_untouched": true,
+        "intl_locale_matches": true,
+        "webdriver": false,
+        "lang": true,
+        "tz": true,
+        "offset": true,
+        "request_ua": false
+      },
+      "tab": {
+        "ua": false,
+        "ua_untouched": true,
+        "intl_locale_matches": true,
+        "webdriver": false,
+        "lang": true,
+        "tz": true,
+        "offset": true,
+        "request_ua": false
+      },
+      "worker_script_request": {
+        "ua": false,
+        "lang": true
+      },
+      "tab_request": {
+        "ua": false,
+        "lang": true
+      }
+    }
+  },
+  {
+    "browser": "brave",
+    "version": "Brave Browser 154.1.96.61",
+    "mechanism": "env-local",
+    "resist_fingerprinting": null,
+    "step": "cold-restart-same-launcher",
+    "controls_from_launcher": true,
+    "verdict": {
+      "first_request": {
+        "ua": false,
+        "lang": true,
+        "client_hints": {
+          "sec-ch-ua": "\"Chromium\";v=\"154\", \"Brave\";v=\"154\", \"Not A(Brand\";v=\"99\"",
+          "sec-ch-ua-mobile": "?0",
+          "sec-ch-ua-platform": "\"Linux\"",
+          "sec-ch-ua-platform-version": "\"\"",
+          "sec-ch-ua-full-version-list": "\"Chromium\";v=\"154.0.0.0\", \"Brave\";v=\"154.0.0.0\", \"Not A(Brand\";v=\"99.0.0.0\""
+        }
+      },
+      "window": {
+        "ua": false,
+        "ua_untouched": true,
+        "intl_locale_matches": true,
+        "webdriver": false,
+        "lang": true,
+        "tz": true,
+        "offset": true,
+        "request_ua": false
+      },
+      "worker": {
+        "ua": false,
+        "ua_untouched": true,
+        "intl_locale_matches": true,
+        "webdriver": false,
+        "lang": true,
+        "tz": true,
+        "offset": true,
+        "request_ua": false
+      },
+      "tab": {
+        "ua": false,
+        "ua_untouched": true,
+        "intl_locale_matches": true,
+        "webdriver": false,
+        "lang": true,
+        "tz": true,
+        "offset": true,
+        "request_ua": false
+      },
+      "worker_script_request": {
+        "ua": false,
+        "lang": true
+      },
+      "tab_request": {
+        "ua": false,
+        "lang": true
+      }
+    }
+  },
+  {
+    "browser": "brave",
+    "version": "Brave Browser 154.1.96.61",
+    "mechanism": "env-local",
+    "resist_fingerprinting": null,
+    "step": "cold-restart-plain",
+    "controls_from_launcher": false,
+    "verdict": {
+      "first_request": {
+        "ua": false,
+        "lang": false,
+        "client_hints": {
+          "sec-ch-ua": "\"Chromium\";v=\"154\", \"Brave\";v=\"154\", \"Not A(Brand\";v=\"99\"",
+          "sec-ch-ua-mobile": "?0",
+          "sec-ch-ua-platform": "\"Linux\"",
+          "sec-ch-ua-platform-version": "\"\"",
+          "sec-ch-ua-full-version-list": "\"Chromium\";v=\"154.0.0.0\", \"Brave\";v=\"154.0.0.0\", \"Not A(Brand\";v=\"99.0.0.0\""
+        }
+      },
+      "window": {
+        "ua": false,
+        "ua_untouched": true,
+        "intl_locale_matches": false,
+        "webdriver": false,
+        "lang": false,
+        "tz": false,
+        "offset": false,
+        "request_ua": false
+      },
+      "worker": {
+        "ua": false,
+        "ua_untouched": true,
+        "intl_locale_matches": false,
+        "webdriver": false,
+        "lang": false,
+        "tz": false,
+        "offset": false,
+        "request_ua": false
+      },
+      "tab": {
+        "ua": false,
+        "ua_untouched": true,
+        "intl_locale_matches": false,
+        "webdriver": false,
+        "lang": false,
+        "tz": false,
+        "offset": false,
+        "request_ua": false
+      },
+      "worker_script_request": {
+        "ua": false,
+        "lang": false
+      },
+      "tab_request": {
+        "ua": false,
+        "lang": false
+      }
+    }
+  },
+  {
+    "browser": "chrome",
+    "version": "Google Chrome 155.0.8059.39",
     "mechanism": "cli-flags+TZ-env",
     "resist_fingerprinting": null,
     "step": "first-launch",
@@ -18,6 +368,9 @@
       },
       "window": {
         "ua": true,
+        "ua_untouched": false,
+        "intl_locale_matches": false,
+        "webdriver": false,
         "lang": true,
         "tz": true,
         "offset": true,
@@ -25,6 +378,9 @@
       },
       "worker": {
         "ua": true,
+        "ua_untouched": false,
+        "intl_locale_matches": false,
+        "webdriver": false,
         "lang": true,
         "tz": true,
         "offset": true,
@@ -32,6 +388,9 @@
       },
       "tab": {
         "ua": true,
+        "ua_untouched": false,
+        "intl_locale_matches": false,
+        "webdriver": false,
         "lang": true,
         "tz": true,
         "offset": true,
@@ -68,6 +427,9 @@
       },
       "window": {
         "ua": true,
+        "ua_untouched": false,
+        "intl_locale_matches": false,
+        "webdriver": false,
         "lang": true,
         "tz": true,
         "offset": true,
@@ -75,6 +437,9 @@
       },
       "worker": {
         "ua": true,
+        "ua_untouched": false,
+        "intl_locale_matches": false,
+        "webdriver": false,
         "lang": true,
         "tz": true,
         "offset": true,
@@ -82,6 +447,9 @@
       },
       "tab": {
         "ua": true,
+        "ua_untouched": false,
+        "intl_locale_matches": false,
+        "webdriver": false,
         "lang": true,
         "tz": true,
         "offset": true,
@@ -118,6 +486,9 @@
       },
       "window": {
         "ua": false,
+        "ua_untouched": true,
+        "intl_locale_matches": false,
+        "webdriver": false,
         "lang": true,
         "tz": false,
         "offset": false,
@@ -125,6 +496,9 @@
       },
       "worker": {
         "ua": false,
+        "ua_untouched": true,
+        "intl_locale_matches": false,
+        "webdriver": false,
         "lang": true,
         "tz": false,
         "offset": false,
@@ -132,6 +506,9 @@
       },
       "tab": {
         "ua": false,
+        "ua_untouched": true,
+        "intl_locale_matches": false,
+        "webdriver": false,
         "lang": true,
         "tz": false,
         "offset": false,
@@ -166,6 +543,9 @@
       },
       "window": {
         "ua": true,
+        "ua_untouched": false,
+        "intl_locale_matches": false,
+        "webdriver": false,
         "lang": true,
         "tz": true,
         "offset": true,
@@ -173,6 +553,9 @@
       },
       "worker": {
         "ua": true,
+        "ua_untouched": false,
+        "intl_locale_matches": false,
+        "webdriver": false,
         "lang": true,
         "tz": true,
         "offset": true,
@@ -180,6 +563,9 @@
       },
       "tab": {
         "ua": true,
+        "ua_untouched": false,
+        "intl_locale_matches": false,
+        "webdriver": false,
         "lang": true,
         "tz": true,
         "offset": true,
@@ -216,6 +602,9 @@
       },
       "window": {
         "ua": true,
+        "ua_untouched": false,
+        "intl_locale_matches": false,
+        "webdriver": false,
         "lang": true,
         "tz": true,
         "offset": true,
@@ -223,6 +612,9 @@
       },
       "worker": {
         "ua": true,
+        "ua_untouched": false,
+        "intl_locale_matches": false,
+        "webdriver": false,
         "lang": true,
         "tz": true,
         "offset": true,
@@ -230,6 +622,9 @@
       },
       "tab": {
         "ua": true,
+        "ua_untouched": false,
+        "intl_locale_matches": false,
+        "webdriver": false,
         "lang": true,
         "tz": true,
         "offset": true,
@@ -266,6 +661,9 @@
       },
       "window": {
         "ua": false,
+        "ua_untouched": true,
+        "intl_locale_matches": false,
+        "webdriver": false,
         "lang": true,
         "tz": false,
         "offset": false,
@@ -273,6 +671,9 @@
       },
       "worker": {
         "ua": false,
+        "ua_untouched": true,
+        "intl_locale_matches": false,
+        "webdriver": false,
         "lang": true,
         "tz": false,
         "offset": false,
@@ -280,6 +681,9 @@
       },
       "tab": {
         "ua": false,
+        "ua_untouched": true,
+        "intl_locale_matches": false,
+        "webdriver": false,
         "lang": true,
         "tz": false,
         "offset": false,
@@ -310,6 +714,9 @@
       },
       "window": {
         "ua": false,
+        "ua_untouched": true,
+        "intl_locale_matches": true,
+        "webdriver": false,
         "lang": true,
         "tz": false,
         "offset": false,
@@ -317,6 +724,9 @@
       },
       "worker": {
         "ua": false,
+        "ua_untouched": true,
+        "intl_locale_matches": true,
+        "webdriver": false,
         "lang": true,
         "tz": false,
         "offset": false,
@@ -324,6 +734,9 @@
       },
       "tab": {
         "ua": false,
+        "ua_untouched": true,
+        "intl_locale_matches": true,
+        "webdriver": false,
         "lang": true,
         "tz": false,
         "offset": false,
@@ -354,6 +767,9 @@
       },
       "window": {
         "ua": false,
+        "ua_untouched": true,
+        "intl_locale_matches": true,
+        "webdriver": false,
         "lang": true,
         "tz": false,
         "offset": false,
@@ -361,6 +777,9 @@
       },
       "worker": {
         "ua": false,
+        "ua_untouched": true,
+        "intl_locale_matches": true,
+        "webdriver": false,
         "lang": true,
         "tz": false,
         "offset": false,
@@ -368,6 +787,9 @@
       },
       "tab": {
         "ua": false,
+        "ua_untouched": true,
+        "intl_locale_matches": true,
+        "webdriver": false,
         "lang": true,
         "tz": false,
         "offset": false,
@@ -398,6 +820,9 @@
       },
       "window": {
         "ua": false,
+        "ua_untouched": true,
+        "intl_locale_matches": true,
+        "webdriver": false,
         "lang": true,
         "tz": false,
         "offset": false,
@@ -405,6 +830,9 @@
       },
       "worker": {
         "ua": false,
+        "ua_untouched": true,
+        "intl_locale_matches": true,
+        "webdriver": false,
         "lang": true,
         "tz": false,
         "offset": false,
@@ -412,6 +840,9 @@
       },
       "tab": {
         "ua": false,
+        "ua_untouched": true,
+        "intl_locale_matches": true,
+        "webdriver": false,
         "lang": true,
         "tz": false,
         "offset": false,
@@ -442,6 +873,9 @@
       },
       "window": {
         "ua": true,
+        "ua_untouched": false,
+        "intl_locale_matches": true,
+        "webdriver": false,
         "lang": true,
         "tz": true,
         "offset": true,
@@ -449,6 +883,9 @@
       },
       "worker": {
         "ua": true,
+        "ua_untouched": false,
+        "intl_locale_matches": true,
+        "webdriver": false,
         "lang": true,
         "tz": true,
         "offset": true,
@@ -456,6 +893,9 @@
       },
       "tab": {
         "ua": true,
+        "ua_untouched": false,
+        "intl_locale_matches": true,
+        "webdriver": false,
         "lang": true,
         "tz": true,
         "offset": true,
@@ -486,6 +926,9 @@
       },
       "window": {
         "ua": true,
+        "ua_untouched": false,
+        "intl_locale_matches": true,
+        "webdriver": false,
         "lang": true,
         "tz": true,
         "offset": true,
@@ -493,6 +936,9 @@
       },
       "worker": {
         "ua": true,
+        "ua_untouched": false,
+        "intl_locale_matches": true,
+        "webdriver": false,
         "lang": true,
         "tz": true,
         "offset": true,
@@ -500,6 +946,9 @@
       },
       "tab": {
         "ua": true,
+        "ua_untouched": false,
+        "intl_locale_matches": true,
+        "webdriver": false,
         "lang": true,
         "tz": true,
         "offset": true,
@@ -530,6 +979,9 @@
       },
       "window": {
         "ua": true,
+        "ua_untouched": false,
+        "intl_locale_matches": true,
+        "webdriver": false,
         "lang": true,
         "tz": false,
         "offset": false,
@@ -537,6 +989,9 @@
       },
       "worker": {
         "ua": true,
+        "ua_untouched": false,
+        "intl_locale_matches": true,
+        "webdriver": false,
         "lang": true,
         "tz": false,
         "offset": false,
@@ -544,6 +999,9 @@
       },
       "tab": {
         "ua": true,
+        "ua_untouched": false,
+        "intl_locale_matches": true,
+        "webdriver": false,
         "lang": true,
         "tz": false,
         "offset": false,

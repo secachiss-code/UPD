@@ -33,6 +33,9 @@ from pathlib import Path
 PORT = 18765
 UA = "Mozilla/5.0 (X11; Linux x86_64) CMLab/1.0"
 LANG = "de-DE"
+# Стратегия local без подмены UA: так настроен браузер у жителя страны выхода.
+LANG_LIST = "de-DE,de,en-US,en"
+POSIX_LOCALE = "de_DE.UTF-8"
 TZ = "Asia/Tokyo"
 TZ_OFFSET = -540  # getTimezoneOffset() для Asia/Tokyo, минуты
 WAIT_S = 20
@@ -138,7 +141,7 @@ def chrome_binary(name):
     return paths.get(name)
 
 
-def launch(browser, profile, home, controls):
+def launch(browser, profile, home, controls, mechanism="flags"):
     env = {
         "HOME": str(home),
         "XDG_CONFIG_HOME": str(home / ".config"),
@@ -148,6 +151,8 @@ def launch(browser, profile, home, controls):
     }
     if controls:
         env["TZ"] = TZ
+        if mechanism == "env-local":
+            env["LANG"] = POSIX_LOCALE
     url = f"http://127.0.0.1:{PORT}/"
     if browser in ("chrome", "brave"):
         cmd = [
@@ -160,7 +165,9 @@ def launch(browser, profile, home, controls):
             "--disable-gpu",
             f"--user-data-dir={profile}",
         ]
-        if controls:
+        if controls and mechanism == "env-local":
+            cmd += [f"--lang={LANG}", f"--accept-lang={LANG_LIST}"]
+        elif controls:
             cmd += [f"--user-agent={UA}", f"--lang={LANG}", f"--accept-lang={LANG}"]
         cmd.append(url)
     else:
@@ -191,9 +198,9 @@ def firefox_prefs(profile, rfp):
     (profile / "user.js").write_text("\n".join(lines) + "\n")
 
 
-def run_once(browser, profile, home, controls):
+def run_once(browser, profile, home, controls, mechanism="flags"):
     LAB.reset()
-    proc = launch(browser, profile, home, controls)
+    proc = launch(browser, profile, home, controls, mechanism)
     deadline = time.time() + WAIT_S
     while time.time() < deadline:
         contexts = {r["values"].get("ctx") for r in LAB.reports()}
@@ -232,6 +239,9 @@ def verdict(events):
         v = rep["values"]
         out[ctx] = {
             "ua": UA in v.get("ua", ""),
+            "ua_untouched": "CMLab" not in v.get("ua", ""),
+            "intl_locale_matches": v.get("locale", "").split("-")[0] == LANG.split("-")[0],
+            "webdriver": v.get("webdriver") is True,
             "lang": v.get("lang", "").startswith(LANG),
             "tz": v.get("tz") == TZ,
             "offset": v.get("off") == TZ_OFFSET,
@@ -261,6 +271,14 @@ def version(browser):
 def scenarios():
     """(браузер, механизм, rfp, [(шаг, controls)])."""
     out = []
+    steps = [
+        ("first-launch", True),
+        ("cold-restart-same-launcher", True),
+        ("cold-restart-plain", False),
+    ]
+    for browser in ("chrome", "brave"):
+        if chrome_binary(browser):
+            out.append((browser, "env-local", None, steps))
     for browser in ("chrome", "brave"):
         if chrome_binary(browser):
             out.append((browser, "cli-flags+TZ-env", None, [
@@ -293,7 +311,7 @@ def inner(out_dir):
             if browser == "librewolf":
                 firefox_prefs(profile, rfp)
             for step, controls in steps:
-                events = run_once(browser, profile, home, controls)
+                events = run_once(browser, profile, home, controls, mechanism)
                 runs.append({
                     "browser": browser,
                     "version": version(browser),
@@ -304,7 +322,7 @@ def inner(out_dir):
                     "verdict": verdict(events),
                     "events": events,
                 })
-                print(f"{browser} rfp={rfp} {step}: {len([e for e in events if e['kind']=='report'])} reports", flush=True)
+                print(f"{browser} {mechanism} rfp={rfp} {step}: {len([e for e in events if e['kind']=='report'])} reports", flush=True)
         finally:
             shutil.rmtree(root, ignore_errors=True)
     server.shutdown()

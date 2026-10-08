@@ -42,6 +42,10 @@ def executor(task):
         return USER_DECIDES[tid]
     if tid in ON_HOST:
         return "пользователь на хосте выполняет; Grok готовит driver и разбирает evidence"
+    if tid == "BI.Z":
+        return "роль 2: тесты и лаборатория по рёбрам BI-DAG (TESTS-BI.md)"
+    if task["milestone"] == "BI":
+        return "Grok (код за один проход, GROK-BI-CODE.md); тесты — роль 2"
     if tid == NEEDS_HARNESS_DECISION:
         return "Grok: сценарий с тестовым сервером ядра на основе tests/netharness (D6 принято)"
     return "Grok"
@@ -60,7 +64,7 @@ def stage(task):
     m = task["milestone"]
     order = {
         "H": 1, "I03": 1, "V": 2, "I04": 2, "I17-D": 2, "I15-R": 2, "I05": 3, "I06": 3,
-        "I07": 4, "I08": 4, "I09": 5, "I10": 5, "I11": 6, "I12": 6, "I13": 6, "I14": 6,
+        "BI": 3, "I07": 4, "I08": 4, "I09": 5, "I10": 5, "I11": 6, "I12": 6, "I13": 6, "I14": 6,
         "I15": 7, "I16": 7, "I17": 8, "X": 8, "I18": 9,
     }
     return order[m]
@@ -69,7 +73,7 @@ def stage(task):
 STAGES = {
     1: ("Хвосты I03 и гигиена", "Закрыть I03 (T04.x, T05), saphyr, PTY, harness, рефакторинг vpn.rs/helper.rs, аудит unsafe."),
     2: ("Срез и контракт ядер", "Новая модель доходит до пользователя (V), CoreAdapter и mihomo-адаптер (I04); параллельно ранние I15-R и I17-D."),
-    3: ("Xray и привилегированный контроллер", "Второе ядро и доставка ядер (I05); typed root-протокол, peer-идентификация, транзакции (I06)."),
+    3: ("Xray, привилегированный контроллер и личность браузера", "Второе ядро и доставка ядер (I05); typed root-протокол, peer-идентификация, транзакции (I06); параллельно направление BI по BI-DAG.md (код — Grok, тесты — роль 2)."),
     4: ("Маршруты хоста и сеть приложений", "A+C: CM владеет routes/firewall, outer egress, host off/proxy/tunnel (I07); netns на приложение (I08)."),
     5: ("Fail-closed и DNS", "Нет прямого выхода при сбоях, reconcile (I09); DNS/IPv6/UDP на обоих ядрах (I10)."),
     6: ("Приложения и регион", "Универсальный запуск (I11), группы (I12), brokers/упаковки (I13), timezone/locale (I14)."),

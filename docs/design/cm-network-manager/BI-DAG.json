@@ -1,0 +1,653 @@
+{
+  "schema_version": 1,
+  "date": "2026-10-08",
+  "directions": [
+    {
+      "id": "R",
+      "title": "Регион",
+      "goal": "Пресеты страны: часовой пояс, языки, POSIX-локаль — из tzdata, без догадок."
+    },
+    {
+      "id": "E",
+      "title": "Движок",
+      "goal": "Какой браузер и какой версии запускается; какие версии проверены лабораторией."
+    },
+    {
+      "id": "M",
+      "title": "Личность",
+      "goal": "Модель, хранилище и валидатор согласованности личности браузера."
+    },
+    {
+      "id": "L",
+      "title": "Запуск",
+      "goal": "Чистый план запуска (argv, env, файлы) и исполнитель, который ничего не добавляет от себя."
+    },
+    {
+      "id": "G",
+      "title": "Охрана профиля",
+      "goal": "Профиль принадлежит CM: запуск мимо CM обнаруживается и блокирует личность."
+    },
+    {
+      "id": "C",
+      "title": "Команды и статус",
+      "goal": "cm identity и оси REGION/APP/STATE/NET без обещаний сверх проверенного."
+    },
+    {
+      "id": "Z",
+      "title": "Приёмка",
+      "goal": "Лабораторный прогон cm identity на настоящих браузерах."
+    }
+  ],
+  "vertices": [
+    {
+      "id": "BI.R1",
+      "direction": "R",
+      "title": "Задать таблицу пресетов стран.",
+      "size": "S",
+      "level": "L1",
+      "deps": [],
+      "files": [
+        "src/identity/presets.rs"
+      ],
+      "spec": "`pub struct LanguageSet { pub tags: &'static [&'static str], pub posix: &'static str }`\n`pub struct Preset { pub country: &'static str, pub zones: &'static [&'static str], pub language_sets: &'static [LanguageSet] }`\n`pub static PRESETS: &[Preset]` — ровно эти страны и значения (первая зона и первый набор — по умолчанию):\n\n| country | zones | language_sets (tags → posix) |\n|---|---|---|\n| AT | Europe/Vienna | de-AT,de,en-US,en → de_AT.UTF-8 |\n| CA | America/Toronto, America/Vancouver, America/Edmonton, America/Winnipeg, America/Halifax | en-CA,en → en_CA.UTF-8; fr-CA,fr,en-CA,en → fr_CA.UTF-8 |\n| CH | Europe/Zurich | de-CH,de,en-US,en → de_CH.UTF-8; fr-CH,fr,en-US,en → fr_CH.UTF-8 |\n| DE | Europe/Berlin | de-DE,de,en-US,en → de_DE.UTF-8 |\n| EE | Europe/Tallinn | et-EE,et,en-US,en → et_EE.UTF-8 |\n| FI | Europe/Helsinki | fi-FI,fi,en-US,en → fi_FI.UTF-8 |\n| FR | Europe/Paris | fr-FR,fr,en-US,en → fr_FR.UTF-8 |\n| GB | Europe/London | en-GB,en → en_GB.UTF-8 |\n| JP | Asia/Tokyo | ja-JP,ja,en-US,en → ja_JP.UTF-8 |\n| LT | Europe/Vilnius | lt-LT,lt,en-US,en → lt_LT.UTF-8 |\n| LV | Europe/Riga | lv-LV,lv,en-US,en → lv_LV.UTF-8 |\n| NL | Europe/Amsterdam | nl-NL,nl,en-US,en → nl_NL.UTF-8 |\n| PL | Europe/Warsaw | pl-PL,pl,en-US,en → pl_PL.UTF-8 |\n| RU | Europe/Moscow, Asia/Yekaterinburg, Asia/Novosibirsk, Asia/Vladivostok | ru-RU,ru,en-US,en → ru_RU.UTF-8 |\n| SE | Europe/Stockholm | sv-SE,sv,en-US,en → sv_SE.UTF-8 |\n| SG | Asia/Singapore | en-SG,en → en_SG.UTF-8 |\n| TR | Europe/Istanbul | tr-TR,tr,en-US,en → tr_TR.UTF-8 |\n| US | America/New_York, America/Chicago, America/Denver, America/Phoenix, America/Los_Angeles, America/Anchorage, Pacific/Honolulu | en-US,en → en_US.UTF-8 |\n\nЗоны взяты из `zone.tab` (не `zone1970.tab`: там NL сведён к Europe/Brussels, SE — к Europe/Berlin, а браузер жителя показывает Europe/Amsterdam и Europe/Stockholm). Комментарий над таблицей: источник зон — tzdata `zone.tab`; языки — официальные языки страны по CLDR; набор стран ограничен и расширяется только вместе с проверкой ребра BI.R1→BI.R2."
+    },
+    {
+      "id": "BI.R2",
+      "direction": "R",
+      "title": "Выбрать окружение личности по стране, зоне и языку.",
+      "size": "S",
+      "level": "L1",
+      "deps": [
+        "BI.R1"
+      ],
+      "files": [
+        "src/identity/presets.rs"
+      ],
+      "spec": "`pub enum LanguageChoice { Local(usize), English, Custom(String) }`\n`#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)] pub struct EnvironmentProfile { pub country: String, pub timezone: String, pub languages: Vec<String>, pub posix_locale: String, pub matches_country: bool }`\n`impl EnvironmentProfile { pub fn accept_language(&self) -> String /* языки через запятую без пробелов */; pub fn primary(&self) -> &str /* languages[0] */ }`\n`pub fn select(country: &str, zone: Option<&str>, language: &LanguageChoice) -> Result<EnvironmentProfile, PresetError>`\n\n- `country` нормализуется в верхний регистр; не из `PRESETS` → `PresetError::UnknownCountry`.\n- `zone`: `None` → `zones[0]`; не из `zones` пресета → `ZoneNotInCountry`.\n- `Local(i)`: `language_sets[i]`, иначе `NoSuchLanguageSet`.\n- `English`: `[\"en-US\", \"en\"]`, posix `en_US.UTF-8`.\n- `Custom(tag)`: тег BCP 47 вида `ll` или `ll-RR` (2–3 строчные латинские буквы, затем необязательно `-` и 2 заглавные). Иначе `BadLanguageTag`. languages = `[tag, ll]` (если tag уже `ll` — `[tag]`), posix = `ll_RR.UTF-8` (для `ll` без региона — `ll_LL` в верхнем регистре, например `ru` → `ru_RU.UTF-8`).\n- `matches_country = true`, только если итоговый список tags совпадает с одним из `language_sets` пресета.\n- `PresetError`: `UnknownCountry, ZoneNotInCountry, NoSuchLanguageSet, BadLanguageTag`. `Display` — фиксированные фразы через `t!`, без входных значений."
+    },
+    {
+      "id": "BI.R3",
+      "direction": "R",
+      "title": "Проверить зону по системной tzdata.",
+      "size": "S",
+      "level": "L1",
+      "deps": [],
+      "files": [
+        "src/identity/tzdata.rs"
+      ],
+      "spec": "`pub fn verify_zone(tzdir: &Path, country: &str, zone: &str) -> Result<(), ZoneError>`; `pub const SYSTEM_TZDIR: &str = \"/usr/share/zoneinfo\";`\n- Имя зоны: только `[A-Za-z0-9_+-]` сегменты через `/`, без `..`, без ведущего `/`, длина ≤ 64. Иначе `BadZoneName`.\n- Нет файла `tzdir/zone.tab` → `TzdataUnavailable`.\n- Строки `zone.tab` (без `#`): столбец 1 — код страны, столбец 3 — зона. Пары (country, zone) нет → `ZoneNotInCountry`.\n- Файл `tzdir/<zone>` отсутствует → `ZoneMissing`.\n- Файлы читаются без следования симлинкам за пределы `tzdir` не требуется: имя уже проверено."
+    },
+    {
+      "id": "BI.E1",
+      "direction": "E",
+      "title": "Распознать браузер и его версию по `--version`.",
+      "size": "S",
+      "level": "L1",
+      "deps": [],
+      "files": [
+        "src/identity/engine.rs"
+      ],
+      "spec": "`#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)] pub enum Family { Chromium, Gecko }`\n`#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)] pub enum Brand { Chrome, Chromium, Brave, Firefox, LibreWolf }`\n`#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)] pub struct EngineInfo { pub family: Family, pub brand: Brand, pub major: u32, pub version: String }`\n`pub fn parse_version(stdout: &str) -> Result<EngineInfo, EngineError>` и `pub fn detect(path: &Path) -> Result<EngineInfo, EngineError>`.\n\nРазбор первой непустой строки:\n- `Google Chrome X` → Chromium/Chrome;\n- `Chromium X …` → Chromium/Chromium;\n- `Brave Browser X` → Chromium/Brave (major — первое число X, это мажор Chromium);\n- `Mozilla Firefox X` → Gecko/Firefox;\n- `LibreWolf X` → Gecko/LibreWolf.\n\n`version` — X целиком (до пробела). Иное → `UnknownEngine`.\n\n`detect`:\n- путь не абсолютный → `NotAbsolute`;\n- запуск `path --version` с `env_clear()` и `PATH=/usr/bin:/bin`, stdin null, вывод ≤ 4 КиБ;\n- ожидание не дольше 10 с, затем kill → `Timeout`;\n- код ≠ 0 → `VersionFailed`;\n- ошибки без вывода процесса."
+    },
+    {
+      "id": "BI.E2",
+      "direction": "E",
+      "title": "Вести реестр проверенных лабораторией версий.",
+      "size": "S",
+      "level": "L1",
+      "deps": [
+        "BI.E1"
+      ],
+      "files": [
+        "data/identity-verified.json",
+        "src/identity/verified.rs"
+      ],
+      "spec": "`data/identity-verified.json` встраивается через `include_str!`. Формат: `[{\"brand\":\"Chrome\",\"major\":155,\"strategy\":\"local\",\"evidence\":\"docs/design/cm-network-manager/i15r-evidence/2026-10-08\",\"note\":\"\"}]`.\n\nНачальные строки — только то, что проверено тем же механизмом, что строит BI.L1:\n- `Chrome 155 local`;\n- `Brave 154 local`, note `\"farbling: navigator.languages сокращается до одного языка\"`.\n\n`pub enum Strategy { Local, Crowd }` объявлен в `model.rs` (BI.M1); здесь используется.\n\n`pub enum Verification { Verified { evidence: String, note: String }, Unverified }`\n`pub fn status(engine: &EngineInfo, strategy: Strategy) -> Verification` — совпадение brand и major и strategy.\n\nСтроки добавляет роль 2 после лабораторного прогона, со ссылкой на evidence. Код при этом не меняется."
+    },
+    {
+      "id": "BI.M1",
+      "direction": "M",
+      "title": "Описать модель личности браузера.",
+      "size": "M",
+      "level": "L1",
+      "deps": [
+        "BI.R2",
+        "BI.E1"
+      ],
+      "files": [
+        "src/identity/model.rs",
+        "src/identity/mod.rs",
+        "src/lib.rs"
+      ],
+      "spec": "`pub mod identity;` в `src/lib.rs`. Подмодули: `presets, tzdata, engine, verified, model, store, validate, plan, launch, guard, axes, cli`.\n\n`#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)] #[serde(rename_all = \"lowercase\")] pub enum Strategy { Local, Crowd }`\n```rust\n#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]\n#[serde(deny_unknown_fields)]\npub struct BrowserIdentityProfile {\n    pub schema_version: u32,          // = 1\n    pub id: String,                   // ^[a-z0-9][a-z0-9-]{0,31}$\n    pub strategy: Strategy,\n    pub browser: PathBuf,             // абсолютный путь\n    pub engine: EngineInfo,           // снимок при создании или последнем запуске\n    pub environment: Option<EnvironmentProfile>, // Some только для Local\n    pub extra_args: Vec<String>,      // флаги пользователя; запреты — в BI.M3\n    pub created_at: i64,\n    pub generation: u32,              // растёт при каждом изменении личности\n    pub history: Vec<HistoryEntry>,   // не больше HISTORY_LIMIT, старые вытесняются\n    pub bypass_suspected: bool,\n}\npub struct HistoryEntry { pub generation: u32, pub at: i64, pub change: String }\npub const HISTORY_LIMIT: usize = 5;   // гипотеза Q27, менять только решением пользователя\n```\n`pub fn validate_id(id: &str) -> Result<(), ModelError>`; `impl BrowserIdentityProfile { pub fn record(&mut self, at: i64, change: &str) }` — generation += 1, запись в history с вытеснением старых.\n\nНеизвестная `schema_version` → `ModelError::UnsupportedSchema`. `Debug` не выводит `extra_args` целиком: только их число."
+    },
+    {
+      "id": "BI.M2",
+      "direction": "M",
+      "title": "Хранить личности в каталоге CM пользователя.",
+      "size": "M",
+      "level": "L1",
+      "deps": [
+        "BI.M1"
+      ],
+      "files": [
+        "src/identity/store.rs"
+      ],
+      "spec": "`pub fn root() -> PathBuf`: `CM_IDENTITY_ROOT`, иначе `$XDG_DATA_HOME/cm/identities`, иначе `$HOME/.local/share/cm/identities`.\n\n`pub struct IdentityStore { root: PathBuf }`, `open(root) -> Result<Self, StoreError>`:\n- создаёт `root` 0700;\n- отказ `Unsafe`, если root или любой каталог личности — симлинк либо принадлежит другому uid.\n\nРаскладка: `<root>/<id>/identity.json` (0600), `<root>/<id>/profile/` (0700), `<root>/<id>/state.json` (BI.G1), `<root>/<id>/browser.log` (BI.L3), `<root>/<id>/run.lock` (BI.L3).\n\nМетоды:\n- `create(&profile)` → `Exists`, если каталог есть;\n- `load(id)` → `NotFound`;\n- `save(&profile)` — атомарно: `identity.json.tmp`, fsync, rename;\n- `list()` — id по алфавиту; каталоги без `identity.json` пропускаются;\n- `remove(id, purge: bool)` — без purge удаляет только `identity.json` и `state.json`, профиль браузера остаётся;\n- `dir(id)`, `profile_dir(id)`.\n\nОставшийся `.tmp` не читается и перезаписывается при следующем `save`."
+    },
+    {
+      "id": "BI.M3",
+      "direction": "M",
+      "title": "Проверить согласованность личности до запуска.",
+      "size": "M",
+      "level": "L1",
+      "deps": [
+        "BI.M1",
+        "BI.E2",
+        "BI.R3"
+      ],
+      "files": [
+        "src/identity/validate.rs"
+      ],
+      "spec": "`pub fn validate(p: &BrowserIdentityProfile, engine: &EngineInfo, tzdir: &Path, lab: bool) -> Report`\n`pub struct Report { pub errors: Vec<Violation>, pub warnings: Vec<Violation> }` — запуск разрешён только при пустом `errors`.\n`#[derive(Clone, Debug, PartialEq, Eq)] pub enum Violation` — коды и правила (порядок вывода — порядок правил):\n\n| # | Код | Вид | Условие |\n|---|---|---|---|\n| 1 | `StrategyEngineUnsupported` | error | `Crowd` и `engine.family == Chromium` (crowd требует Gecko с RFP) |\n| 2 | `CrowdWithRegion` | error | `Crowd` и `environment.is_some()` |\n| 3 | `LocalNeedsEnvironment` | error | `Local` и `environment.is_none()` |\n| 4 | `ZoneInvalid` | error | `Local` и `verify_zone(tzdir, country, timezone)` не Ok |\n| 5 | `ForbiddenArgument(String)` | error | в `extra_args` аргумент, начинающийся с одного из: `--user-agent`, `--remote-debugging-port`, `--remote-debugging-pipe`, `--enable-automation`, `--headless`, `--lang`, `--accept-lang`, `--user-data-dir`, `--profile`, `-profile`, `--no-sandbox`, `--marionette`, `--remote-allow`; в `String` — только имя флага до `=` |\n| 6 | `EngineChanged` | warning | brand или major `engine` отличаются от `p.engine` |\n| 7 | `UnverifiedVersion` | warning | `verified::status(engine, strategy) == Unverified` |\n| 8 | `LanguageNotRegional` | warning | `Local` и `!environment.matches_country` |\n| 9 | `BraveFarblesLanguages` | warning | `Local` и brand `Brave` |\n| 10 | `BypassSuspected` | error | `p.bypass_suspected` (охрана, BI.G2) |\n\n`lab == true` не меняет правил; флаги лаборатории добавляет план (BI.L1/L2), не пользователь."
+    },
+    {
+      "id": "BI.L1",
+      "direction": "L",
+      "title": "Построить план запуска Chromium-браузера.",
+      "size": "M",
+      "level": "L1",
+      "deps": [
+        "BI.M3"
+      ],
+      "files": [
+        "src/identity/plan.rs"
+      ],
+      "spec": "`pub struct FileWrite { pub path: PathBuf, pub contents: String }`\n`pub struct LaunchPlan { pub program: PathBuf, pub args: Vec<String>, pub env: BTreeMap<String, String>, pub files: Vec<FileWrite> }`\n`pub fn chromium_plan(p: &BrowserIdentityProfile, profile_dir: &Path, parent_env: &BTreeMap<String, String>, url: Option<&str>, lab: bool) -> LaunchPlan` — чистая функция, только для `Local`.\n\n**args** строго в таком порядке:\n1. `--user-data-dir=<profile_dir>`\n2. `--lang=<primary>`\n3. `--accept-lang=<accept_language()>`\n4. `--no-first-run`\n5. `--no-default-browser-check`\n6. при `lab`: `--headless=new`, `--no-sandbox`\n7. `extra_args` по порядку\n8. `url`, если есть\n\n**env** — только:\n- из `parent_env`, если есть: `DISPLAY`, `WAYLAND_DISPLAY`, `XAUTHORITY`, `XDG_RUNTIME_DIR`, `DBUS_SESSION_BUS_ADDRESS`, `HOME`, `PATH` (по умолчанию `/usr/bin:/bin`), `XDG_CONFIG_HOME`, `XDG_CACHE_HOME`, `PULSE_SERVER`;\n- плюс `TZ=<timezone>` и `LANG=<posix_locale>`.\n\nНикаких `LC_*`, `LANGUAGE` и прочих переменных родителя. `files` пуст."
+    },
+    {
+      "id": "BI.L2",
+      "direction": "L",
+      "title": "Построить план запуска Gecko-браузера и его user.js.",
+      "size": "M",
+      "level": "L1",
+      "deps": [
+        "BI.M3"
+      ],
+      "files": [
+        "src/identity/plan.rs"
+      ],
+      "spec": "`pub fn gecko_plan(p, profile_dir, parent_env, url, lab) -> LaunchPlan`.\n\n**args:** `--profile`, `<profile_dir>`, `--no-remote`, при `lab` — `--headless`, затем `extra_args`, затем `url`.\n\n**env:** тот же allowlist, что в BI.L1. Дополнительно:\n- `Local` — `TZ=<timezone>`, `LANG=<posix_locale>`;\n- `Crowd` — `LANG=en_US.UTF-8`, без `TZ`.\n\n**files:** ровно один `FileWrite` — `<profile_dir>/user.js`, первая строка `// Managed by cm identity. Changes here are overwritten at launch.`, затем:\n- `Local`:\n  - `user_pref(\"intl.accept_languages\", \"<языки через \", \">\");`\n  - `user_pref(\"intl.locale.requested\", \"<primary>\");`\n  - `user_pref(\"privacy.resistFingerprinting\", false);`\n- `Crowd`:\n  - `user_pref(\"intl.accept_languages\", \"en-US, en\");`\n  - `user_pref(\"intl.locale.requested\", \"en-US\");`\n  - `user_pref(\"privacy.resistFingerprinting\", true);`\n\nСтроки завершаются `\\n`. UA-prefs (`general.useragent.override`) не пишутся никогда."
+    },
+    {
+      "id": "BI.G1",
+      "direction": "G",
+      "title": "Снимать отпечаток файлов профиля и вести маркеры запуска.",
+      "size": "M",
+      "level": "L1",
+      "deps": [
+        "BI.M2"
+      ],
+      "files": [
+        "src/identity/guard.rs"
+      ],
+      "spec": "Ключевые файлы:\n- Chromium — `Default/Preferences`, `Local State`;\n- Gecko — `prefs.js`, `times.json`.\n\n`pub struct FileMark { pub path: String /* относительный */, pub present: bool, pub size: u64, pub mtime_ns: i128, pub sha256: String }`\n`pub fn fingerprint(profile_dir: &Path, family: Family) -> Vec<FileMark>` — отсутствующий файл: `present=false`, остальные поля нули и пустая строка.\n`#[derive(Serialize, Deserialize)] pub struct GuardState { pub last_launch: Option<LaunchMark>, pub last_exit: Option<ExitMark> }`\n`pub struct LaunchMark { pub generation: u32, pub pid: u32, pub started_at: i64 }`\n`pub struct ExitMark { pub at: i64, pub files: Vec<FileMark> }`\n\nФункции:\n- `load_state(dir)` — нет файла → `GuardState::default()`;\n- `record_launch(dir, generation, pid, at)`;\n- `record_exit(dir, profile_dir, family, at)`.\n\nЗапись атомарная, 0600, файл `<dir>/state.json`."
+    },
+    {
+      "id": "BI.G2",
+      "direction": "G",
+      "title": "Обнаружить запуск профиля мимо CM перед новым запуском.",
+      "size": "M",
+      "level": "L1",
+      "deps": [
+        "BI.G1"
+      ],
+      "files": [
+        "src/identity/guard.rs"
+      ],
+      "spec": "`pub enum GuardOutcome { FirstLaunch, Clean, Warned }`, `pub enum GuardError { BypassSuspected, BrowserRunning }`\n`pub fn check_before_launch(store: &IdentityStore, p: &mut BrowserIdentityProfile, family: Family, policy: BypassPolicy, is_alive: &dyn Fn(u32) -> bool) -> Result<GuardOutcome, GuardError>`; `pub enum BypassPolicy { Block, Warn }` — из `cm.conf` ключ `identity_bypass` (`block` по умолчанию, `warn`).\n\nПорядок проверок:\n1. **Блокировка профиля чужим процессом.**\n   - Chromium: `profile/SingletonLock` — симлинк вида `<host>-<pid>`.\n   - Gecko: `profile/lock` — симлинк вида `<ip>:+<pid>`.\n   - Если pid разобран и `is_alive(pid)` → `BrowserRunning`. Мёртвый pid — устаревшая блокировка, её не трогать.\n2. **Уже подозрение:** `p.bypass_suspected` и `Block` → `BypassSuspected`.\n3. **Сравнение отпечатка.** Нет `last_exit`:\n   - `FirstLaunch`, если `last_launch` тоже нет;\n   - иначе предыдущий запуск не завершился через CM → то же, что расхождение.\n4. **Расхождение.** Текущий `fingerprint` ≠ `last_exit.files`:\n   - при `Block` выставить `p.bypass_suspected = true`, `p.record(now, \"bypass-suspected\")`, сохранить, вернуть `BypassSuspected`;\n   - при `Warn` — `p.record(now, \"bypass-warned\")`, сохранить, `Warned`.\n5. Иначе `Clean`."
+    },
+    {
+      "id": "BI.G3",
+      "direction": "G",
+      "title": "Подтвердить личность после обнаруженного обхода.",
+      "size": "S",
+      "level": "L1",
+      "deps": [
+        "BI.G2"
+      ],
+      "files": [
+        "src/identity/guard.rs"
+      ],
+      "spec": "`pub fn confirm(store: &IdentityStore, p: &mut BrowserIdentityProfile, now: i64)`:\n- `bypass_suspected = false`;\n- `p.record(now, \"bypass-confirmed\")`;\n- `GuardState.last_exit` заменяется текущим отпечатком (иначе следующий запуск снова увидит расхождение);\n- сохранить.\n\nПовторный `confirm` без подозрения — ничего не меняет и не пишет history."
+    },
+    {
+      "id": "BI.L3",
+      "direction": "L",
+      "title": "Запустить браузер по плану и сопровождать его до выхода.",
+      "size": "M",
+      "level": "L2",
+      "deps": [
+        "BI.L1",
+        "BI.L2",
+        "BI.G2"
+      ],
+      "files": [
+        "src/identity/launch.rs"
+      ],
+      "spec": "`pub fn launch(store: &IdentityStore, id: &str, url: Option<&str>, lab: bool) -> Result<i32 /* код выхода браузера */, LaunchError>`.\n\nШаги:\n1. Отказ `RunAsRoot`, если euid == 0 и не `test_mode()`.\n2. `run.lock` через `flock(LOCK_EX|LOCK_NB)` → `AlreadyRunning`.\n3. `load` и `engine::detect(browser)`. Если версия изменилась — обновить `p.engine`, `p.record(now, \"engine <brand> <major>\")`, сохранить.\n4. `validate` (errors → `Invalid(Vec<Violation>)`).\n5. `guard::check_before_launch` (ошибка → `Guard(GuardError)`).\n6. План по семейству (Chromium → `chromium_plan`, Gecko → `gecko_plan`); записать `files` 0600 атомарно.\n7. Запуск:\n   - `Command::new(program)`, `args`, `env_clear()` + `env`;\n   - stdin null, stdout и stderr → `browser.log` (0600, перезапись);\n   - `pre_exec(setsid)` с комментарием `// SAFETY:`.\n8. `record_launch(generation, pid, now)`; ожидать завершения.\n9. `record_exit(...)`. Вернуть код выхода (сигнал → 128 + номер).\n\nОшибки `LaunchError: RunAsRoot, AlreadyRunning, Store(StoreError), Engine(EngineError), Invalid(Vec<Violation>), Guard(GuardError), Spawn` — `Display` через `t!`, без argv и env."
+    },
+    {
+      "id": "BI.C1",
+      "direction": "C",
+      "title": "Вычислить оси REGION/APP/STATE/NET для личности.",
+      "size": "S",
+      "level": "L1",
+      "deps": [
+        "BI.M3",
+        "BI.G2"
+      ],
+      "files": [
+        "src/identity/axes.rs"
+      ],
+      "spec": "`pub enum AxisValue { Verified, Partial, Unknown, Blocked }`, `pub struct Axis { pub value: AxisValue, pub reason: &'static str }`\n`pub struct Axes { pub net: Axis, pub region: Axis, pub state: Axis, pub app: Axis }`\n`pub fn axes(p: &BrowserIdentityProfile, report: &Report) -> Axes` — правила (`reason` — ключи `t!`):\n\n**NET** — всегда `Unknown`, «отдельного туннеля для личности пока нет (I08)».\n\n**REGION:**\n- `Crowd` → `Partial`, «crowd: часовой пояс UTC и язык en-US намеренно»;\n- `Local` и в `report` есть `LanguageNotRegional` → `Partial`, «язык не из пресета страны»;\n- иначе `Partial`, «страна задана вручную, выход туннеля не проверен».\n\n`Verified` для REGION не выдаётся до I14.T01.\n\n**STATE:**\n- `Blocked`, если есть `ZoneInvalid` — «часовой пояс не найден в tzdata»;\n- иначе `Verified`, «профиль в каталоге CM».\n\n**APP:**\n- `Blocked`, если есть `BypassSuspected` — «профиль открывали мимо CM: нужно cm identity confirm»;\n- иначе `Blocked`, если есть другие errors — «личность не согласована»;\n- иначе `Partial`, если есть `UnverifiedVersion` или `EngineChanged` — «версия браузера не проверена лабораторией»;\n- иначе `Verified`, «версия проверена лабораторией»."
+    },
+    {
+      "id": "BI.C2",
+      "direction": "C",
+      "title": "Дать пользователю команды cm identity.",
+      "size": "M",
+      "level": "L1",
+      "deps": [
+        "BI.L3",
+        "BI.G3",
+        "BI.C1"
+      ],
+      "files": [
+        "src/identity/cli.rs",
+        "src/main.rs",
+        "src/i18n_table.rs"
+      ],
+      "spec": "`src/main.rs`: как для `source` — `if args.first() == \"identity\" { exit(cm::identity::cli::dispatch(&args[1..])) }`. Без sudo: личность принадлежит пользователю.\n\n**Команды и коды выхода:**\n- `cm identity list` — строки `<id>  <strategy>  <brand> <major>  <country|->`;\n- `cm identity create ID --browser PATH|auto --strategy local|crowd [--country CC] [--zone ZONE] [--lang local[:N]|en|TAG] [-- EXTRA...]`:\n  - `auto` — первый существующий из `/usr/bin/google-chrome-stable, /usr/bin/chromium, /usr/bin/brave, /usr/bin/librewolf, /usr/bin/firefox`;\n  - для `local` `--country` обязателен;\n  - печатает итоговое окружение и предупреждения;\n- `cm identity show ID` — поля личности, окружение, оси, предупреждения; без `extra_args` целиком (только число);\n- `cm identity check ID` — `validate` и оси, ничего не запускает;\n- `cm identity launch ID [URL] [--lab]` — `--lab` принимается только при `CM_IDENTITY_LAB=1` в окружении (иначе ошибка использования);\n- `cm identity confirm ID`;\n- `cm identity remove ID [--purge]`.\n\nКоды выхода: 0 — успех; 2 — использование или валидация; 3 — охрана (`BypassSuspected`, `BrowserRunning`, `AlreadyRunning`); 4 — запуск браузера не удался или `RunAsRoot`; 5 — хранилище.\n\n**Ошибки** печатаются как `cm identity: <фраза> [<код>]`. Код — имя варианта `Violation`, `GuardError` или `LaunchError`.\n\n**Строки:** все пользовательские через `t!`, переводы на 6 языков в `src/i18n_table.rs` (дописать в конец, существующие строки не трогать). Справка `cm identity` — константа с переводом."
+    },
+    {
+      "id": "BI.C3",
+      "direction": "C",
+      "title": "Добавить личность в справку и состояние cm.",
+      "size": "S",
+      "level": "L1",
+      "deps": [
+        "BI.C2"
+      ],
+      "files": [
+        "src/main.rs",
+        "src/i18n_table.rs"
+      ],
+      "spec": "- В общую справку `cm` — строка `cm identity …  личности браузера (стратегии local и crowd)` на 6 языках.\n- `cm identity` без аргументов печатает справку и выходит с кодом 2.\n- Больше ничего в существующих экранах не меняется: TUI-страница личностей — I17."
+    },
+    {
+      "id": "BI.Z",
+      "direction": "Z",
+      "title": "Принять направление лабораторным прогоном cm identity.",
+      "size": "M",
+      "level": "L3",
+      "deps": [
+        "BI.C3"
+      ],
+      "files": [
+        "docs/design/cm-network-manager/bi-evidence/<дата>/summary.json"
+      ],
+      "spec": "Вершина роли 2: кода нет. Закрывается, когда все рёбра ниже проверены, а лабораторный прогон (ребро в BI.Z) записан в evidence."
+    }
+  ],
+  "edges": [
+    {
+      "id": "E01",
+      "source": "BI.R1",
+      "target": "BI.R2",
+      "contract": "Каждая строка таблицы пригодна для выбора: страна — двухбуквенный код; зоны есть в tzdata `zone.tab` именно для этой страны; у каждого набора языков первый тег совпадает с POSIX-локалью; теги — BCP 47.",
+      "check": "`tests/audit_bi_presets.rs`: обход `PRESETS` против `/usr/share/zoneinfo/zone.tab` и файлов зон.",
+      "values": [
+        "все 18 стран: AT CA CH DE EE FI FR GB JP LT LV NL PL RU SE SG TR US — ровно этот набор",
+        "для каждой (country, zone): строка `country<TAB>…<TAB>zone` есть в zone.tab и файл `/usr/share/zoneinfo/<zone>` существует",
+        "NL.zones == [\"Europe/Amsterdam\"]; SE.zones == [\"Europe/Stockholm\"] (не Brussels/Berlin из zone1970.tab)",
+        "для каждого набора: tags[0] == `ll-RR`, posix == `ll_RR.UTF-8` с теми же ll и RR",
+        "DE.language_sets[0].tags == [de-DE, de, en-US, en]"
+      ],
+      "level": "L1"
+    },
+    {
+      "id": "E02",
+      "source": "BI.R2",
+      "target": "BI.M1",
+      "contract": "`select` детерминирован: одно и то же (страна, зона, язык) даёт один и тот же `EnvironmentProfile`; ошибки — без входных значений в тексте.",
+      "check": "`tests/audit_bi_presets.rs`, табличный тест.",
+      "values": [
+        "select(\"DE\", None, Local(0)) → {country DE, timezone Europe/Berlin, languages [de-DE, de, en-US, en], posix_locale de_DE.UTF-8, matches_country true}; accept_language() == \"de-DE,de,en-US,en\"",
+        "select(\"de\", None, Local(0)) == select(\"DE\", None, Local(0))",
+        "select(\"Germany\", None, Local(0)) → Err(UnknownCountry)",
+        "select(\"US\", Some(\"America/Chicago\"), English) → timezone America/Chicago, languages [en-US, en], posix en_US.UTF-8, matches_country true",
+        "select(\"US\", Some(\"Europe/Berlin\"), English) → Err(ZoneNotInCountry)",
+        "select(\"CH\", None, Local(1)) → languages [fr-CH, fr, en-US, en], posix fr_CH.UTF-8",
+        "select(\"CH\", None, Local(2)) → Err(NoSuchLanguageSet)",
+        "select(\"DE\", None, English) → languages [en-US, en], matches_country false",
+        "select(\"JP\", None, Custom(\"ru-RU\")) → languages [ru-RU, ru], posix ru_RU.UTF-8, matches_country false",
+        "select(\"JP\", None, Custom(\"ru\")) → languages [ru], posix ru_RU.UTF-8",
+        "select(\"JP\", None, Custom(\"ru_RU\")) и Custom(\"RU-ru\") и Custom(\"\") → Err(BadLanguageTag)",
+        "текст каждой ошибки не содержит входной строки (\"Germany\", \"Europe/Berlin\", \"ru_RU\")"
+      ],
+      "level": "L1"
+    },
+    {
+      "id": "E03",
+      "source": "BI.R3",
+      "target": "BI.M3",
+      "contract": "`verify_zone` отвечает только по tzdata и не выходит за `tzdir`.",
+      "check": "`tests/audit_bi_presets.rs`: системная tzdata и фикстура `TempDirGuard` с собственным `zone.tab`.",
+      "values": [
+        "(/usr/share/zoneinfo, DE, Europe/Berlin) → Ok",
+        "(/usr/share/zoneinfo, DE, Europe/Amsterdam) → Err(ZoneNotInCountry)",
+        "фикстура: zone.tab со строкой `NL\\t+5222+00454\\tEurope/Nowhere`, файла зоны нет → Err(ZoneMissing)",
+        "фикстура без zone.tab → Err(TzdataUnavailable)",
+        "zone \"../../etc/passwd\", \"/Europe/Berlin\", \"Europe/Ber lin\", 65 символов → Err(BadZoneName)"
+      ],
+      "level": "L1"
+    },
+    {
+      "id": "E04",
+      "source": "BI.E1",
+      "target": "BI.M1",
+      "contract": "`EngineInfo` описывает настоящий браузер по его собственному `--version`; ничего не придумывается.",
+      "check": "`tests/audit_bi_engine.rs`: `parse_version` на строках и `detect` на скриптах-фикстурах в `TempDirGuard`.",
+      "values": [
+        "\"Google Chrome 155.0.8059.39 \\n\" → Chromium, Chrome, 155, \"155.0.8059.39\"",
+        "\"Chromium 155.0.7000.1 Arch Linux\" → Chromium, Chromium, 155, \"155.0.7000.1\"",
+        "\"Brave Browser 154.1.96.61\" → Chromium, Brave, 154, \"154.1.96.61\"",
+        "\"Mozilla Firefox 157.0\" → Gecko, Firefox, 157, \"157.0\"",
+        "\"LibreWolf 157.0-1\" → Gecko, LibreWolf, 157, \"157.0-1\"",
+        "\"Opera 100.0\" и \"\" → Err(UnknownEngine)",
+        "detect(\"chrome\") → Err(NotAbsolute)",
+        "скрипт `exit 3` → Err(VersionFailed); скрипт `sleep 30` → Err(Timeout) за ≤ 12 с",
+        "скрипт печатает `env`: в выводе нет переменных родителя кроме PATH"
+      ],
+      "level": "L1"
+    },
+    {
+      "id": "E04b",
+      "source": "BI.E1",
+      "target": "BI.E2",
+      "contract": "Реестр сопоставляет строки с `EngineInfo` по brand и major, а не по строке версии.",
+      "check": "`tests/audit_bi_engine.rs`.",
+      "values": [
+        "EngineInfo{Chrome, 155, \"155.0.8059.39\"} и {Chrome, 155, \"155.0.9999.1\"} → одинаковый status",
+        "brand в JSON: ровно одно из Chrome, Chromium, Brave, Firefox, LibreWolf; неизвестный brand в JSON — ошибка разбора при сборке теста встраивания (тест читает data/identity-verified.json и проверяет каждую строку)"
+      ],
+      "level": "L1"
+    },
+    {
+      "id": "E05",
+      "source": "BI.E2",
+      "target": "BI.M3",
+      "contract": "Реестр отвечает `Verified` только для строк, за которыми стоит evidence того же механизма.",
+      "check": "`tests/audit_bi_engine.rs`.",
+      "values": [
+        "(Chrome 155, Local) → Verified, evidence \"docs/design/cm-network-manager/i15r-evidence/2026-10-08\"",
+        "(Brave 154, Local) → Verified, note содержит \"farbling\"",
+        "(Chrome 156, Local), (Chromium 155, Local), (Firefox 157, Local), (LibreWolf 157, Crowd) → Unverified",
+        "каждая строка JSON: каталог evidence существует в репозитории"
+      ],
+      "level": "L1"
+    },
+    {
+      "id": "E06",
+      "source": "BI.M1",
+      "target": "BI.M2",
+      "contract": "Модель сериализуется без потерь, отвергает чужие поля и неизвестную схему, история ограничена.",
+      "check": "`tests/audit_bi_model.rs`.",
+      "values": [
+        "validate_id: \"work\", \"a\", \"a-1\", 32 символа → Ok; \"Work\", \"-a\", \"a/b\", \"a b\", \"\", 33 символа → Err",
+        "JSON roundtrip профиля DE local == исходный",
+        "JSON с лишним полем `\"x\":1` → Err; schema_version 2 → Err(UnsupportedSchema)",
+        "7 вызовов record → generation +7, history.len() == 5, history[0].generation — третья запись",
+        "format!(\"{:?}\") не содержит значений extra_args"
+      ],
+      "level": "L1"
+    },
+    {
+      "id": "E07",
+      "source": "BI.M2",
+      "target": "BI.G1",
+      "contract": "Хранилище даёт каталог личности, принадлежащий пользователю, с правами 0700/0600 и атомарной записью.",
+      "check": "`tests/audit_bi_store.rs` с `CM_IDENTITY_ROOT` в `TempDirGuard`.",
+      "values": [
+        "create(work) → <root>/work 0700, identity.json 0600, profile/ 0700",
+        "create(work) повторно → Err(Exists); load(none) → Err(NotFound)",
+        "оставленный identity.json.tmp с мусором: load(work) читает прежний identity.json",
+        "list() при каталогах b, a, c-без-json → [a, b]",
+        "remove(work, false) → identity.json и state.json удалены, profile/ на месте; remove(work, true) → каталога нет",
+        "root — симлинк → open → Err(Unsafe)"
+      ],
+      "level": "L1"
+    },
+    {
+      "id": "E08",
+      "source": "BI.M1",
+      "target": "BI.M3",
+      "contract": "Валидатор получает полный профиль; каждое правило таблицы BI.M3 срабатывает ровно на своём условии.",
+      "check": "`tests/audit_bi_validate.rs`, табличный тест (одна строка — одно правило), tzdir системный.",
+      "values": [
+        "Local + DE + Chrome 155 (профиль и движок совпадают) → errors [], warnings []",
+        "Crowd + Chrome 155 + environment None → errors [StrategyEngineUnsupported]",
+        "Crowd + LibreWolf 157 + environment DE → errors [CrowdWithRegion], warnings [UnverifiedVersion]",
+        "Local + environment None → errors [LocalNeedsEnvironment]",
+        "Local + DE с timezone \"Europe/Amsterdam\" (подложено вручную) → errors [ZoneInvalid]",
+        "extra_args [\"--user-agent=x\"] → errors [ForbiddenArgument(\"--user-agent\")]; [\"--remote-debugging-pipe\"], [\"--headless=new\"], [\"--lang=ru\"], [\"--profile\"] — по одному коду каждый",
+        "extra_args [\"--ozone-platform=wayland\"] → errors []",
+        "профиль Chrome 155, движок Chrome 156 → warnings [EngineChanged, UnverifiedVersion]",
+        "Local + DE + English → warnings [LanguageNotRegional]",
+        "Local + DE + Brave 154 → warnings [BraveFarblesLanguages]",
+        "bypass_suspected = true → errors [BypassSuspected]"
+      ],
+      "level": "L1"
+    },
+    {
+      "id": "E09",
+      "source": "BI.M3",
+      "target": "BI.L1",
+      "contract": "План строится только для профиля без errors; план не добавляет ничего, что валидатор запрещает пользователю.",
+      "check": "`tests/audit_bi_plan.rs`: точное сравнение argv и env.",
+      "values": [
+        "parent_env {DISPLAY=:0, WAYLAND_DISPLAY=wayland-1, XAUTHORITY=/h/.Xauthority, XDG_RUNTIME_DIR=/run/user/1000, DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus, HOME=/h, PATH=/usr/bin, LC_TIME=ru_RU.UTF-8, LANGUAGE=ru, TZ=Europe/Moscow, SECRET_TOKEN=x}",
+        "chromium_plan(DE local, /r/work/profile, env, None, false).args == [\"--user-data-dir=/r/work/profile\", \"--lang=de-DE\", \"--accept-lang=de-DE,de,en-US,en\", \"--no-first-run\", \"--no-default-browser-check\"]",
+        "env == {DBUS_SESSION_BUS_ADDRESS, DISPLAY, HOME=/h, LANG=de_DE.UTF-8, PATH=/usr/bin, TZ=Europe/Berlin, WAYLAND_DISPLAY, XAUTHORITY, XDG_RUNTIME_DIR} — ровно 9 ключей; нет LC_TIME, LANGUAGE, SECRET_TOKEN",
+        "parent_env без PATH → PATH=/usr/bin:/bin",
+        "url \"http://127.0.0.1:18765/\" — последний аргумент; extra_args [\"--ozone-platform=wayland\"] — сразу перед url",
+        "lab=true → после `--no-default-browser-check` идут \"--headless=new\", \"--no-sandbox\"",
+        "в argv нет `--user-agent`, `--remote-debugging-*`, `--enable-automation`; files == []"
+      ],
+      "level": "L1"
+    },
+    {
+      "id": "E10",
+      "source": "BI.M3",
+      "target": "BI.L2",
+      "contract": "user.js целиком задаётся стратегией; UA-prefs не пишутся.",
+      "check": "`tests/audit_bi_plan.rs`: точное сравнение user.js, args и env.",
+      "values": [
+        "Local + DE: user.js == \"// Managed by cm identity. Changes here are overwritten at launch.\\nuser_pref(\\\"intl.accept_languages\\\", \\\"de-DE, de, en-US, en\\\");\\nuser_pref(\\\"intl.locale.requested\\\", \\\"de-DE\\\");\\nuser_pref(\\\"privacy.resistFingerprinting\\\", false);\\n\"",
+        "Crowd: user.js == \"// Managed by cm identity. Changes here are overwritten at launch.\\nuser_pref(\\\"intl.accept_languages\\\", \\\"en-US, en\\\");\\nuser_pref(\\\"intl.locale.requested\\\", \\\"en-US\\\");\\nuser_pref(\\\"privacy.resistFingerprinting\\\", true);\\n\"",
+        "Local env: TZ=Europe/Berlin, LANG=de_DE.UTF-8; Crowd env: LANG=en_US.UTF-8 и нет TZ",
+        "args == [\"--profile\", \"/r/work/profile\", \"--no-remote\"]; lab=true → + \"--headless\"",
+        "ни одна строка user.js не содержит \"useragent\""
+      ],
+      "level": "L1"
+    },
+    {
+      "id": "E11",
+      "source": "BI.G1",
+      "target": "BI.G2",
+      "contract": "Отпечаток меняется при любой правке ключевого файла и не меняется без правок; маркеры переживают перезапуск процесса CM.",
+      "check": "`tests/audit_bi_guard.rs` в `TempDirGuard`.",
+      "values": [
+        "пустой профиль Chromium → 2 записи present=false",
+        "запись `Default/Preferences` = \"{}\" → present=true, size 2, sha256 44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+        "два fingerprint без изменений → равны; изменение одного байта → не равны",
+        "record_launch затем load_state → last_launch == записанное; state.json 0600"
+      ],
+      "level": "L1"
+    },
+    {
+      "id": "E12",
+      "source": "BI.G2",
+      "target": "BI.L3",
+      "contract": "До запуска охрана отвечает однозначно; при обходе состояние сохраняется до подтверждения.",
+      "check": "`tests/audit_bi_guard.rs`; `is_alive` подменяется в тесте.",
+      "values": [
+        "новая личность без state.json → Ok(FirstLaunch)",
+        "record_exit, файлы не менялись → Ok(Clean)",
+        "record_exit, затем Default/Preferences изменён, policy Block → Err(BypassSuspected); bypass_suspected сохранён в identity.json; history последняя запись \"bypass-suspected\"",
+        "повторный вызов без изменений → снова Err(BypassSuspected)",
+        "то же при policy Warn → Ok(Warned), bypass_suspected false, history \"bypass-warned\"",
+        "SingletonLock → \"host-4242\", is_alive(4242) == true → Err(BrowserRunning); is_alive false → проверка продолжается",
+        "Gecko: `lock` → \"127.0.0.1:+4242\", is_alive true → Err(BrowserRunning)",
+        "last_launch есть, last_exit нет (CM упал), policy Block → Err(BypassSuspected)"
+      ],
+      "level": "L1"
+    },
+    {
+      "id": "E13",
+      "source": "BI.G2",
+      "target": "BI.C1",
+      "contract": "Состояние охраны отражается в оси APP.",
+      "check": "`tests/audit_bi_axes.rs`.",
+      "values": [
+        "bypass_suspected → APP Blocked, reason \"профиль открывали мимо CM: нужно cm identity confirm\""
+      ],
+      "level": "L1"
+    },
+    {
+      "id": "E13b",
+      "source": "BI.G2",
+      "target": "BI.G3",
+      "contract": "Подтверждению нужен сохранённый признак обхода и тот же формат отпечатка.",
+      "check": "`tests/audit_bi_guard.rs`.",
+      "values": [
+        "после Err(BypassSuspected) identity.json содержит \"bypass_suspected\": true — confirm читает его из хранилища, а не из памяти процесса"
+      ],
+      "level": "L1"
+    },
+    {
+      "id": "E14",
+      "source": "BI.G3",
+      "target": "BI.C2",
+      "contract": "Подтверждение снимает блокировку один раз и обновляет эталон отпечатка.",
+      "check": "`tests/audit_bi_guard.rs`.",
+      "values": [
+        "после BypassSuspected: confirm → bypass_suspected false, history \"bypass-confirmed\", следующий check_before_launch → Ok(Clean)",
+        "confirm без подозрения → generation и history не меняются"
+      ],
+      "level": "L1"
+    },
+    {
+      "id": "E15",
+      "source": "BI.L1",
+      "target": "BI.L3",
+      "contract": "Исполнитель передаёт браузеру ровно план: те же argv и env, ничего от родителя.",
+      "check": "`tests/audit_bi_launch.rs`: фикстура-«браузер» — скрипт, который на `--version` печатает `Google Chrome 155.0.8059.39`, а иначе пишет argv и `env` в файл и выходит с кодом 0.",
+      "values": [
+        "launch(work DE local, None, false) → Ok(0); записанный argv == plan.args; записанный env == plan.env (родитель с SECRET_TOKEN=x — его нет)",
+        "браузер запущен в новой сессии: getsid(pid) == pid (скрипт пишет `ps -o sid= -p $$`)",
+        "browser.log создан с правами 0600",
+        "после выхода state.json содержит last_launch и last_exit"
+      ],
+      "level": "L2"
+    },
+    {
+      "id": "E16",
+      "source": "BI.L2",
+      "target": "BI.L3",
+      "contract": "Для Gecko исполнитель пишет user.js до запуска и не трогает другие файлы профиля.",
+      "check": "`tests/audit_bi_launch.rs` с фикстурой `LibreWolf 157.0-1`.",
+      "values": [
+        "после launch profile/user.js == строка из E10 (Local DE); права 0600",
+        "заранее положенный profile/prefs.js не изменён"
+      ],
+      "level": "L2"
+    },
+    {
+      "id": "E17",
+      "source": "BI.L3",
+      "target": "BI.C2",
+      "contract": "Отказы исполнителя различимы по типу и не запускают браузер.",
+      "check": "`tests/audit_bi_launch.rs`.",
+      "values": [
+        "второй launch той же личности, пока первый ждёт (скрипт `sleep 2`) → Err(AlreadyRunning), второй скрипт не запускался",
+        "профиль с extra_args [\"--user-agent=x\"] → Err(Invalid([ForbiddenArgument(\"--user-agent\")])), файл argv не создан",
+        "фикстура меняет --version на 156 → профиль сохранён с engine 156 и history \"engine Chrome 156\"",
+        "euid 0 без test_mode → Err(RunAsRoot) (проверка, если тест запущен от root; иначе тест печатает NOT_APPLICABLE)"
+      ],
+      "level": "L2"
+    },
+    {
+      "id": "E17b",
+      "source": "BI.M3",
+      "target": "BI.C1",
+      "contract": "Оси строятся из `Report` валидатора без повторной проверки и без доступа к сети.",
+      "check": "`tests/audit_bi_axes.rs`: `axes` вызывается на вручную собранных `Report`.",
+      "values": [
+        "Report{errors [], warnings [UnverifiedVersion]} → APP Partial",
+        "Report{errors [ForbiddenArgument(\"--user-agent\")], warnings []} → APP Blocked «личность не согласована»"
+      ],
+      "level": "L1"
+    },
+    {
+      "id": "E18",
+      "source": "BI.C1",
+      "target": "BI.C2",
+      "contract": "Оси не выдают Verified там, где нет проверки.",
+      "check": "`tests/audit_bi_axes.rs`.",
+      "values": [
+        "Local DE Chrome 155 без предупреждений → NET Unknown, REGION Partial «страна задана вручную, выход туннеля не проверен», STATE Verified, APP Verified",
+        "Local DE English → REGION Partial «язык не из пресета страны»",
+        "Crowd LibreWolf → REGION Partial «crowd: часовой пояс UTC и язык en-US намеренно», APP Partial (UnverifiedVersion)",
+        "ZoneInvalid → STATE Blocked, APP Blocked",
+        "ни при каких входах REGION и NET не равны Verified"
+      ],
+      "level": "L1"
+    },
+    {
+      "id": "E19",
+      "source": "BI.C2",
+      "target": "BI.C3",
+      "contract": "Команды стабильны по выводу и кодам выхода; строки переведены на 6 языков.",
+      "check": "`tests/audit_bi_cli.rs`: бинарник `cm` с `CM_IDENTITY_ROOT` и `CM_STATE_DIR` (test_mode), фикстуры браузеров из E15.",
+      "values": [
+        "create work --browser <fixture chrome> --strategy local --country DE → код 0; identity.json: environment DE, engine Chrome 155",
+        "create work повторно → код 5; create x --strategy local без --country → код 2",
+        "create c --browser <fixture chrome> --strategy crowd → код 2, вывод содержит [StrategyEngineUnsupported]",
+        "check work → код 0, вывод содержит NET, REGION, STATE, APP",
+        "launch work при изменённом profile/Default/Preferences после прошлого выхода → код 3, [BypassSuspected]; confirm work → 0; launch work → 0",
+        "launch work --lab без CM_IDENTITY_LAB=1 → код 2",
+        "create … -- --user-agent=x → код 2, [ForbiddenArgument]",
+        "для каждого из 6 языков (`CM_CONF` с `lang = auto` и `LC_ALL` = ru_RU.UTF-8, en_US.UTF-8, de_DE.UTF-8, it_IT.UTF-8, zh_CN.UTF-8, ar_EG.UTF-8): справка `cm identity` не содержит кириллицы, кроме ru"
+      ],
+      "level": "L1"
+    },
+    {
+      "id": "E20",
+      "source": "BI.C3",
+      "target": "BI.Z",
+      "contract": "Лабораторная приёмка: через `cm identity` браузер ведёт себя ровно как в протоколе I15R-LAB, механизм env-local.",
+      "check": "`tools/bi_lab.py` (роль 2, по образцу `tools/i15r_lab.py`): `unshare -rn`, сервер лаборатории на 127.0.0.1:18765, `CM_IDENTITY_ROOT` во временном каталоге, `CM_IDENTITY_LAB=1`, `cm identity create/launch ... --lab`. Два прогона подряд должны совпасть.",
+      "values": [
+        "Chrome 155, `create lab --strategy local --country DE`: первый запрос `Accept-Language` начинается с \"de-DE,de;q=0.9\"; UA без изменений (содержит \"Chrome/155\", нет \"CMLab\"); окно, Worker, вкладка: tz \"Europe/Berlin\", offset −60 (январь), `Intl` locale \"de\", languages [de-DE, de, en-US, en], webdriver false",
+        "Brave 154, то же: tz Europe/Berlin, `Intl` de, languages [de-DE], webdriver false",
+        "LibreWolf 157 crowd: UA содержит \"Firefox/157.0\"; tz \"Atlantic/Reykjavik\" или \"UTC\"; languages [en-US, en]; webdriver false",
+        "LibreWolf 157 local DE: UA без изменений; tz Europe/Berlin; `Intl` locale \"de\"; Accept-Language начинается с \"de-DE\"",
+        "голый запуск браузера с `--user-data-dir=<profile>` (Chrome) или `--profile` (LibreWolf) мимо CM, затем `cm identity launch lab --lab` → код 3 [BypassSuspected]",
+        "по результатам: строки в data/identity-verified.json для каждой проверенной пары (brand, major, strategy) со ссылкой на bi-evidence"
+      ],
+      "level": "L3"
+    }
+  ]
+}

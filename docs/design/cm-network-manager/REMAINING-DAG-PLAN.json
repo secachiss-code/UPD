@@ -243,6 +243,15 @@
       "gate": "G4"
     },
     {
+      "id": "BI",
+      "title": "Личность браузера",
+      "priority": "P1",
+      "lane": "env",
+      "goal": "Механизмы ADR-BROWSER-IDENTITY: пресеты региона, движок, личность и валидатор, план запуска без подмены UA, охрана профиля, cm identity. Вершины и контракты проверок — BI-DAG.md; код — роль 1, тесты — роль 2.",
+      "questions": "Q01, Q26, Q27",
+      "gate": ""
+    },
+    {
       "id": "I15",
       "title": "Приватное окружение и адаптеры приложений",
       "priority": "P1",
@@ -2305,29 +2314,14 @@
       "critical": false
     },
     {
-      "id": "I14.T02.a",
-      "milestone": "I14",
-      "title": "EnvironmentProfile и пресеты",
-      "size": "M",
-      "level": "L1",
-      "depends_on": [
-        "I14.T01.a"
-      ],
-      "what": "IANA timezone, DST, locale, languages; несколько допустимых комбинаций на страну.",
-      "outputs": "src/env/preset.rs",
-      "done_when": "Таблица пресетов с источником данных.",
-      "decision": null,
-      "wave": 31,
-      "critical": false
-    },
-    {
       "id": "I14.T03.a",
       "milestone": "I14",
       "title": "Применение к процессу",
       "size": "M",
       "level": "L2",
       "depends_on": [
-        "I14.T02.a",
+        "I14.T01.a",
+        "BI.R2",
         "I11.T02.a"
       ],
       "what": "TZ env, приватный /etc/localtime в mount ns, проверка наличия locale.",
@@ -2448,6 +2442,302 @@
       "critical": false
     },
     {
+      "id": "BI.R1",
+      "milestone": "BI",
+      "title": "Задать таблицу пресетов стран",
+      "size": "S",
+      "level": "L1",
+      "depends_on": [
+        "I15-R.T03.a"
+      ],
+      "what": "BI-DAG.md, вершина BI.R1.",
+      "outputs": "src/identity/presets.rs",
+      "done_when": "E01: Каждая строка таблицы пригодна для выбора: страна — двухбуквенный код; зоны есть в tzdata `zone.tab` именно для этой страны; у каждого набора языков первый тег совпадает с POSIX-локалью; теги — BCP 47.",
+      "decision": null,
+      "wave": 4,
+      "critical": false
+    },
+    {
+      "id": "BI.R2",
+      "milestone": "BI",
+      "title": "Выбрать окружение личности по стране, зоне и языку",
+      "size": "S",
+      "level": "L1",
+      "depends_on": [
+        "BI.R1"
+      ],
+      "what": "BI-DAG.md, вершина BI.R2.",
+      "outputs": "src/identity/presets.rs",
+      "done_when": "E02: `select` детерминирован: одно и то же (страна, зона, язык) даёт один и тот же `EnvironmentProfile`; ошибки — без входных значений в тексте.",
+      "decision": null,
+      "wave": 5,
+      "critical": false
+    },
+    {
+      "id": "BI.R3",
+      "milestone": "BI",
+      "title": "Проверить зону по системной tzdata",
+      "size": "S",
+      "level": "L1",
+      "depends_on": [
+        "I15-R.T03.a"
+      ],
+      "what": "BI-DAG.md, вершина BI.R3.",
+      "outputs": "src/identity/tzdata.rs",
+      "done_when": "E03: `verify_zone` отвечает только по tzdata и не выходит за `tzdir`.",
+      "decision": null,
+      "wave": 4,
+      "critical": false
+    },
+    {
+      "id": "BI.E1",
+      "milestone": "BI",
+      "title": "Распознать браузер и его версию по `--version`",
+      "size": "S",
+      "level": "L1",
+      "depends_on": [
+        "I15-R.T03.a"
+      ],
+      "what": "BI-DAG.md, вершина BI.E1.",
+      "outputs": "src/identity/engine.rs",
+      "done_when": "E04: `EngineInfo` описывает настоящий браузер по его собственному `--version`; ничего не придумывается.; E04b: Реестр сопоставляет строки с `EngineInfo` по brand и major, а не по строке версии.",
+      "decision": null,
+      "wave": 4,
+      "critical": false
+    },
+    {
+      "id": "BI.E2",
+      "milestone": "BI",
+      "title": "Вести реестр проверенных лабораторией версий",
+      "size": "S",
+      "level": "L1",
+      "depends_on": [
+        "BI.E1"
+      ],
+      "what": "BI-DAG.md, вершина BI.E2.",
+      "outputs": "data/identity-verified.json, src/identity/verified.rs",
+      "done_when": "E05: Реестр отвечает `Verified` только для строк, за которыми стоит evidence того же механизма.",
+      "decision": null,
+      "wave": 5,
+      "critical": false
+    },
+    {
+      "id": "BI.M1",
+      "milestone": "BI",
+      "title": "Описать модель личности браузера",
+      "size": "M",
+      "level": "L1",
+      "depends_on": [
+        "BI.R2",
+        "BI.E1"
+      ],
+      "what": "BI-DAG.md, вершина BI.M1.",
+      "outputs": "src/identity/model.rs, src/identity/mod.rs, src/lib.rs",
+      "done_when": "E06: Модель сериализуется без потерь, отвергает чужие поля и неизвестную схему, история ограничена.; E08: Валидатор получает полный профиль; каждое правило таблицы BI.M3 срабатывает ровно на своём условии.",
+      "decision": null,
+      "wave": 6,
+      "critical": false
+    },
+    {
+      "id": "BI.M2",
+      "milestone": "BI",
+      "title": "Хранить личности в каталоге CM пользователя",
+      "size": "M",
+      "level": "L1",
+      "depends_on": [
+        "BI.M1"
+      ],
+      "what": "BI-DAG.md, вершина BI.M2.",
+      "outputs": "src/identity/store.rs",
+      "done_when": "E07: Хранилище даёт каталог личности, принадлежащий пользователю, с правами 0700/0600 и атомарной записью.",
+      "decision": null,
+      "wave": 7,
+      "critical": false
+    },
+    {
+      "id": "BI.M3",
+      "milestone": "BI",
+      "title": "Проверить согласованность личности до запуска",
+      "size": "M",
+      "level": "L1",
+      "depends_on": [
+        "BI.M1",
+        "BI.E2",
+        "BI.R3"
+      ],
+      "what": "BI-DAG.md, вершина BI.M3.",
+      "outputs": "src/identity/validate.rs",
+      "done_when": "E09: План строится только для профиля без errors; план не добавляет ничего, что валидатор запрещает пользователю.; E10: user.js целиком задаётся стратегией; UA-prefs не пишутся.; E17b: Оси строятся из `Report` валидатора без повторной проверки и без доступа к сети.",
+      "decision": null,
+      "wave": 7,
+      "critical": false
+    },
+    {
+      "id": "BI.L1",
+      "milestone": "BI",
+      "title": "Построить план запуска Chromium-браузера",
+      "size": "M",
+      "level": "L1",
+      "depends_on": [
+        "BI.M3"
+      ],
+      "what": "BI-DAG.md, вершина BI.L1.",
+      "outputs": "src/identity/plan.rs",
+      "done_when": "E15: Исполнитель передаёт браузеру ровно план: те же argv и env, ничего от родителя.",
+      "decision": null,
+      "wave": 8,
+      "critical": false
+    },
+    {
+      "id": "BI.L2",
+      "milestone": "BI",
+      "title": "Построить план запуска Gecko-браузера и его user.js",
+      "size": "M",
+      "level": "L1",
+      "depends_on": [
+        "BI.M3"
+      ],
+      "what": "BI-DAG.md, вершина BI.L2.",
+      "outputs": "src/identity/plan.rs",
+      "done_when": "E16: Для Gecko исполнитель пишет user.js до запуска и не трогает другие файлы профиля.",
+      "decision": null,
+      "wave": 8,
+      "critical": false
+    },
+    {
+      "id": "BI.G1",
+      "milestone": "BI",
+      "title": "Снимать отпечаток файлов профиля и вести маркеры запуска",
+      "size": "M",
+      "level": "L1",
+      "depends_on": [
+        "BI.M2"
+      ],
+      "what": "BI-DAG.md, вершина BI.G1.",
+      "outputs": "src/identity/guard.rs",
+      "done_when": "E11: Отпечаток меняется при любой правке ключевого файла и не меняется без правок; маркеры переживают перезапуск процесса CM.",
+      "decision": null,
+      "wave": 8,
+      "critical": false
+    },
+    {
+      "id": "BI.G2",
+      "milestone": "BI",
+      "title": "Обнаружить запуск профиля мимо CM перед новым запуском",
+      "size": "M",
+      "level": "L1",
+      "depends_on": [
+        "BI.G1"
+      ],
+      "what": "BI-DAG.md, вершина BI.G2.",
+      "outputs": "src/identity/guard.rs",
+      "done_when": "E12: До запуска охрана отвечает однозначно; при обходе состояние сохраняется до подтверждения.; E13: Состояние охраны отражается в оси APP.; E13b: Подтверждению нужен сохранённый признак обхода и тот же формат отпечатка.",
+      "decision": null,
+      "wave": 9,
+      "critical": false
+    },
+    {
+      "id": "BI.G3",
+      "milestone": "BI",
+      "title": "Подтвердить личность после обнаруженного обхода",
+      "size": "S",
+      "level": "L1",
+      "depends_on": [
+        "BI.G2"
+      ],
+      "what": "BI-DAG.md, вершина BI.G3.",
+      "outputs": "src/identity/guard.rs",
+      "done_when": "E14: Подтверждение снимает блокировку один раз и обновляет эталон отпечатка.",
+      "decision": null,
+      "wave": 10,
+      "critical": false
+    },
+    {
+      "id": "BI.L3",
+      "milestone": "BI",
+      "title": "Запустить браузер по плану и сопровождать его до выхода",
+      "size": "M",
+      "level": "L2",
+      "depends_on": [
+        "BI.L1",
+        "BI.L2",
+        "BI.G2"
+      ],
+      "what": "BI-DAG.md, вершина BI.L3.",
+      "outputs": "src/identity/launch.rs",
+      "done_when": "E17: Отказы исполнителя различимы по типу и не запускают браузер.",
+      "decision": null,
+      "wave": 10,
+      "critical": false
+    },
+    {
+      "id": "BI.C1",
+      "milestone": "BI",
+      "title": "Вычислить оси REGION/APP/STATE/NET для личности",
+      "size": "S",
+      "level": "L1",
+      "depends_on": [
+        "BI.M3",
+        "BI.G2"
+      ],
+      "what": "BI-DAG.md, вершина BI.C1.",
+      "outputs": "src/identity/axes.rs",
+      "done_when": "E18: Оси не выдают Verified там, где нет проверки.",
+      "decision": null,
+      "wave": 10,
+      "critical": false
+    },
+    {
+      "id": "BI.C2",
+      "milestone": "BI",
+      "title": "Дать пользователю команды cm identity",
+      "size": "M",
+      "level": "L1",
+      "depends_on": [
+        "BI.L3",
+        "BI.G3",
+        "BI.C1"
+      ],
+      "what": "BI-DAG.md, вершина BI.C2.",
+      "outputs": "src/identity/cli.rs, src/main.rs, src/i18n_table.rs",
+      "done_when": "E19: Команды стабильны по выводу и кодам выхода; строки переведены на 6 языков.",
+      "decision": null,
+      "wave": 11,
+      "critical": false
+    },
+    {
+      "id": "BI.C3",
+      "milestone": "BI",
+      "title": "Добавить личность в справку и состояние cm",
+      "size": "S",
+      "level": "L1",
+      "depends_on": [
+        "BI.C2"
+      ],
+      "what": "BI-DAG.md, вершина BI.C3.",
+      "outputs": "src/main.rs, src/i18n_table.rs",
+      "done_when": "E20: Лабораторная приёмка: через `cm identity` браузер ведёт себя ровно как в протоколе I15R-LAB, механизм env-local.",
+      "decision": null,
+      "wave": 12,
+      "critical": false
+    },
+    {
+      "id": "BI.Z",
+      "milestone": "BI",
+      "title": "Принять направление лабораторным прогоном cm identity",
+      "size": "M",
+      "level": "L3",
+      "depends_on": [
+        "BI.C3"
+      ],
+      "what": "BI-DAG.md, вершина BI.Z.",
+      "outputs": "docs/design/cm-network-manager/bi-evidence/<дата>/summary.json",
+      "done_when": "Все рёбра BI-DAG проверены, evidence записан.",
+      "decision": null,
+      "wave": 13,
+      "critical": false
+    },
+    {
       "id": "I15.T01.a",
       "milestone": "I15",
       "title": "Контракт адаптера",
@@ -2482,116 +2772,20 @@
       "critical": true
     },
     {
-      "id": "I15.T03.a",
-      "milestone": "I15",
-      "title": "BrowserIdentityProfile",
-      "size": "L",
-      "level": "L3",
-      "depends_on": [
-        "I15.T02.a"
-      ],
-      "what": "Липкая согласованная личность: стратегия local|crowd, настоящий движок и версия, пресет I14; явная смена, история, version policy; одна identity — один туннель и каталог данных (ADR-BROWSER-IDENTITY M6).",
-      "outputs": "src/env/identity.rs",
-      "done_when": "Только свойства со статусом go.",
-      "decision": null,
-      "wave": 46,
-      "critical": true
-    },
-    {
-      "id": "I15.T03.b",
-      "milestone": "I15",
-      "title": "Валидатор согласованности",
-      "size": "M",
-      "level": "L1",
-      "depends_on": [
-        "I15.T03.a"
-      ],
-      "what": "Чистая функция до запуска (ADR-BROWSER-IDENTITY M1): UA/Client Hints только настоящие для движка; crowd не сочетается с региональным TZ и подменой языка; navigator.language, Accept-Language и Intl-локаль из одного пресета; механизм обязан действовать до первого запроса и в Worker; признак автоматизации снят; версия браузера прошла лабораторный прогон. Отказы типизированы, без значений профиля.",
-      "outputs": "src/env/identity.rs",
-      "done_when": "Fixtures на каждое правило из I15R-LAB (п. 1–9): отказ с нужным кодом.",
-      "decision": null,
-      "wave": 47,
-      "critical": true
-    },
-    {
-      "id": "I15.T04.a",
-      "milestone": "I15",
-      "title": "CDP-контроллер Chromium",
-      "size": "L",
-      "level": "L3",
-      "depends_on": [
-        "I15.T03.b"
-      ],
-      "what": "ADR-BROWSER-IDENTITY M2: --remote-debugging-pipe, --disable-blink-features=AutomationControlled, setAutoAttach(waitForDebuggerOnStart) рекурсивно, Network/Emulation overrides с настоящими метаданными движка, навигация только после overrides; fail-closed при потере pipe. Дополнительно проверить видимый режим, Service/Shared Worker, расширения, PDF.",
-      "outputs": "src/env/adapters/chromium.rs",
-      "done_when": "Capture первого запроса и всех контекстов согласован; закрытие pipe завершает браузер.",
-      "decision": null,
-      "wave": 48,
-      "critical": true
-    },
-    {
-      "id": "I15.T04.b",
-      "milestone": "I15",
-      "title": "Профиль, привязанный к CM",
-      "size": "M",
-      "level": "L3",
-      "depends_on": [
-        "I15.T04.a"
-      ],
-      "what": "ADR-BROWSER-IDENTITY M3: каталог профиля CM 0700, маркеры запуска и завершения, обнаружение запуска мимо CM → APP blocked до подтверждения; controls, живущие в профиле, задаются тем же пресетом.",
-      "outputs": "src/env/profile_guard.rs",
-      "done_when": "Сценарий голого запуска профиля обнаружен и виден в UI.",
-      "decision": null,
-      "wave": 49,
-      "critical": true
-    },
-    {
-      "id": "I15.T04.c",
-      "milestone": "I15",
-      "title": "Firefox-адаптер local и crowd",
-      "size": "M",
-      "level": "L3",
-      "depends_on": [
-        "I15.T04.b",
-        "I14.T03.a"
-      ],
-      "what": "ADR-BROWSER-IDENTITY M4: crowd — проверка, что RFP включён и не переопределён; local — prefs user.js по пресету и TZ через приватный /etc/localtime в mount ns.",
-      "outputs": "src/env/adapters/firefox.rs",
-      "done_when": "Лабораторный прогон: голый перезапуск внутри окружения CM сохраняет TZ.",
-      "decision": null,
-      "wave": 50,
-      "critical": true
-    },
-    {
-      "id": "I15.T04.d",
-      "milestone": "I15",
-      "title": "Регрессия на версию браузера",
-      "size": "S",
-      "level": "L3",
-      "depends_on": [
-        "I15.T04.c"
-      ],
-      "what": "ADR-BROWSER-IDENTITY M5: tools/i15r_lab.py и i15r_cdp_lab.py как проверка; без прогона новая версия — partial с возрастом проверки.",
-      "outputs": "i15-evidence/<версия>",
-      "done_when": "Прогон на текущих версиях Chrome, Brave, LibreWolf записан.",
-      "decision": null,
-      "wave": 51,
-      "critical": true
-    },
-    {
       "id": "I15.T05.a",
       "milestone": "I15",
       "title": "Проверка surfaces и сохранности аккаунта",
       "size": "M",
       "level": "L4",
       "depends_on": [
-        "I15.T04.d"
+        "I15.T02.a",
+        "BI.Z"
       ],
       "what": "Частичные/unsupported свойства показываются; один аккаунт в двух профилях показывается как связанность профилей.",
       "outputs": "i15-evidence",
       "done_when": "Нет неподтверждённых гарантий в UI.",
       "decision": null,
-      "wave": 52,
+      "wave": 46,
       "critical": true
     },
     {
@@ -2773,7 +2967,7 @@
       "outputs": "I17-UI-CONTRACT.md",
       "done_when": "Нет provisional полей.",
       "decision": null,
-      "wave": 53,
+      "wave": 47,
       "critical": true
     },
     {
@@ -2789,7 +2983,7 @@
       "outputs": "src/tui/*",
       "done_when": "Фоновая модель как в 0.2.7.",
       "decision": null,
-      "wave": 54,
+      "wave": 48,
       "critical": true
     },
     {
@@ -2805,7 +2999,7 @@
       "outputs": "src/diag/export.rs",
       "done_when": "Сканер секретов по экспорту = 0.",
       "decision": null,
-      "wave": 55,
+      "wave": 49,
       "critical": true
     },
     {
@@ -2821,7 +3015,7 @@
       "outputs": "cosmic/src/*",
       "done_when": "Ручная проверка на COSMIC.",
       "decision": null,
-      "wave": 56,
+      "wave": 50,
       "critical": true
     },
     {
@@ -2837,7 +3031,7 @@
       "outputs": "i17-evidence",
       "done_when": "Snapshot ↔ evidence совпадают.",
       "decision": null,
-      "wave": 57,
+      "wave": 51,
       "critical": true
     },
     {
@@ -2989,7 +3183,7 @@
       "outputs": "I18-TRACE.md",
       "done_when": "Трассировка полная.",
       "decision": null,
-      "wave": 58,
+      "wave": 52,
       "critical": true
     },
     {
@@ -3005,7 +3199,7 @@
       "outputs": "i18-evidence",
       "done_when": "Все критерии pass или явный blocked.",
       "decision": null,
-      "wave": 59,
+      "wave": 53,
       "critical": true
     },
     {
@@ -3021,7 +3215,7 @@
       "outputs": "i18-evidence/regress",
       "done_when": "Без регресса.",
       "decision": null,
-      "wave": 60,
+      "wave": 54,
       "critical": true
     },
     {
@@ -3037,7 +3231,7 @@
       "outputs": "RELEASE-SCOPE.md",
       "done_when": "Нет неподтверждённых гарантий.",
       "decision": null,
-      "wave": 61,
+      "wave": 55,
       "critical": true
     },
     {
@@ -3053,7 +3247,7 @@
       "outputs": "I18-ACCEPTANCE.md",
       "done_when": "Решение пользователя.",
       "decision": null,
-      "wave": 62,
+      "wave": 56,
       "critical": true
     }
   ],
@@ -3165,12 +3359,6 @@
     "I13.T05.a",
     "I15.T01.a",
     "I15.T02.a",
-    "I15.T03.a",
-    "I15.T03.b",
-    "I15.T04.a",
-    "I15.T04.b",
-    "I15.T04.c",
-    "I15.T04.d",
     "I15.T05.a",
     "I17.T01.a",
     "I17.T02.a",
@@ -3192,6 +3380,9 @@
     "I06.T01.b",
     "I10.T01.a",
     "I15-R.T04.a",
+    "BI.R1",
+    "BI.R3",
+    "BI.E1",
     "X.02",
     "X.03",
     "X.04",
