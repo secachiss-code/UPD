@@ -1,0 +1,61 @@
+{
+  "date": "2026-10-08",
+  "git_revision": "659421b4bcf50c9966bc564f312ef87355a5563a",
+  "dirty_tree": true,
+  "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)",
+  "cargo_lock_sha256": "db485e8ee68cda6cf38c8d021d0e2607d3bf806b59016612768c0915c5cd6e83",
+  "target": "x86_64-unknown-linux-musl",
+  "cargo_target_dir": "/home/somovas/.cache/cm-grok-target",
+  "mihomo": "/home/somovas/.cache/cm-cores/mihomo/mihomo",
+  "command": "CARGO_TARGET_DIR=$HOME/.cache/cm-grok-target CM_TEST_MIHOMO=$HOME/.cache/cm-cores/mihomo/mihomo sh tests/check_audit.sh",
+  "exit_code": 0,
+  "counters": {
+    "passed": 518,
+    "failed": 0,
+    "ignored": 0,
+    "test_result_lines": 43,
+    "skipped_lines": 0
+  },
+  "package": "G",
+  "tasks": [
+    "I04.T04.f"
+  ],
+  "status": "PASS",
+  "checks": [
+    {
+      "id": "gate",
+      "command": "sh tests/check_audit.sh",
+      "result": "PASS",
+      "detail": "exit 0; 43 test-result lines sum to 518 passed, 0 failed, 0 ignored, including cosmic 15; python unittest 4 OK; TUI launcher PASS; rustfmt --check and clippy -D warnings finished. The log contains no SKIPPED line."
+    },
+    {
+      "id": "I04.T04.f",
+      "command": "cargo test --locked --offline --target x86_64-unknown-linux-musl --test audit_i04_policy",
+      "result": "PASS",
+      "detail": "4 passed. Publisher fixture with select, url-test, fallback and load-balance is accepted by mihomo -t. D1 section_names is empty. from_raw rereads the stored body. relay, ghost target, sub-rule cycle and a non-inline rule-provider are explicit parser errors. GEOIP and GEOSITE stay on the host path and generate_from_store returns ConfigError::InvalidRule. Mihomo accepts SUB-RULE only as SUB-RULE,(NETWORK,TCP),name."
+    }
+  ],
+  "hashes": {
+    "src/core/mihomo/policy.rs": "2b6c92d169d28173329b88476bf8e04aefdc1f83207a586bf18ef25eaa3fe53a",
+    "tests/audit_i04_policy.rs": "ae4fc72c5d2827d8d9171f6785e54ad1560b9920b7239bd807e4efae0017ac77",
+    "tests/check_audit.sh": "8767df8eab6165df98d6d0303a12bb10dcac4f882819ea6348986747f17bf7c0"
+  },
+  "not_closed": [
+    "I04.T04.e, I04.T05.c, I17-D and I15-R are the stage tail and were not started.",
+    "V.02 and V.05 stay outside this pass."
+  ],
+  "review": {
+    "date": "2026-10-08",
+    "verdict": "ACCEPTED_AFTER_FIX",
+    "note": "Coordinator review 2026-10-08: inline rule-providers are now carried in PublisherPolicy and emitted; worker rule order is CM user rules, publisher rules, one MATCH; a publisher group name equal to a generator group is InvalidRule; a group with use is PublisherProvider. The mihomo -t fixture now includes an inline RULE-SET.",
+    "review_doc": "../../REVIEW-2026-10-08-STAGE2-WAVE2.md",
+    "gate": {
+      "exit_code": 0,
+      "test_result_lines": 43,
+      "passed": 522,
+      "failed": 0,
+      "ignored": 0,
+      "skipped_lines": 0
+    }
+  }
+}

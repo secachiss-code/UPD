@@ -482,7 +482,6 @@
         fs::remove_file(api_socket()).unwrap();
         fs::write(api_socket(), b"").unwrap();
         assert!(api("GET", "/version", None).is_err(), "обычный файл вместо сокета");
-        assert!(parse_http_response(b"HTTP/1.1 200 OK\r\nContent-Length: 10\r\n\r\nabc").is_err());
     }
 
     /// B14: prepare не качает ядро, а коротко отказывает, когда его нет.

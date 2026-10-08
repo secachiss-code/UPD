@@ -180,7 +180,19 @@ pub fn generate_from_store(
         let definition = artifact.definition(id).ok_or(ConfigError::InvalidNode)?;
         proxies.push(definition.full_definition().clone());
     }
-    generate_config(&proxies, dns, leased_port, user_rules, auto_group)
+    let mut names = std::collections::BTreeSet::new();
+    for proxy in &proxies {
+        if let Some(name) = proxy.get("name").and_then(Value::as_str) {
+            names.insert(name.to_owned());
+        }
+    }
+    let mut document = profile_document(&proxies, dns, user_rules, auto_group)?;
+    let policy = super::policy::from_raw(artifact.raw_body(), &names)
+        .map_err(|_| ConfigError::InvalidRule)?;
+    if !policy.is_empty() {
+        super::policy::merge_worker(&mut document, &policy)?;
+    }
+    attach_worker_listeners(&document, leased_port)
 }
 
 fn artifact_error(error: ArtifactError) -> ConfigError {
@@ -234,7 +246,88 @@ fn check_rule(rule: &str) -> Result<(), ConfigError> {
     if rule.is_empty() || rule.chars().any(|c| c == '\n' || c.is_ascii_control()) {
         return Err(ConfigError::InvalidRule);
     }
+    // Offline geo databases are not delivered yet (I05.T04.a). A worker must not fetch them.
+    let kind = rule.split(',').next().unwrap_or("").trim();
+    if kind.eq_ignore_ascii_case("GEOIP") || kind.eq_ignore_ascii_case("GEOSITE") {
+        return Err(ConfigError::InvalidRule);
+    }
     Ok(())
+}
+
+/// Refuse GEOIP and GEOSITE anywhere in `rules` or `sub-rules`.
+///
+/// A present `rules` or `sub-rules` value that is not a list of strings is
+/// [`ConfigError::InvalidRule`]. Those entries are not dropped.
+pub fn reject_geo_document(document: &Value) -> Result<(), ConfigError> {
+    if document.get("rules").is_some() {
+        let rules = document
+            .get("rules")
+            .and_then(Value::as_array)
+            .ok_or(ConfigError::InvalidRule)?;
+        for rule in rules {
+            let text = rule.as_str().ok_or(ConfigError::InvalidRule)?;
+            check_rule(text)?;
+        }
+    }
+    if document.get("sub-rules").is_some() {
+        let sub = document
+            .get("sub-rules")
+            .and_then(Value::as_object)
+            .ok_or(ConfigError::InvalidRule)?;
+        for rules in sub.values() {
+            let items = rules.as_array().ok_or(ConfigError::InvalidRule)?;
+            for rule in items {
+                let text = rule.as_str().ok_or(ConfigError::InvalidRule)?;
+                check_rule(text)?;
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Listeners from `worker::generate`, then the API socket path from the instance directory.
+///
+/// `socket_path` is not read from `document`. `external-controller-unix` on input is
+/// still [`ConfigError::Forbidden`].
+pub fn attach_instance_controller(
+    document: &Value,
+    leased_port: u16,
+    socket_path: &std::path::Path,
+) -> Result<Vec<u8>, ConfigError> {
+    reject_geo_document(document)?;
+    let bytes = attach_worker_listeners(document, leased_port)?;
+    let mut value: Value = serde_json::from_slice(&bytes).map_err(|_| ConfigError::Forbidden)?;
+    let path = socket_path.to_str().ok_or(ConfigError::Forbidden)?;
+    if path.is_empty() || !path.starts_with('/') || path.chars().any(|c| c.is_control()) {
+        return Err(ConfigError::Forbidden);
+    }
+    let object = value.as_object_mut().ok_or(ConfigError::Forbidden)?;
+    if object.contains_key("external-controller-unix") {
+        return Err(ConfigError::Forbidden);
+    }
+    object.insert(
+        "external-controller-unix".to_owned(),
+        Value::String(path.to_owned()),
+    );
+    serde_json::to_vec(&value).map_err(|_| ConfigError::Forbidden)
+}
+
+/// Proxy objects of one stored source, in publication order.
+pub fn proxy_values(store: &Store, source_id: &Id) -> Result<Vec<Value>, ConfigError> {
+    let artifact = read_source_artifact(store, source_id).map_err(artifact_error)?;
+    let snapshot = store
+        .read_snapshot()
+        .map_err(|_| ConfigError::InvalidNode)?;
+    let source = snapshot.sources.get(source_id).ok_or(ConfigError::Empty)?;
+    let mut proxies = Vec::with_capacity(source.current_node_ids.len());
+    for id in &source.current_node_ids {
+        let definition = artifact.definition(id).ok_or(ConfigError::InvalidNode)?;
+        proxies.push(definition.full_definition().clone());
+    }
+    if proxies.is_empty() {
+        return Err(ConfigError::Empty);
+    }
+    Ok(proxies)
 }
 
 fn check_proxy(value: &Value) -> Result<(), ConfigError> {

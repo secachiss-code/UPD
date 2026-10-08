@@ -1,0 +1,67 @@
+{
+  "date": "2026-10-07",
+  "git_revision": "659421b4bcf50c9966bc564f312ef87355a5563a",
+  "dirty_tree": true,
+  "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)",
+  "cargo_lock_sha256": "db485e8ee68cda6cf38c8d021d0e2607d3bf806b59016612768c0915c5cd6e83",
+  "target": "x86_64-unknown-linux-musl",
+  "cargo_target_dir": "/home/somovas/.cache/cm-grok-target",
+  "mihomo": "/home/somovas/.cache/cm-cores/mihomo/mihomo",
+  "command": "CARGO_TARGET_DIR=$HOME/.cache/cm-grok-target CM_TEST_MIHOMO=$HOME/.cache/cm-cores/mihomo/mihomo sh tests/check_audit.sh",
+  "review_log": "review-gate.log",
+  "exit_code": 0,
+  "counters": {
+    "passed": 500,
+    "failed": 0,
+    "ignored": 0,
+    "test_result_lines": 39,
+    "skipped_lines": 0
+  },
+  "package": "E1",
+  "tasks": [
+    "I04.T04.c"
+  ],
+  "status": "PASS",
+  "checks": [
+    {
+      "id": "gate",
+      "command": "sh tests/check_audit.sh",
+      "result": "PASS",
+      "detail": "Review rerun: exit 0; 39 test-result lines sum to 500 passed, 0 failed, 0 ignored, including cosmic 15; python unittest 4 OK; TUI launcher PASS; rustfmt --check and clippy -D warnings finished. The log contains no SKIPPED line."
+    },
+    {
+      "id": "I04.T04.c",
+      "command": "cargo test --locked --offline --target x86_64-unknown-linux-musl --test audit_i04_lifecycle",
+      "result": "PASS",
+      "detail": "Review rerun inside unshare -rn: start reaches ApiReady, reload publishes log-level error via GET /configs; mihomo -t rejection, GEOIP rejection, and a failed PUT after successful validation leave the previous config bytes and ApiReady. Stop removes the pid group, socket and leases. A second start, kill -9, reports Down; reclaim_if_absent drops the port and socket leases, then restart and stop leave no group or leases. Exhausting socket leases releases the allocated port. external-controller-unix in the input document is Forbidden and does not keep a lease. The socket path in the published config is the instance run path. libc::SO_PEERCRED is only in core/mihomo/api.rs and helper/auth.rs."
+    }
+  ],
+  "hashes": {
+    "src/core/mihomo/lifecycle.rs": "44cf4a353bdf28cd7c9e9bcaf454dd2e13c311b6321e919217e5e32e8b0186a8",
+    "src/core/mihomo/api.rs": "3ebafd581e4c316fc156d125e2e52069eb73dd12d0eef4a8d8fd194fb757198d",
+    "src/core/mihomo/config.rs": "e4afc7998eb87ca17b24ab282390d5c7a46731198c0d0d6f0e06c815da150d81",
+    "src/vpn/core.rs": "c7e4a3e77a243c5e3f6e77bfafb2f7b241c8c13985b2ef7b4eca625a796bd98c",
+    "tests/audit_i04_lifecycle.rs": "492abb9665a76304f3afc7f8ef7399840d26f9683ea22fadd92fcb4d7d628a5d",
+    "tests/check_audit.sh": "c1fba05522fecbe972e65b9e1340306c66899777299dca899718db90668bda7e"
+  },
+  "not_closed": [
+    "F V.04 remains open: publisher rules swallowed, rule order, group name collisions, store off while a Store source is active, privilege on store on|off, subs compatibility.",
+    "E2 I04.T04.d and I04.T05.a not started.",
+    "G I04.T04.f not submitted: policy.rs exists, tests and mihomo -t fixture do not.",
+    "H I04.T03.b and X I05.T01.b not started."
+  ],
+  "review": {
+    "date": "2026-10-08",
+    "verdict": "ACCEPTED_AFTER_FIX",
+    "note": "Coordinator review 2026-10-08: start and reload now wait until the leased 127.0.0.1 port accepts TCP (the core answers on the API socket before it binds listeners); the lifecycle test waits for the killed group to disappear before restart. audit_i04_lifecycle and audit_i04_e2 passed 20 consecutive runs.",
+    "review_doc": "../../REVIEW-2026-10-08-STAGE2-WAVE2.md",
+    "gate": {
+      "exit_code": 0,
+      "test_result_lines": 43,
+      "passed": 522,
+      "failed": 0,
+      "ignored": 0,
+      "skipped_lines": 0
+    }
+  }
+}

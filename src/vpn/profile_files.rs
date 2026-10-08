@@ -275,6 +275,7 @@ fn switch_subscription_with(r: &SubRef, c: &Config, active: bool, reload_core: &
     let mut stage = "build";
     let result = (|| {
         subs.active = selected.id.clone();
+        subs.store_source.clear();
         let candidate = build_config_for(&latest, &subs)?;
         stage = "validate";
         validate_candidate(&candidate)?;

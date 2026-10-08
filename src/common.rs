@@ -27,7 +27,7 @@ pub fn number_setting(key: &str) -> Option<NumberSetting> {
         "parallel" | "parallel_vpn" => (1, MAX_PARALLEL as i64, Count), "min_free_gb" => (0, 1 << 20, Gibibytes),
         "vpn_port" => (1024, 65535, Port), "vpn_mode" => (0, 2, Count),
         "prefetch" | "prefetch_on_battery" | "prefetch_on_metered" | "flatpak" | "aur" | "firmware" | "news" | "snapshot" |
-        "vpn_tun" | "vpn_autostart" | "vpn_direct_ru" | "vpn_direct_lan" | "vpn_auto_select" | "vpn_auto_allow_ru" | "vpn_dns" | "vpn_ipv6" | "vpn_allow_lan" => (0, 1, Flag),
+        "vpn_tun" | "vpn_autostart" | "vpn_direct_ru" | "vpn_direct_lan" | "vpn_auto_select" | "vpn_auto_allow_ru" | "vpn_dns" | "vpn_ipv6" | "vpn_allow_lan" | "vpn_store_source" => (0, 1, Flag),
         _ => return None,
     };
     Some(NumberSetting { min, max, step: 1, unit })
@@ -113,6 +113,9 @@ pub struct Config {
     pub vpn_mode: u8,
     pub vpn_sub_update_h: i64,
     pub vpn_core_check_h: i64,
+    /// 1 — `cm vpn use source:ID` берёт узлы из Store. По умолчанию 0: прежний путь.
+    #[serde(default)]
+    pub vpn_store_source: bool,
     /// язык интерфейса: ru, en, de, it, zh, ar или auto (по локали)
     pub lang: String,
     pub mirrors: Vec<String>,
@@ -154,6 +157,7 @@ const DOCS: &[(&str, &str)] = &[
     ("vpn_mode", "VPN: маршрутизация: 0 — по правилам, 1 — всё через VPN, 2 — всё напрямую"),
     ("vpn_sub_update_h", "VPN: обновлять подписки раз в N часов (если провайдер не указал сам)"),
     ("vpn_core_check_h", "VPN: проверять новые релизы FlClash (сигнал обновить ядро mihomo) раз в N часов"),
+    ("vpn_store_source", "VPN: брать узлы из Store по cm vpn use source:ID (0 — нет, 1 — да)"),
 ];
 
 /// Состояние systemd-юнита (active, inactive, failed…) для показа на языке интерфейса.
@@ -215,6 +219,7 @@ impl Config {
             vpn_mode: 0,
             vpn_sub_update_h: 12,
             vpn_core_check_h: 24,
+            vpn_store_source: false,
             lang: "auto".into(),
             mirrors,
             baseline: None,
@@ -297,6 +302,7 @@ impl Config {
             "vpn_mode" => c.vpn_mode = n.clamp(0, 2) as u8,
             "vpn_sub_update_h" => c.vpn_sub_update_h = n.clamp(1, MAX_HOURS),
             "vpn_core_check_h" => c.vpn_core_check_h = n.clamp(1, MAX_HOURS),
+            "vpn_store_source" => c.vpn_store_source = b,
             _ => return false,
         }
         true
@@ -373,6 +379,7 @@ impl Config {
             "vpn_mode" => self.vpn_mode as i64,
             "vpn_sub_update_h" => self.vpn_sub_update_h,
             "vpn_core_check_h" => self.vpn_core_check_h,
+            "vpn_store_source" => self.vpn_store_source as i64,
             _ => 0,
         }
     }

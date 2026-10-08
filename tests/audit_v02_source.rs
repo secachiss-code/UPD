@@ -172,8 +172,8 @@ fn dry_run_prints_nodes_and_omissions_without_writing() {
     assert!(stdout.contains("протокол vless: 1"), "{stdout}");
     assert!(stdout.contains("tls not_applicable: 1"), "{stdout}");
     assert!(stdout.contains("tls disabled: 1"), "{stdout}");
-    assert!(stdout.contains("пропуск D1: proxy-groups"), "{stdout}");
-    assert!(stdout.contains("пропуск D1: rules"), "{stdout}");
+    assert!(!stdout.contains("пропуск D1: proxy-groups"), "{stdout}");
+    assert!(!stdout.contains("пропуск D1: rules"), "{stdout}");
     assert!(
         stdout.contains("пропуск D2: tls_verification disabled 1"),
         "{stdout}"

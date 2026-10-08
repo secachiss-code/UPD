@@ -414,6 +414,7 @@ mod tests {
             include_str!("vpn/config.rs"),
             include_str!("vpn/core.rs"),
             include_str!("vpn/conflicts.rs"),
+            include_str!("vpn/store_source.rs"),
             include_str!("sources/cli.rs"),
             // графический интерфейс COSMIC — отдельный крейт, но переводы общие
             include_str!("../cosmic/src/applet.rs"),

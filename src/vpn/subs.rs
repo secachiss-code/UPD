@@ -111,6 +111,9 @@ pub struct Subs {
     pub active: String,
     #[serde(default)]
     pub list: Vec<Sub>,
+    /// Store source selected by `cm vpn use source:ID`. Empty means the legacy subscription.
+    #[serde(default)]
+    pub store_source: String,
 }
 
 pub fn load_subs() -> Result<Subs, String> {

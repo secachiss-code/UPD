@@ -1,11 +1,17 @@
 //! Pinned mihomo descriptor. The tables are the I03 capability slices, not a second copy.
 
+pub mod api;
 pub mod config;
+pub mod lifecycle;
+pub mod policy;
+pub mod stats;
 pub mod validate;
 
 pub use config::{
-    ConfigError, attach_worker_listeners, generate_config, generate_from_store, profile_document,
+    ConfigError, attach_instance_controller, attach_worker_listeners, generate_config,
+    generate_from_store, profile_document, proxy_values, reject_geo_document,
 };
+pub use lifecycle::MihomoWorker;
 pub use validate::{CoreValidationCode, validate_file};
 
 use crate::profiles::NodeProtocol;

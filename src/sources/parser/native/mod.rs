@@ -75,6 +75,10 @@ pub enum ParserError {
         node_index: usize,
     },
     UriTooLong,
+    PublisherRelay,
+    PublisherGhostTarget,
+    PublisherCycle,
+    PublisherProvider,
     /// HTML page, provider stub or another body that is not a subscription (retryable).
     UnusableBody,
     /// More nested encoding layers than a subscription may use (terminal).
@@ -114,6 +118,10 @@ impl fmt::Display for ParserError {
             Self::DuplicateNodeName { .. } => "native source has duplicate proxy names",
             Self::InvalidNode { .. } => "native proxy definition is invalid",
             Self::UriTooLong => "share uri exceeds the length limit",
+            Self::PublisherRelay => "publisher group type relay is rejected",
+            Self::PublisherGhostTarget => "publisher rule target does not exist",
+            Self::PublisherCycle => "publisher sub-rules contain a cycle",
+            Self::PublisherProvider => "publisher rule provider is not inline",
             Self::UnusableBody => "response body is not a subscription",
             Self::UnsupportedEncoding => "subscription encoding is nested too deeply",
         })
@@ -289,6 +297,10 @@ fn build_source(
     let mut default_fields = Vec::new();
     let mut omitted_sections = Vec::new();
     let mut inline_nodes = Vec::new();
+    let mut policy_groups = None;
+    let mut policy_rules = None;
+    let mut policy_sub = None;
+    let mut policy_providers = None;
     for (field, value) in object {
         match classify_native_config_field(&field) {
             Ok(NativeFieldDisposition::ConstrainedDefault) => {
@@ -302,15 +314,11 @@ fn build_source(
             Ok(NativeFieldDisposition::RestrictedNative) => {
                 return Err(ParserError::RestrictedNativeField);
             }
-            Ok(
-                NativeFieldDisposition::ProxyGroups
-                | NativeFieldDisposition::Rules
-                | NativeFieldDisposition::SubRules,
-            ) => {
-                omitted_sections.push(field);
-            }
+            Ok(NativeFieldDisposition::ProxyGroups) => policy_groups = Some(value),
+            Ok(NativeFieldDisposition::Rules) => policy_rules = Some(value),
+            Ok(NativeFieldDisposition::SubRules) => policy_sub = Some(value),
             Ok(NativeFieldDisposition::ProviderDeclarations) if field == "rule-providers" => {
-                omitted_sections.push(field);
+                policy_providers = Some(value);
             }
             Ok(NativeFieldDisposition::ProviderDeclarations) => {
                 collect_proxy_providers(&value, &mut omitted_sections, &mut inline_nodes)?;
@@ -353,6 +361,21 @@ fn build_source(
         definitions.push(parsed);
     }
 
+    if policy_groups.is_some()
+        || policy_rules.is_some()
+        || policy_sub.is_some()
+        || policy_providers.is_some()
+    {
+        crate::core::mihomo::policy::accept_publisher(
+            &names,
+            policy_groups.as_ref(),
+            policy_rules.as_ref(),
+            policy_sub.as_ref(),
+            policy_providers.as_ref(),
+        )
+        .map_err(policy_parser_error)?;
+    }
+
     Ok(ParsedSource {
         format,
         definitions,
@@ -364,6 +387,17 @@ fn build_source(
             ..ImportOmissions::default()
         },
     })
+}
+
+fn policy_parser_error(error: crate::core::mihomo::policy::PolicyError) -> ParserError {
+    use crate::core::mihomo::policy::PolicyError;
+    match error {
+        PolicyError::Relay => ParserError::PublisherRelay,
+        PolicyError::GhostTarget => ParserError::PublisherGhostTarget,
+        PolicyError::Cycle => ParserError::PublisherCycle,
+        PolicyError::UnsupportedProvider => ParserError::PublisherProvider,
+        PolicyError::GeoRule | PolicyError::Invalid => ParserError::InvalidTopLevel,
+    }
 }
 
 /// Validate one proxy object exactly as the native parser does; shared with URI lists.

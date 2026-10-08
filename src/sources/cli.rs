@@ -21,7 +21,9 @@ use std::io::{self, Read};
 use std::path::{Path, PathBuf};
 
 fn help_text() -> String {
-    t!("cm source — источники подписок (только чтение)\n\n  cm source list\n  cm source show ID\n  cm source import --dry-run --url-stdin\n  cm source import --dry-run --url-file ФАЙЛ\n  cm source import --dry-run --from-legacy N\n  cm source doctor [ID]\n\nАдрес подписки не передаётся аргументом: одна строка в stdin, файл 0600 текущего пользователя или --from-legacy N (subs.json, только от root; N — номер или id:ИД).\n--dry-run ничего не записывает. doctor не меняет работающий VPN.\n").to_string()
+    let mut text = t!("cm source — источники подписок (только чтение)\n\n  cm source list\n  cm source show ID\n  cm source import --dry-run --url-stdin\n  cm source import --dry-run --url-file ФАЙЛ\n  cm source import --dry-run --from-legacy N\n  cm source doctor [ID]\n\nАдрес подписки не передаётся аргументом: одна строка в stdin, файл 0600 текущего пользователя или --from-legacy N (subs.json, только от root; N — номер или id:ИД).\n--dry-run ничего не записывает. doctor не меняет работающий VPN.\n").to_string();
+    text.push_str(t!("При vpn_store_source=1 команда import без --dry-run записывает один источник. Пропуски без --accept-omissions DIGEST не записываются.\n"));
+    text
 }
 
 const SUBSCRIPTION_AGENTS: [&str; 5] = [
@@ -161,7 +163,7 @@ fn execute(args: &[String]) -> Result<String, SourceCliError> {
             }
             show_source(id)
         }
-        "import" => import_dry_run(&args[1..]),
+        "import" => import_source(&args[1..]),
         "doctor" => {
             if args.len() > 2 {
                 return Err(SourceCliError::ExtraArgument);
@@ -244,12 +246,21 @@ fn doctor(id: Option<&str>) -> Result<String, SourceCliError> {
     Ok(format!("{body}{}\n", t!("VPN не изменялся")))
 }
 
-fn import_dry_run(args: &[String]) -> Result<String, SourceCliError> {
+struct ImportRequest {
+    source: ImportSource,
+    dry_run: bool,
+    accept_omissions: Option<String>,
+}
+
+fn import_source(args: &[String]) -> Result<String, SourceCliError> {
     if args.iter().any(|arg| arg.contains("://")) {
         return Err(SourceCliError::UrlInArgv);
     }
-    let source = parse_import(args)?;
-    let (label, url, preferred) = match source {
+    let request = parse_import(args)?;
+    if !request.dry_run && !store_writes_enabled() {
+        return Err(SourceCliError::ApplyUnsupported);
+    }
+    let (label, url, preferred) = match request.source {
         ImportSource::Stdin => (None, read_url(io::stdin())?, None),
         ImportSource::File(path) => (None, read_url_file(&path)?, None),
         ImportSource::Legacy(spec) => {
@@ -262,22 +273,92 @@ fn import_dry_run(args: &[String]) -> Result<String, SourceCliError> {
             (label, sub.url, preferred)
         }
     };
-    let mut lines = render_preview(label.as_deref(), &preview_url(&url, preferred.as_deref())?);
-    lines.push(t!("запись: нет (Store и legacy не изменялись)").to_string());
+    let accepted = negotiate_url(&url, preferred.as_deref())?;
+    let mut lines = render_preview(
+        label.as_deref(),
+        &Preview {
+            counts: accepted.parsed().counts(),
+            user_agent: accepted.actual_user_agent().expose_value().to_owned(),
+        },
+    );
+    if request.dry_run {
+        lines.push(t!("запись: нет (Store и legacy не изменялись)").to_string());
+        lines.push(t!("VPN не изменялся").to_string());
+        return Ok(join_lines(&lines));
+    }
+    match publish_source(accepted, request.accept_omissions.as_deref())? {
+        PublishReport::Pending { digest } => {
+            lines.push(t!("digest пропусков: {0}", digest));
+            lines.push(t!("запись: нет (нужно --accept-omissions)").to_string());
+        }
+        PublishReport::Written { id, nodes } => {
+            lines.push(t!("источник записан: {0} · узлов {1}", id, nodes));
+            lines.push(t!("запись: да").to_string());
+        }
+    }
     lines.push(t!("VPN не изменялся").to_string());
     Ok(join_lines(&lines))
 }
 
-fn parse_import(args: &[String]) -> Result<ImportSource, SourceCliError> {
+fn store_writes_enabled() -> bool {
+    crate::common::Config::load(Vec::new())
+        .map(|config| config.vpn_store_source)
+        .unwrap_or(false)
+}
+
+enum PublishReport {
+    Pending { digest: String },
+    Written { id: String, nodes: usize },
+}
+
+fn publish_source(
+    accepted: super::negotiation::Negotiated<super::parser::ParsedSource>,
+    confirm: Option<&str>,
+) -> Result<PublishReport, SourceCliError> {
+    use super::pipeline::{ImportPublishOutcome, create_accepted_source_with_omissions};
+    let root = store_root();
+    let store = if root.exists() {
+        Store::open(&root)
+    } else {
+        Store::initialize(&root)
+    }
+    .map_err(|error| SourceCliError::Store(error.to_string()))?;
+    let revision = store
+        .read_snapshot()
+        .map_err(|error| SourceCliError::Store(error.to_string()))?
+        .revision;
+    match create_accepted_source_with_omissions(&store, revision, accepted, confirm)
+        .map_err(|error| SourceCliError::Store(error.to_string()))?
+    {
+        ImportPublishOutcome::PendingConfirmation(summary) => Ok(PublishReport::Pending {
+            digest: summary.omissions_digest_sha256,
+        }),
+        ImportPublishOutcome::Published(receipt) => Ok(PublishReport::Written {
+            id: receipt.source_id.to_string(),
+            nodes: receipt.node_ids.len(),
+        }),
+    }
+}
+
+fn parse_import(args: &[String]) -> Result<ImportRequest, SourceCliError> {
     let mut dry_run = false;
     let mut stdin = false;
     let mut file = None;
     let mut legacy = None;
+    let mut accept_omissions = None;
     let mut index = 0;
     while index < args.len() {
         match args[index].as_str() {
             "--dry-run" => dry_run = true,
             "--url-stdin" => stdin = true,
+            "--accept-omissions" => {
+                index += 1;
+                let digest = args.get(index).ok_or(SourceCliError::Usage)?;
+                if digest.len() != 64 || !digest.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+                    return Err(SourceCliError::Usage);
+                }
+                accept_omissions = Some(digest.to_ascii_lowercase());
+            }
             "--url-file" => {
                 index += 1;
                 let path = args.get(index).ok_or(SourceCliError::MissingSource)?;
@@ -301,15 +382,17 @@ fn parse_import(args: &[String]) -> Result<ImportSource, SourceCliError> {
         }
         index += 1;
     }
-    if !dry_run {
-        return Err(SourceCliError::ApplyUnsupported);
-    }
-    match (stdin, file, legacy) {
-        (true, None, None) => Ok(ImportSource::Stdin),
-        (false, Some(path), None) => Ok(ImportSource::File(path)),
-        (false, None, Some(spec)) => Ok(ImportSource::Legacy(spec)),
-        _ => Err(SourceCliError::MissingSource),
-    }
+    let source = match (stdin, file, legacy) {
+        (true, None, None) => ImportSource::Stdin,
+        (false, Some(path), None) => ImportSource::File(path),
+        (false, None, Some(spec)) => ImportSource::Legacy(spec),
+        _ => return Err(SourceCliError::MissingSource),
+    };
+    Ok(ImportRequest {
+        source,
+        dry_run,
+        accept_omissions,
+    })
 }
 
 fn load_legacy(spec: &str) -> Result<Sub, SourceCliError> {
@@ -362,7 +445,10 @@ struct Preview {
     user_agent: String,
 }
 
-fn preview_url(url: &str, preferred: Option<&str>) -> Result<Preview, SourceCliError> {
+fn negotiate_url(
+    url: &str,
+    preferred: Option<&str>,
+) -> Result<super::negotiation::Negotiated<super::parser::ParsedSource>, SourceCliError> {
     let endpoint = endpoint_from_url(url)?;
     let agents = subscription_agents(preferred)?;
     let transport = FetchTransport::new();
@@ -376,16 +462,13 @@ fn preview_url(url: &str, preferred: Option<&str>) -> Result<Preview, SourceCliE
         |spec| transport.fetch(spec),
     )
     .map_err(fetch_error)?;
-    let user_agent = accepted.actual_user_agent().expose_value().to_owned();
+    let user_agent = accepted.actual_user_agent().expose_value();
     if user_agent.is_empty() || user_agent.contains("://") {
         return Err(SourceCliError::Fetch(
             "source response body rejected".to_owned(),
         ));
     }
-    Ok(Preview {
-        counts: accepted.parsed().counts(),
-        user_agent,
-    })
+    Ok(accepted)
 }
 
 fn fetch_error(error: FetchSourceError) -> SourceCliError {
@@ -645,6 +728,7 @@ mod tests {
                 sub("a", "one", secret),
                 sub("b", secret, "https://secret.example/other"),
             ],
+            store_source: String::new(),
         };
         assert_eq!(resolve_legacy("1", &subs).unwrap().id, "a");
         assert_eq!(resolve_legacy("id:b", &subs).unwrap().id, "b");

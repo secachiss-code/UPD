@@ -176,6 +176,7 @@ struct VpnPage {
     opts: Vec<Opt>,
     opts_err: String,
     snap: vpn::Snapshot,
+    store_label: String,
 }
 
 /// Всё, что показывает экран зеркал.
@@ -213,6 +214,7 @@ fn vpn_opts(c: &Config, st: &vpn::VpnState, unit: &str) -> Result<Vec<Opt>, Stri
         o("tun", t!("Режим"), if c.vpn_tun { t!("TUN — вся система").into() } else { t!("только прокси 127.0.0.1:{}", c.vpn_port) }),
         o("mode", t!("Маршрутизация"), [t!("по правилам"), t!("всё через VPN"), t!("всё напрямую")][c.vpn_mode.min(2) as usize].into()),
         o("autostart", t!("Запуск при загрузке"), on_off(c.vpn_autostart)),
+        o("store", t!("Узлы из Store"), on_off(c.vpn_store_source)),
         o("auto", t!("Автовыбор сервера (⚡ Авто)"), on_off(c.vpn_auto_select)),
         o("auto_ru", t!("Российские серверы в авто"), on_off(c.vpn_auto_allow_ru)),
         o("ru", t!("Россия напрямую (геофайлы)"), on_off(c.vpn_direct_ru)),
@@ -233,12 +235,13 @@ fn collect_vpn_page(mirrors: Vec<String>) -> VpnPage {
     let service = unit_state(vpn::SERVICE);
     let state = vpn::load_state();
     let cfg = Config::load(mirrors);
+    let store_label = cfg.as_ref().ok().and_then(vpn::active_store_label).unwrap_or_default();
     let warning = cfg.as_ref().ok().and_then(vpn::conflict).or_else(|| vpn::last_failure().filter(|error| error.resolved.is_none()).map(|error| format!("{} · {} · «{}»: {}", fmt_time(error.time), error.stage, error.subscription, error.reason)));
     let (opts, opts_err) = match cfg.and_then(|c| vpn_opts(&c, &state, &service)) {
         Ok(opts) => (opts, String::new()),
         Err(e) => (vec![], e),
     };
-    VpnPage { at: now(), service, warning, state, opts, opts_err, snap }
+    VpnPage { at: now(), service, warning, state, opts, opts_err, snap, store_label }
 }
 
 /// Строки таблицы зеркал: кандидаты с последним замером, лучшие сверху.
@@ -2018,6 +2021,7 @@ impl App<'_> {
                     "rules" => return cmd(&["vpn", "rules"]),
                     "geo" => return cmd(&["vpn", "geo"]),
                     "core" => return cmd(&["vpn", "core", "update"]),
+                    "store" => return cmd(&["vpn", "store", if c.vpn_store_source { "off" } else { "on" }]),
                     "mode" => {
                         let mode = (c.vpn_mode + 1) % 3;
                         let mirrors = self.b.default_mirrors();
@@ -2104,6 +2108,9 @@ impl App<'_> {
         let st = &page.state;
         if let Some(a) = st.subs.iter().find(|x| x.active) {
             l1.push(Span::styled(format!(" · «{}»{}", tui_vpn_label(&a.name), a.info.as_ref().map(sub_info).unwrap_or_default()), dim()));
+        }
+        if !page.store_label.is_empty() {
+            l1.push(Span::styled(format!(" · {}", page.store_label), dim()));
         }
         let l2 = if s.running {
             Line::from(vec![Span::styled(t!("маршрут: "), dim()), Span::raw(s.chain().iter().map(|n| tui_vpn_label(n)).collect::<Vec<_>>().join(" → ")), Span::styled(t!(" · ↓ {} ↑ {} · соединений {}", fmt_bytes(s.down), fmt_bytes(s.up), s.conns), dim())])

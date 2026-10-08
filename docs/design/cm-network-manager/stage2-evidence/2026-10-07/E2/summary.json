@@ -1,0 +1,68 @@
+{
+  "date": "2026-10-07",
+  "git_revision": "659421b4bcf50c9966bc564f312ef87355a5563a",
+  "dirty_tree": true,
+  "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)",
+  "cargo_lock_sha256": "db485e8ee68cda6cf38c8d021d0e2607d3bf806b59016612768c0915c5cd6e83",
+  "target": "x86_64-unknown-linux-musl",
+  "cargo_target_dir": "/home/somovas/.cache/cm-grok-target",
+  "mihomo": "/home/somovas/.cache/cm-cores/mihomo/mihomo",
+  "command": "CARGO_TARGET_DIR=$HOME/.cache/cm-grok-target CM_TEST_MIHOMO=$HOME/.cache/cm-cores/mihomo/mihomo sh tests/check_audit.sh",
+  "exit_code": 0,
+  "counters": {
+    "passed": 513,
+    "failed": 0,
+    "ignored": 0,
+    "test_result_lines": 41,
+    "skipped_lines": 0
+  },
+  "package": "E2",
+  "tasks": [
+    "I04.T04.d",
+    "I04.T05.a"
+  ],
+  "status": "PASS",
+  "checks": [
+    {
+      "id": "gate",
+      "command": "sh tests/check_audit.sh",
+      "result": "PASS",
+      "detail": "Same gate as package F. exit 0; 41 test-result lines sum to 513 passed, 0 failed, 0 ignored, including cosmic 15; python unittest 4 OK; TUI launcher PASS; rustfmt --check and clippy -D warnings finished. The log contains no SKIPPED line."
+    },
+    {
+      "id": "I04.T04.d",
+      "command": "cargo test --locked --offline --target x86_64-unknown-linux-musl --test audit_i04_e2",
+      "result": "PASS",
+      "detail": "Inside unshare -rn, each worker's uploadTotal+downloadTotal matches the nft output counter for that worker's own remote (destination and source port) within 5 percent. The counters are the core API totals. They are not added to a TUN device. A missing uploadTotal or downloadTotal is ApiUnavailable. Mihomo's connections:null after the last connection closes is an empty list."
+    },
+    {
+      "id": "I04.T05.a",
+      "command": "cargo test --locked --offline --target x86_64-unknown-linux-musl --test audit_i04_e2",
+      "result": "PASS",
+      "detail": "Two MihomoWorkers with different http remotes and one host-legacy mihomo run together in the namespace. nft shows separate egress. Port and socket leases do not overlap. Stopping the first worker leaves the second ApiReady with the same statistics, and host-legacy GET /version unchanged."
+    }
+  ],
+  "hashes": {
+    "src/core/mihomo/stats.rs": "6a330d9d8ca3ed5399c891ed587d0bc04f0098df78c421d478e2c4fdf6ec582c",
+    "tests/audit_i04_e2.rs": "bf10635d0c7fa9c869f3c36bd9d1a4d1e6b4368e95fab9d88d83ba66a42a9f85",
+    "tests/check_audit.sh": "a0b183ed308d23b54a2f3169da021b733c86d4dcf9128d1fac7f720d40716e90"
+  },
+  "not_closed": [
+    "G I04.T04.f, H I04.T03.b and X I05.T01.b are not started.",
+    "I04.T04.e, I04.T05.c, I17-D, I15-R remain after this wave."
+  ],
+  "review": {
+    "date": "2026-10-08",
+    "verdict": "ACCEPTED_AFTER_FIX",
+    "note": "Coordinator review 2026-10-08: the intermittent Connection refused in two_workers_and_legacy_on_harness came from E1 readiness before the listener was bound; fixed in lifecycle.rs.",
+    "review_doc": "../../REVIEW-2026-10-08-STAGE2-WAVE2.md",
+    "gate": {
+      "exit_code": 0,
+      "test_result_lines": 43,
+      "passed": 522,
+      "failed": 0,
+      "ignored": 0,
+      "skipped_lines": 0
+    }
+  }
+}

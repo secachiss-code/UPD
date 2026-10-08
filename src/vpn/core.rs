@@ -5,117 +5,13 @@ fn service_uid() -> u32 {
     if test_mode() { crate::common::sys::euid() } else { 0 }
 }
 
-/// Сокет API — наш: сокет и его каталог принадлежат службе, каталог закрыт для группы и остальных.
-/// Права самого сокета mihomo ставит 0666, поэтому доступ ограничивает каталог: без права поиска
-/// в нём к сокету не подключиться, и подменить сокет может только владелец каталога.
-fn check_api_socket(path: &Path) -> Result<(), String> {
-    use std::os::unix::fs::{FileTypeExt, MetadataExt};
-    let bad = || t!("{0}: сокет API mihomo чужой или доступен не только службе", path.display());
-    let md = fs::symlink_metadata(path).map_err(|e| format!("{}: {e}", path.display()))?;
-    let dir = path.parent().map(fs::symlink_metadata).ok_or_else(bad)?.map_err(|e| format!("{}: {e}", path.display()))?;
-    let uid = service_uid();
-    if !md.file_type().is_socket() || md.uid() != uid || !dir.is_dir() || dir.uid() != uid || dir.mode() & 0o077 != 0 {
-        return Err(bad());
-    }
-    Ok(())
-}
-
-/// uid процесса на другом конце Unix-сокета (SO_PEERCRED).
-fn peer_uid(s: &std::os::unix::net::UnixStream) -> Option<u32> {
-    use std::os::fd::AsRawFd;
-    let mut cred = libc::ucred { pid: 0, uid: 0, gid: 0 };
-    let mut len = std::mem::size_of::<libc::ucred>() as libc::socklen_t;
-    // SAFETY: cred and len describe a live ucred-sized buffer.
-    let r = unsafe { libc::getsockopt(s.as_raw_fd(), libc::SOL_SOCKET, libc::SO_PEERCRED, &mut cred as *mut _ as *mut libc::c_void, &mut len) };
-    (r == 0).then_some(cred.uid)
-}
-
-/// Предел ответа API: списки прокси и соединений бывают большими, остальное — короткий JSON.
-fn api_limit(path: &str) -> u64 {
-    if path.starts_with("/proxies") || path.starts_with("/connections") || path.starts_with("/group") { 16 << 20 } else { 1 << 20 }
-}
-
-/// Ответ HTTP/1.1: код и тело (Content-Length, chunked или до закрытия соединения).
-fn parse_http_response(raw: &[u8]) -> Result<(u16, Vec<u8>), String> {
-    let bad = || t!("неверный HTTP ответ").to_string();
-    let head_end = raw.windows(4).position(|w| w == b"\r\n\r\n").ok_or_else(bad)?;
-    let head = std::str::from_utf8(&raw[..head_end]).map_err(|_| bad())?;
-    let mut lines = head.split("\r\n");
-    let status: u16 = lines.next().and_then(|l| l.split_whitespace().nth(1)).and_then(|c| c.parse().ok()).ok_or_else(bad)?;
-    let (mut length, mut chunked) = (None, false);
-    for l in lines {
-        let Some((k, v)) = l.split_once(':') else { continue };
-        match k.trim().to_ascii_lowercase().as_str() {
-            "content-length" => length = Some(v.trim().parse::<usize>().map_err(|_| bad())?),
-            "transfer-encoding" => chunked = v.to_ascii_lowercase().contains("chunked"),
-            _ => {}
-        }
-    }
-    let body = &raw[head_end + 4..];
-    if chunked {
-        let mut out = vec![];
-        let mut pos = 0;
-        loop {
-            let line_end = body[pos..].windows(2).position(|w| w == b"\r\n").ok_or_else(bad)? + pos;
-            let size_str = std::str::from_utf8(&body[pos..line_end]).map_err(|_| bad())?;
-            let size = usize::from_str_radix(size_str.split(';').next().unwrap_or("").trim(), 16).map_err(|_| bad())?;
-            pos = line_end + 2;
-            if size == 0 {
-                return Ok((status, out));
-            }
-            let end = pos.checked_add(size).filter(|e| *e <= body.len()).ok_or_else(bad)?;
-            out.extend_from_slice(&body[pos..end]);
-            pos = end + 2;
-        }
-    }
-    match length {
-        Some(n) if n <= body.len() => Ok((status, body[..n].to_vec())),
-        Some(_) => Err(t!("ответ обрезан относительно Content-Length").into()),
-        None => Ok((status, body.to_vec())),
-    }
-}
-
 /// Запрос к API mihomo через Unix-сокет. Сокет и процесс на нём проверяются до отправки запроса.
 pub fn api(method: &str, path: &str, body: Option<serde_json::Value>) -> Result<serde_json::Value, String> {
     api_with_timeout(method, path, body, Duration::from_secs(12))
 }
 
 fn api_with_timeout(method: &str, path: &str, body: Option<serde_json::Value>, request_timeout: Duration) -> Result<serde_json::Value, String> {
-    use std::io::Write;
-    let sock = api_socket();
-    check_api_socket(&sock)?;
-    let mut s = std::os::unix::net::UnixStream::connect(&sock).map_err(|e| format!("{}: {e}", sock.display()))?;
-    if peer_uid(&s) != Some(service_uid()) {
-        return Err(t!("{0}: на сокете API не процесс службы", sock.display()));
-    }
-    let timeout = Some(request_timeout);
-    let _ = s.set_read_timeout(timeout);
-    let _ = s.set_write_timeout(timeout);
-    let body = body.map(|b| b.to_string()).unwrap_or_default();
-    let mut req = format!("{method} {path} HTTP/1.1\r\nHost: mihomo\r\nConnection: close\r\nContent-Length: {}\r\n", body.len());
-    if !body.is_empty() {
-        req += "Content-Type: application/json\r\n";
-    }
-    req += "\r\n";
-    req += &body;
-    s.write_all(req.as_bytes()).map_err(|e| e.to_string())?;
-    let max = api_limit(path);
-    let mut raw = vec![];
-    (&mut s).take(max.saturating_add(1)).read_to_end(&mut raw).map_err(|e| e.to_string())?;
-    if raw.len() as u64 > max {
-        return Err(t!("ответ превышает лимит {}", fmt_bytes(max)));
-    }
-    let (status, body) = parse_http_response(&raw)?;
-    let text = String::from_utf8_lossy(&body);
-    match status {
-        204 => Ok(serde_json::Value::Null),
-        200..=299 if text.trim().is_empty() => Ok(serde_json::Value::Null),
-        200..=299 => serde_json::from_str(&text).map_err(|e| e.to_string()),
-        code => {
-            let msg = serde_json::from_str::<serde_json::Value>(&text).ok().and_then(|v| v["message"].as_str().map(String::from));
-            Err(msg.unwrap_or_else(|| format!("HTTP {code}")))
-        }
-    }
+    crate::core::mihomo::api::request(&api_socket(), service_uid(), method, path, body, request_timeout)
 }
 
 pub fn running() -> bool {

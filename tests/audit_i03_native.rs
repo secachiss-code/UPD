@@ -126,10 +126,13 @@ fn rejects_host_control_fields_sections_unknown_fields_and_unsupported_branches(
     );
 
     let native_group = r#"{"proxies":[{"name":"n","type":"ss","server":"edge.example","port":443,"cipher":"aes-128-gcm","password":"p"}],"proxy-groups":[],"rules":[]}"#;
-    let parsed = json_source(native_group).expect("groups and rules are recorded omissions");
-    assert_eq!(
-        parsed.omissions().section_names,
-        ["proxy-groups".to_string(), "rules".to_string()]
+    let parsed = json_source(native_group).expect("empty groups and rules are accepted");
+    assert!(
+        !parsed
+            .omissions()
+            .section_names
+            .iter()
+            .any(|name| name == "proxy-groups" || name == "rules")
     );
 
     let ss2022 = r#"{"proxies":[{"name":"n","type":"ss","server":"edge.example","port":443,"cipher":"2022-blake3-aes-128-gcm","password":"private-psk"}]}"#;

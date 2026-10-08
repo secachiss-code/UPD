@@ -18,6 +18,7 @@ include!("profile_files.rs");
 include!("state.rs");
 include!("config.rs");
 include!("core.rs");
+include!("store_source.rs");
 include!("conflicts.rs");
 
 #[cfg(test)]

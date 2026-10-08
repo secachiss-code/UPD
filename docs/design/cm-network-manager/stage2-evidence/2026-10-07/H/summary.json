@@ -1,0 +1,52 @@
+{
+  "date": "2026-10-08",
+  "git_revision": "659421b4bcf50c9966bc564f312ef87355a5563a",
+  "dirty_tree": true,
+  "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)",
+  "cargo_lock_sha256": "db485e8ee68cda6cf38c8d021d0e2607d3bf806b59016612768c0915c5cd6e83",
+  "target": "x86_64-unknown-linux-musl",
+  "cargo_target_dir": "/home/somovas/.cache/cm-grok-target",
+  "mihomo": "/home/somovas/.cache/cm-cores/mihomo/mihomo",
+  "command": "CARGO_TARGET_DIR=$HOME/.cache/cm-grok-target CM_TEST_MIHOMO=$HOME/.cache/cm-cores/mihomo/mihomo sh tests/check_audit.sh",
+  "exit_code": 0,
+  "counters": {
+    "passed": 518,
+    "failed": 0,
+    "ignored": 0,
+    "test_result_lines": 43,
+    "skipped_lines": 0
+  },
+  "package": "H",
+  "tasks": [
+    "I04.T03.b"
+  ],
+  "status": "PASS",
+  "checks": [
+    {
+      "id": "gate",
+      "command": "sh tests/check_audit.sh",
+      "result": "PASS",
+      "detail": "exit 0; 43 test-result lines sum to 518 passed, 0 failed, 0 ignored, including cosmic 15; python unittest 4 OK; TUI launcher PASS; rustfmt --check and clippy -D warnings finished. The log contains no SKIPPED line."
+    },
+    {
+      "id": "I04.T03.b",
+      "command": "cargo test --locked --offline --target x86_64-unknown-linux-musl --test audit_i04_tun",
+      "result": "PASS",
+      "detail": "Variant A chosen. In the user+net namespace the core-created device has CapEff 000001ffffffffff, listening cmtunb([198.18.0.1/30],[]), mtu 1400, persist off, no global IPv6, and is gone after kill -9. The CM-created persistent device cmtun2 is opened by uid 1 with CapEff 0000000000000000, listening cmtun2([198.18.0.1/30],[fd00:c::1/64]), mtu 1400, persist on, and remains after kill -9. ADR-TUN-OWNERSHIP.md records the commands. The host VPN path was not changed."
+    }
+  ],
+  "hashes": {
+    "tests/audit_i04_tun.rs": "bba594671635af795ef4e7308d2cba6539e1f1141b1baca7188b799250ffde68",
+    "docs/design/cm-network-manager/ADR-TUN-OWNERSHIP.md": "9769236cba8f38dfa488b17a36611ea20233fc7860fab7003fda73d65a0f484d",
+    "tests/check_audit.sh": "8767df8eab6165df98d6d0303a12bb10dcac4f882819ea6348986747f17bf7c0"
+  },
+  "not_closed": [
+    "I04.T04.e, I04.T05.c, I17-D and I15-R are the stage tail and were not started.",
+    "V.02 and V.05 stay outside this pass."
+  ],
+  "review": {
+    "date": "2026-10-08",
+    "verdict": "ACCEPTED",
+    "review_doc": "../../REVIEW-2026-10-08-STAGE2-WAVE2.md"
+  }
+}

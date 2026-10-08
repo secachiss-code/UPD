@@ -1,0 +1,74 @@
+{
+  "date": "2026-10-07",
+  "git_revision": "659421b4bcf50c9966bc564f312ef87355a5563a",
+  "dirty_tree": true,
+  "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)",
+  "cargo_lock_sha256": "db485e8ee68cda6cf38c8d021d0e2607d3bf806b59016612768c0915c5cd6e83",
+  "target": "x86_64-unknown-linux-musl",
+  "cargo_target_dir": "/home/somovas/.cache/cm-grok-target",
+  "mihomo": "/home/somovas/.cache/cm-cores/mihomo/mihomo",
+  "command": "CARGO_TARGET_DIR=$HOME/.cache/cm-grok-target CM_TEST_MIHOMO=$HOME/.cache/cm-cores/mihomo/mihomo sh tests/check_audit.sh",
+  "exit_code": 0,
+  "counters": {
+    "passed": 513,
+    "failed": 0,
+    "ignored": 0,
+    "test_result_lines": 41,
+    "skipped_lines": 0
+  },
+  "package": "F",
+  "tasks": [
+    "V.04"
+  ],
+  "status": "PASS",
+  "checks": [
+    {
+      "id": "gate",
+      "command": "sh tests/check_audit.sh",
+      "result": "PASS",
+      "detail": "exit 0; 41 test-result lines sum to 513 passed, 0 failed, 0 ignored, including cosmic 15; python unittest 4 OK; TUI launcher PASS; rustfmt --check and clippy -D warnings finished. The log contains no SKIPPED line."
+    },
+    {
+      "id": "V.04",
+      "command": "cargo test --locked --offline --target x86_64-unknown-linux-musl --test audit_v04_store --lib vpn::tests::a_rejected_publisher_policy_is_an_error",
+      "result": "PASS",
+      "detail": "Flag 0 with an empty store_source matches the legacy config. Flag off with a selected source is an error. Rule order is CM user rules, then publisher rules, then one final MATCH (CM geodata stays in front when those flags are on). A publisher group named Proxy is rejected and the previous config bytes stay. Publisher sub-rules against an existing sub-rules key are an error. A relay group is rejected as publisher rules were rejected, and the message does not contain the node secret. Validation failure and reload failure restore the previous config bytes. store off while store_source is set refuses and names cm vpn use N; the saved flag stays 1. Outside the test sandbox the flag change requires root. An older Subs reader without the field, and a document with an unknown field, both load."
+    }
+  ],
+  "decisions": [
+    "Publisher policy, YAML conversion, group-name collision (including an empty name or the auto group) and a sub-rules clash fail the build. switch_store_source therefore rolls back. A D1 warning is emitted only when the parsed policy is empty and provenance still lists proxy-groups, rules, sub-rules or rule-providers.",
+    "Rule order: CM user rules, then CM geodata rules (when those flags are on), then subscription rules that are not MATCH, then publisher rules that are not MATCH, then one final MATCH. Publisher MATCH lines are dropped so they cannot sit after the final MATCH.",
+    "A colliding publisher group name is an explicit error. There is no silent rename.",
+    "cm vpn store off refuses while subs.store_source is non-empty and tells the user to run cm vpn use N first. The TUI item re-execs cm vpn store on|off. A build with the flag off and a non-empty store_source is also an error, so a hand-edited file cannot silently return to the legacy provider.",
+    "set_store_source_flag saves only when the process is root or test_mode() is set. The TUI does not save the flag in-process.",
+    "Subs has no deny_unknown_fields. store_source defaults to empty. A previous cm can read a file that contains the new field."
+  ],
+  "hashes": {
+    "src/vpn/store_source.rs": "ce8e339e934d5551f1b674637642162e280ba51912a1cff5ee409862a3f6caa2",
+    "tests/audit_v04_store.rs": "db611be99c15ca95ce62a45ef1554b0db0e9b9a625a50e491b9cc0b1a61c3b2a",
+    "src/main.rs": "a26ead778154bebf05196ad43a6125033a770ea9653defcd4892e28c0b7eab87",
+    "src/tui.rs": "a5b36b5d45f36570a5533611676a8c1334ad5638ea40c40f7eab2b48b5b30b84",
+    "src/i18n.rs": "3fef1deee6265d39ca85674bf7ef9b5c0e8f8d3deba2a2320b5a2832d423f415",
+    "src/i18n_table.rs": "766a15e025c849f0dd18462b44448980f8dd58df271876afa2b611009888ba50",
+    "tests/check_audit.sh": "a0b183ed308d23b54a2f3169da021b733c86d4dcf9128d1fac7f720d40716e90"
+  },
+  "not_closed": [
+    "V.05 is the user's install acceptance, not this package.",
+    "G I04.T04.f, H I04.T03.b and X I05.T01.b are not started.",
+    "The user scenario below was not executed: this session has no root and no real subscription."
+  ],
+  "review": {
+    "date": "2026-10-08",
+    "verdict": "ACCEPTED_AFTER_FIX",
+    "note": "Coordinator review 2026-10-08: the host build no longer layers Store nodes over the active legacy profile. store_profile builds the profile body only from the Store (nodes, publisher groups, rules, sub-rules, inline rule-providers); build_config_for picks store_profile or legacy_profile. The earlier rule-order and group-collision decisions are replaced: a publisher with groups keeps its groups and its MATCH; without groups a single Proxy selector and MATCH,Proxy; only the auto-group name is rejected. New tests include host_build_from_another_feed_is_accepted_by_mihomo.",
+    "review_doc": "../../REVIEW-2026-10-08-STAGE2-WAVE2.md",
+    "gate": {
+      "exit_code": 0,
+      "test_result_lines": 43,
+      "passed": 522,
+      "failed": 0,
+      "ignored": 0,
+      "skipped_lines": 0
+    }
+  }
+}

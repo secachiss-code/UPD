@@ -835,6 +835,8 @@ const VPN_USAGE: &str = "cm vpn — VPN на ядре mihomo (как в FlClash)
   cm vpn core [check|update|reinstall]  ядро mihomo (обновляется по релизам FlClash)
   cm vpn geo             обновить геофайлы
   cm vpn rules           править свои правила
+  cm vpn store on|off|status   узлы из Store (по умолчанию выключено)
+  cm vpn use source:ID   VPN на узлах источника Store
 ";
 
 fn core_update_exit(changed: bool, active: bool, restart: Result<(), String>) -> Result<(), String> {
@@ -902,6 +904,9 @@ fn cmd_vpn(c: &Config, pos: &[String]) -> i32 {
                 println!("{}", t!("цепочка: {}", s.chain().iter().map(|n| vpn::label(n)).collect::<Vec<_>>().join(" → ")));
                 println!("{}", t!("трафик: ↓ {} ↑ {} · соединений {}", fmt_bytes(s.down), fmt_bytes(s.up), s.conns));
             }
+            if let Some(label) = vpn::active_store_label(&c) {
+                println!("{label}");
+            }
             if let Some(w) = vpn::conflict(&c) {
                 println!("⚠ {w}");
             }
@@ -947,6 +952,23 @@ fn cmd_vpn(c: &Config, pos: &[String]) -> i32 {
             0
         }
         "use" | "del" => {
+            if sub == "use" && arg.is_some_and(|value| value.starts_with("source:")) {
+                let id = arg.and_then(|value| value.strip_prefix("source:")).unwrap_or("");
+                if id.is_empty() {
+                    println!("{}", t!("укажи номер подписки (cm vpn subs)"));
+                    return 2;
+                }
+                return match vpn::use_store_source(id, &c) {
+                    Ok(switched) => {
+                        println!("{}", t!("источник Store {0}", switched.source_id));
+                        for warning in switched.warnings {
+                            println!("⚠ {warning}");
+                        }
+                        err_code(Config::load(c.mirrors.clone()).and_then(|latest| vpn::sysproxy(&latest, user.as_ref()).map(|_| ())))
+                    }
+                    Err(error) => err_code(Err(error)),
+                };
+            }
             let Some(target) = arg.and_then(vpn::SubRef::parse) else {
                 println!("{}", t!("укажи номер подписки (cm vpn subs)"));
                 return 2;
@@ -1084,6 +1106,25 @@ fn cmd_vpn(c: &Config, pos: &[String]) -> i32 {
             }
             err_code(r)
         }
+        "store" => match arg {
+            Some("on") | Some("off") => {
+                let on = arg == Some("on");
+                let mut c = c.clone();
+                if let Err(error) = vpn::set_store_source_flag(on, &mut c) {
+                    return err_code(Err(error));
+                }
+                println!("{}", t!("узлы из Store: {}", if on { t!("вкл") } else { t!("выкл") }));
+                0
+            }
+            Some("status") | None => {
+                println!("{}", t!("узлы из Store: {}", if c.vpn_store_source { t!("вкл") } else { t!("выкл") }));
+                0
+            }
+            _ => {
+                print!("{}", t!(VPN_USAGE));
+                2
+            }
+        },
         "prepare" => err_code(vpn::prepare(&c, &stdlog)),
         _ => {
             print!("{}", t!(VPN_USAGE));

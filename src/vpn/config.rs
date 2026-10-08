@@ -406,12 +406,12 @@ pub fn build_config(c: &Config) -> Result<String, String> {
     build_config_for(c, &load_subs()?)
 }
 
-fn build_config_for(c: &Config, subs: &Subs) -> Result<String, String> {
-    check_port(c)?;
+/// Профиль активной legacy-подписки: тело clash или provider для списка ссылок.
+fn legacy_profile(subs: &Subs) -> Result<Mapping, String> {
     let sub = subs.list.iter().find(|s| s.id == subs.active).ok_or(t!("нет подписки: добавь её (cm → VPN → Подписки → n)"))?;
     let body = fs::read_to_string(profile_path(sub, &sub.kind)).map_err(|_| t!("профиль подписки не скачан — обнови подписку").to_string())?;
 
-    let mut m: Mapping = if sub.kind == "clash" {
+    Ok(if sub.kind == "clash" {
         match parse_profile(&body) {
             Ok(Value::Mapping(m)) => profile_part(&m)?,
             Ok(_) => return Err(t!("профиль подписки повреждён — обнови подписку").into()),
@@ -433,6 +433,15 @@ fn build_config_for(c: &Config, subs: &Subs) -> Result<String, String> {
         m.insert(k("proxy-groups"), Value::Sequence(vec![yaml_map(vec![("name", k("Proxy")), ("type", k("select")), ("use", seq(&["sub"]))])]));
         m.insert(k("rules"), seq(&["MATCH,Proxy"]));
         m
+    })
+}
+
+fn build_config_for(c: &Config, subs: &Subs) -> Result<String, String> {
+    check_port(c)?;
+    // источник Store (V.04) заменяет тело подписки целиком: узлы, группы и правила
+    let mut m = match store_profile(c, subs)? {
+        Some(m) => m,
+        None => legacy_profile(subs)?,
     };
 
     // --- то, что задаёт cm поверх подписки ---

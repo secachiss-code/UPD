@@ -110,6 +110,21 @@ impl LeaseRegistry {
         })
     }
 
+    pub fn list(&self) -> Result<Vec<Lease>, LeaseError> {
+        self.with_document(|document| {
+            Ok(document
+                .leases
+                .iter()
+                .map(|lease| Lease {
+                    revision: document.revision,
+                    holder: lease.holder.clone(),
+                    kind: lease.kind,
+                    value: lease.value.clone(),
+                })
+                .collect())
+        })
+    }
+
     /// Drop leases whose holder is not in `live`. Returns how many were dropped.
     pub fn reclaim_absent(&self, live: &[&str]) -> Result<usize, LeaseError> {
         for holder in live {

@@ -1,0 +1,51 @@
+{
+  "date": "2026-10-08",
+  "git_revision": "659421b4bcf50c9966bc564f312ef87355a5563a",
+  "dirty_tree": true,
+  "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)",
+  "cargo_lock_sha256": "db485e8ee68cda6cf38c8d021d0e2607d3bf806b59016612768c0915c5cd6e83",
+  "target": "x86_64-unknown-linux-musl",
+  "cargo_target_dir": "/home/somovas/.cache/cm-grok-target",
+  "xray": "/home/somovas/.cache/cm-cores/xray/xray",
+  "xray_version": "Xray 26.3.27 (Xray, Penetrates Everything.) d2758a0 (go1.26.1 linux/amd64)",
+  "command": "CARGO_TARGET_DIR=$HOME/.cache/cm-grok-target CM_TEST_MIHOMO=$HOME/.cache/cm-cores/mihomo/mihomo sh tests/check_audit.sh",
+  "exit_code": 0,
+  "counters": {
+    "passed": 518,
+    "failed": 0,
+    "ignored": 0,
+    "test_result_lines": 43,
+    "skipped_lines": 0
+  },
+  "package": "X",
+  "tasks": [
+    "I05.T01.b"
+  ],
+  "status": "PASS",
+  "checks": [
+    {
+      "id": "gate",
+      "command": "sh tests/check_audit.sh",
+      "result": "PASS",
+      "detail": "exit 0; 43 test-result lines sum to 518 passed, 0 failed, 0 ignored, including cosmic 15; python unittest 4 OK; TUI launcher PASS; rustfmt --check and clippy -D warnings finished. The log contains no SKIPPED line. Xray checks are outside this script and are recorded on I05.T01.b."
+    },
+    {
+      "id": "I05.T01.b",
+      "command": "xray version; xray help api; xray run -test; unshare -rn kill -HUP",
+      "result": "PASS",
+      "detail": "Reload without restart is unsupported: SIGHUP ends the process with wait status 129, started_count stays 1, and help api has no reload. Partial adi/ado/rmi/rmo/adrules/rmrules is not a full reload. delay_probe is unsupported; observatory is out of scope as a substitute. TUIC is unsupported (exit 23, unknown config id: tuic) with no workaround. Hysteria version 2 and WireGuard are accepted by xray run -test and are not gaps. No live handshake was run. Decisions are in I05-GAPS.md."
+    }
+  ],
+  "hashes": {
+    "docs/design/cm-network-manager/I05-GAPS.md": "48c9e4a5b479304d664ed94a86336ba0a8336912cf00bb78fa67f8b1ead23bbe"
+  },
+  "not_closed": [
+    "I04.T04.e, I04.T05.c, I17-D and I15-R are the stage tail and were not started.",
+    "V.02 and V.05 stay outside this pass."
+  ],
+  "review": {
+    "date": "2026-10-08",
+    "verdict": "ACCEPTED",
+    "review_doc": "../../REVIEW-2026-10-08-STAGE2-WAVE2.md"
+  }
+}
