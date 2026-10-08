@@ -1,0 +1,32 @@
+{
+  "date": "2026-10-08",
+  "git_revision": "659421b4bcf50c9966bc564f312ef87355a5563a",
+  "dirty_tree": true,
+  "package": "I15-R.T03.a",
+  "tasks": [
+    "I15-R.T03.a"
+  ],
+  "level": "L3",
+  "status": "PASS",
+  "executor": "coordinator (Claude)",
+  "command": "python3 docs/design/cm-network-manager/tools/i15r_lab.py <OUT_DIR>",
+  "isolation": "unshare -rn (lo only); temporary HOME, XDG dirs and profile per browser, removed after the run; the user's profiles were not read",
+  "browsers": {
+    "chrome": "Google Chrome 155.0.8059.39",
+    "brave": "Brave Browser 154.1.96.61",
+    "librewolf": "LibreWolf 157.0-1"
+  },
+  "reproducibility": "two consecutive full runs gave identical verdicts in 12 of 12 rows",
+  "files": {
+    "runs.json": "5c73e7250c731264c5abd55415871c024873e03a1f636a7e3904c123d598b525",
+    "observations.json": "24f92be1228345356e24bb5f2f226c6617c4944e9cae3ae829a0056f2951d165",
+    "tools/i15r_lab.py": "da0be3ad7ae63c141df8df002b4d5cf7453e25a43e98218c0fd90fce5ba2217a"
+  },
+  "report": "../../I15R-LAB.md",
+  "not_closed": [
+    "Canvas, WebGL, fonts, audio, TLS were not measured.",
+    "Service and shared workers were not measured.",
+    "CDP overrides were not run.",
+    "Q26/Q27 are the user's decisions in I15-R.T04.a."
+  ]
+}

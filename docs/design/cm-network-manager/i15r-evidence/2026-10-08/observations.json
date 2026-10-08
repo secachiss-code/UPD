@@ -1,0 +1,562 @@
+[
+  {
+    "browser": "chrome",
+    "version": "Google Chrome 155.0.8059.39",
+    "mechanism": "cli-flags+TZ-env",
+    "resist_fingerprinting": null,
+    "step": "first-launch",
+    "controls_from_launcher": true,
+    "verdict": {
+      "first_request": {
+        "ua": true,
+        "lang": true,
+        "client_hints": {
+          "sec-ch-ua": "\"Google Chrome\";v=\"155\", \"Chromium\";v=\"155\", \"Not(A:Brand\";v=\"24\"",
+          "sec-ch-ua-mobile": "?0",
+          "sec-ch-ua-platform": "\"Linux\""
+        }
+      },
+      "window": {
+        "ua": true,
+        "lang": true,
+        "tz": true,
+        "offset": true,
+        "request_ua": true
+      },
+      "worker": {
+        "ua": true,
+        "lang": true,
+        "tz": true,
+        "offset": true,
+        "request_ua": true
+      },
+      "tab": {
+        "ua": true,
+        "lang": true,
+        "tz": true,
+        "offset": true,
+        "request_ua": true
+      },
+      "worker_script_request": {
+        "ua": true,
+        "lang": true
+      },
+      "tab_request": {
+        "ua": true,
+        "lang": true
+      }
+    }
+  },
+  {
+    "browser": "chrome",
+    "version": "Google Chrome 155.0.8059.39",
+    "mechanism": "cli-flags+TZ-env",
+    "resist_fingerprinting": null,
+    "step": "cold-restart-same-launcher",
+    "controls_from_launcher": true,
+    "verdict": {
+      "first_request": {
+        "ua": true,
+        "lang": true,
+        "client_hints": {
+          "sec-ch-ua": "\"Google Chrome\";v=\"155\", \"Chromium\";v=\"155\", \"Not(A:Brand\";v=\"24\"",
+          "sec-ch-ua-mobile": "?0",
+          "sec-ch-ua-platform": "\"Linux\"",
+          "sec-ch-ua-platform-version": "\"\"",
+          "sec-ch-ua-full-version-list": ""
+        }
+      },
+      "window": {
+        "ua": true,
+        "lang": true,
+        "tz": true,
+        "offset": true,
+        "request_ua": true
+      },
+      "worker": {
+        "ua": true,
+        "lang": true,
+        "tz": true,
+        "offset": true,
+        "request_ua": true
+      },
+      "tab": {
+        "ua": true,
+        "lang": true,
+        "tz": true,
+        "offset": true,
+        "request_ua": true
+      },
+      "worker_script_request": {
+        "ua": true,
+        "lang": true
+      },
+      "tab_request": {
+        "ua": true,
+        "lang": true
+      }
+    }
+  },
+  {
+    "browser": "chrome",
+    "version": "Google Chrome 155.0.8059.39",
+    "mechanism": "cli-flags+TZ-env",
+    "resist_fingerprinting": null,
+    "step": "cold-restart-plain",
+    "controls_from_launcher": false,
+    "verdict": {
+      "first_request": {
+        "ua": false,
+        "lang": true,
+        "client_hints": {
+          "sec-ch-ua": "\"Google Chrome\";v=\"155\", \"Chromium\";v=\"155\", \"Not(A:Brand\";v=\"24\"",
+          "sec-ch-ua-mobile": "?0",
+          "sec-ch-ua-platform": "\"Linux\"",
+          "sec-ch-ua-platform-version": "\"\"",
+          "sec-ch-ua-full-version-list": "\"Google Chrome\";v=\"155.0.8059.39\", \"Chromium\";v=\"155.0.8059.39\", \"Not(A:Brand\";v=\"24.0.0.0\""
+        }
+      },
+      "window": {
+        "ua": false,
+        "lang": true,
+        "tz": false,
+        "offset": false,
+        "request_ua": false
+      },
+      "worker": {
+        "ua": false,
+        "lang": true,
+        "tz": false,
+        "offset": false,
+        "request_ua": false
+      },
+      "tab": {
+        "ua": false,
+        "lang": true,
+        "tz": false,
+        "offset": false,
+        "request_ua": false
+      },
+      "worker_script_request": {
+        "ua": false,
+        "lang": true
+      },
+      "tab_request": {
+        "ua": false,
+        "lang": true
+      }
+    }
+  },
+  {
+    "browser": "brave",
+    "version": "Brave Browser 154.1.96.61",
+    "mechanism": "cli-flags+TZ-env",
+    "resist_fingerprinting": null,
+    "step": "first-launch",
+    "controls_from_launcher": true,
+    "verdict": {
+      "first_request": {
+        "ua": true,
+        "lang": true,
+        "client_hints": {
+          "sec-ch-ua": "",
+          "sec-ch-ua-mobile": "?0",
+          "sec-ch-ua-platform": "\"\""
+        }
+      },
+      "window": {
+        "ua": true,
+        "lang": true,
+        "tz": true,
+        "offset": true,
+        "request_ua": true
+      },
+      "worker": {
+        "ua": true,
+        "lang": true,
+        "tz": true,
+        "offset": true,
+        "request_ua": true
+      },
+      "tab": {
+        "ua": true,
+        "lang": true,
+        "tz": true,
+        "offset": true,
+        "request_ua": true
+      },
+      "worker_script_request": {
+        "ua": true,
+        "lang": true
+      },
+      "tab_request": {
+        "ua": true,
+        "lang": true
+      }
+    }
+  },
+  {
+    "browser": "brave",
+    "version": "Brave Browser 154.1.96.61",
+    "mechanism": "cli-flags+TZ-env",
+    "resist_fingerprinting": null,
+    "step": "cold-restart-same-launcher",
+    "controls_from_launcher": true,
+    "verdict": {
+      "first_request": {
+        "ua": true,
+        "lang": true,
+        "client_hints": {
+          "sec-ch-ua": "",
+          "sec-ch-ua-mobile": "?0",
+          "sec-ch-ua-platform": "\"\"",
+          "sec-ch-ua-platform-version": "\"\"",
+          "sec-ch-ua-full-version-list": ""
+        }
+      },
+      "window": {
+        "ua": true,
+        "lang": true,
+        "tz": true,
+        "offset": true,
+        "request_ua": true
+      },
+      "worker": {
+        "ua": true,
+        "lang": true,
+        "tz": true,
+        "offset": true,
+        "request_ua": true
+      },
+      "tab": {
+        "ua": true,
+        "lang": true,
+        "tz": true,
+        "offset": true,
+        "request_ua": true
+      },
+      "worker_script_request": {
+        "ua": true,
+        "lang": true
+      },
+      "tab_request": {
+        "ua": true,
+        "lang": true
+      }
+    }
+  },
+  {
+    "browser": "brave",
+    "version": "Brave Browser 154.1.96.61",
+    "mechanism": "cli-flags+TZ-env",
+    "resist_fingerprinting": null,
+    "step": "cold-restart-plain",
+    "controls_from_launcher": false,
+    "verdict": {
+      "first_request": {
+        "ua": false,
+        "lang": true,
+        "client_hints": {
+          "sec-ch-ua": "\"Chromium\";v=\"154\", \"Brave\";v=\"154\", \"Not A(Brand\";v=\"99\"",
+          "sec-ch-ua-mobile": "?0",
+          "sec-ch-ua-platform": "\"Linux\"",
+          "sec-ch-ua-platform-version": "\"\"",
+          "sec-ch-ua-full-version-list": "\"Chromium\";v=\"154.0.0.0\", \"Brave\";v=\"154.0.0.0\", \"Not A(Brand\";v=\"99.0.0.0\""
+        }
+      },
+      "window": {
+        "ua": false,
+        "lang": true,
+        "tz": false,
+        "offset": false,
+        "request_ua": false
+      },
+      "worker": {
+        "ua": false,
+        "lang": true,
+        "tz": false,
+        "offset": false,
+        "request_ua": false
+      },
+      "tab": {
+        "ua": false,
+        "lang": true,
+        "tz": false,
+        "offset": false,
+        "request_ua": false
+      },
+      "worker_script_request": {
+        "ua": false,
+        "lang": true
+      },
+      "tab_request": {
+        "ua": false,
+        "lang": true
+      }
+    }
+  },
+  {
+    "browser": "librewolf",
+    "version": "LibreWolf 157.0-1",
+    "mechanism": "user.js-prefs+TZ-env",
+    "resist_fingerprinting": true,
+    "step": "first-launch",
+    "controls_from_launcher": true,
+    "verdict": {
+      "first_request": {
+        "ua": false,
+        "lang": true,
+        "client_hints": {}
+      },
+      "window": {
+        "ua": false,
+        "lang": true,
+        "tz": false,
+        "offset": false,
+        "request_ua": false
+      },
+      "worker": {
+        "ua": false,
+        "lang": true,
+        "tz": false,
+        "offset": false,
+        "request_ua": false
+      },
+      "tab": {
+        "ua": false,
+        "lang": true,
+        "tz": false,
+        "offset": false,
+        "request_ua": false
+      },
+      "worker_script_request": {
+        "ua": false,
+        "lang": true
+      },
+      "tab_request": {
+        "ua": false,
+        "lang": true
+      }
+    }
+  },
+  {
+    "browser": "librewolf",
+    "version": "LibreWolf 157.0-1",
+    "mechanism": "user.js-prefs+TZ-env",
+    "resist_fingerprinting": true,
+    "step": "cold-restart-same-launcher",
+    "controls_from_launcher": true,
+    "verdict": {
+      "first_request": {
+        "ua": false,
+        "lang": true,
+        "client_hints": {}
+      },
+      "window": {
+        "ua": false,
+        "lang": true,
+        "tz": false,
+        "offset": false,
+        "request_ua": false
+      },
+      "worker": {
+        "ua": false,
+        "lang": true,
+        "tz": false,
+        "offset": false,
+        "request_ua": false
+      },
+      "tab": {
+        "ua": false,
+        "lang": true,
+        "tz": false,
+        "offset": false,
+        "request_ua": false
+      },
+      "worker_script_request": {
+        "ua": false,
+        "lang": true
+      },
+      "tab_request": {
+        "ua": false,
+        "lang": true
+      }
+    }
+  },
+  {
+    "browser": "librewolf",
+    "version": "LibreWolf 157.0-1",
+    "mechanism": "user.js-prefs+TZ-env",
+    "resist_fingerprinting": true,
+    "step": "cold-restart-plain",
+    "controls_from_launcher": false,
+    "verdict": {
+      "first_request": {
+        "ua": false,
+        "lang": true,
+        "client_hints": {}
+      },
+      "window": {
+        "ua": false,
+        "lang": true,
+        "tz": false,
+        "offset": false,
+        "request_ua": false
+      },
+      "worker": {
+        "ua": false,
+        "lang": true,
+        "tz": false,
+        "offset": false,
+        "request_ua": false
+      },
+      "tab": {
+        "ua": false,
+        "lang": true,
+        "tz": false,
+        "offset": false,
+        "request_ua": false
+      },
+      "worker_script_request": {
+        "ua": false,
+        "lang": true
+      },
+      "tab_request": {
+        "ua": false,
+        "lang": true
+      }
+    }
+  },
+  {
+    "browser": "librewolf",
+    "version": "LibreWolf 157.0-1",
+    "mechanism": "user.js-prefs+TZ-env",
+    "resist_fingerprinting": false,
+    "step": "first-launch",
+    "controls_from_launcher": true,
+    "verdict": {
+      "first_request": {
+        "ua": true,
+        "lang": true,
+        "client_hints": {}
+      },
+      "window": {
+        "ua": true,
+        "lang": true,
+        "tz": true,
+        "offset": true,
+        "request_ua": true
+      },
+      "worker": {
+        "ua": true,
+        "lang": true,
+        "tz": true,
+        "offset": true,
+        "request_ua": true
+      },
+      "tab": {
+        "ua": true,
+        "lang": true,
+        "tz": true,
+        "offset": true,
+        "request_ua": true
+      },
+      "worker_script_request": {
+        "ua": true,
+        "lang": true
+      },
+      "tab_request": {
+        "ua": true,
+        "lang": true
+      }
+    }
+  },
+  {
+    "browser": "librewolf",
+    "version": "LibreWolf 157.0-1",
+    "mechanism": "user.js-prefs+TZ-env",
+    "resist_fingerprinting": false,
+    "step": "cold-restart-same-launcher",
+    "controls_from_launcher": true,
+    "verdict": {
+      "first_request": {
+        "ua": true,
+        "lang": true,
+        "client_hints": {}
+      },
+      "window": {
+        "ua": true,
+        "lang": true,
+        "tz": true,
+        "offset": true,
+        "request_ua": true
+      },
+      "worker": {
+        "ua": true,
+        "lang": true,
+        "tz": true,
+        "offset": true,
+        "request_ua": true
+      },
+      "tab": {
+        "ua": true,
+        "lang": true,
+        "tz": true,
+        "offset": true,
+        "request_ua": true
+      },
+      "worker_script_request": {
+        "ua": true,
+        "lang": true
+      },
+      "tab_request": {
+        "ua": true,
+        "lang": true
+      }
+    }
+  },
+  {
+    "browser": "librewolf",
+    "version": "LibreWolf 157.0-1",
+    "mechanism": "user.js-prefs+TZ-env",
+    "resist_fingerprinting": false,
+    "step": "cold-restart-plain",
+    "controls_from_launcher": false,
+    "verdict": {
+      "first_request": {
+        "ua": true,
+        "lang": true,
+        "client_hints": {}
+      },
+      "window": {
+        "ua": true,
+        "lang": true,
+        "tz": false,
+        "offset": false,
+        "request_ua": true
+      },
+      "worker": {
+        "ua": true,
+        "lang": true,
+        "tz": false,
+        "offset": false,
+        "request_ua": true
+      },
+      "tab": {
+        "ua": true,
+        "lang": true,
+        "tz": false,
+        "offset": false,
+        "request_ua": true
+      },
+      "worker_script_request": {
+        "ua": true,
+        "lang": true
+      },
+      "tab_request": {
+        "ua": true,
+        "lang": true
+      }
+    }
+  }
+]

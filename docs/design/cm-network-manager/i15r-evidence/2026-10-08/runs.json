@@ -1,0 +1,2358 @@
+[
+  {
+    "browser": "chrome",
+    "version": "Google Chrome 155.0.8059.39",
+    "mechanism": "cli-flags+TZ-env",
+    "resist_fingerprinting": null,
+    "step": "first-launch",
+    "controls_from_launcher": true,
+    "verdict": {
+      "first_request": {
+        "ua": true,
+        "lang": true,
+        "client_hints": {
+          "sec-ch-ua": "\"Google Chrome\";v=\"155\", \"Chromium\";v=\"155\", \"Not(A:Brand\";v=\"24\"",
+          "sec-ch-ua-mobile": "?0",
+          "sec-ch-ua-platform": "\"Linux\""
+        }
+      },
+      "window": {
+        "ua": true,
+        "lang": true,
+        "tz": true,
+        "offset": true,
+        "observed": {
+          "ua": "Mozilla/5.0 (X11; Linux x86_64) CMLab/1.0",
+          "lang": "de-DE",
+          "tz": "Asia/Tokyo",
+          "off": -540,
+          "locale": "en-US",
+          "uad": {
+            "brands": [
+              "Google Chrome/155",
+              "Chromium/155",
+              "Not(A:Brand/24"
+            ],
+            "platform": "Linux"
+          }
+        },
+        "request_ua": true
+      },
+      "worker": {
+        "ua": true,
+        "lang": true,
+        "tz": true,
+        "offset": true,
+        "observed": {
+          "ua": "Mozilla/5.0 (X11; Linux x86_64) CMLab/1.0",
+          "lang": "de-DE",
+          "tz": "Asia/Tokyo",
+          "off": -540,
+          "locale": "en-US",
+          "uad": {
+            "brands": [
+              "Google Chrome/155",
+              "Chromium/155",
+              "Not(A:Brand/24"
+            ],
+            "platform": "Linux"
+          }
+        },
+        "request_ua": true
+      },
+      "tab": {
+        "ua": true,
+        "lang": true,
+        "tz": true,
+        "offset": true,
+        "observed": {
+          "ua": "Mozilla/5.0 (X11; Linux x86_64) CMLab/1.0",
+          "lang": "de-DE",
+          "tz": "Asia/Tokyo",
+          "off": -540,
+          "locale": "en-US",
+          "uad": {
+            "brands": [
+              "Google Chrome/155",
+              "Chromium/155",
+              "Not(A:Brand/24"
+            ],
+            "platform": "Linux"
+          }
+        },
+        "request_ua": true
+      },
+      "worker_script_request": {
+        "ua": true,
+        "lang": true
+      },
+      "tab_request": {
+        "ua": true,
+        "lang": true
+      }
+    },
+    "events": [
+      {
+        "kind": "request",
+        "path": "/",
+        "headers": {
+          "sec-ch-ua": "\"Google Chrome\";v=\"155\", \"Chromium\";v=\"155\", \"Not(A:Brand\";v=\"24\"",
+          "sec-ch-ua-mobile": "?0",
+          "sec-ch-ua-platform": "\"Linux\"",
+          "user-agent": "Mozilla/5.0 (X11; Linux x86_64) CMLab/1.0",
+          "accept-language": "de-DE,de;q=0.9"
+        },
+        "seq": 0
+      },
+      {
+        "kind": "report",
+        "headers": {
+          "sec-ch-ua-full-version-list": "",
+          "sec-ch-ua-platform": "\"Linux\"",
+          "user-agent": "Mozilla/5.0 (X11; Linux x86_64) CMLab/1.0",
+          "sec-ch-ua": "\"Google Chrome\";v=\"155\", \"Chromium\";v=\"155\", \"Not(A:Brand\";v=\"24\"",
+          "sec-ch-ua-mobile": "?0",
+          "sec-ch-ua-platform-version": "\"\"",
+          "accept-language": "de-DE,de;q=0.9"
+        },
+        "values": {
+          "ctx": "window",
+          "ua": "Mozilla/5.0 (X11; Linux x86_64) CMLab/1.0",
+          "lang": "de-DE",
+          "langs": [
+            "de-DE"
+          ],
+          "tz": "Asia/Tokyo",
+          "off": -540,
+          "locale": "en-US",
+          "uad": {
+            "brands": [
+              "Google Chrome/155",
+              "Chromium/155",
+              "Not(A:Brand/24"
+            ],
+            "platform": "Linux"
+          }
+        },
+        "seq": 1
+      },
+      {
+        "kind": "request",
+        "path": "/favicon.ico",
+        "headers": {
+          "sec-ch-ua-full-version-list": "",
+          "sec-ch-ua-platform": "\"Linux\"",
+          "user-agent": "Mozilla/5.0 (X11; Linux x86_64) CMLab/1.0",
+          "sec-ch-ua": "\"Google Chrome\";v=\"155\", \"Chromium\";v=\"155\", \"Not(A:Brand\";v=\"24\"",
+          "sec-ch-ua-mobile": "?0",
+          "sec-ch-ua-platform-version": "\"\"",
+          "accept-language": "de-DE,de;q=0.9"
+        },
+        "seq": 2
+      },
+      {
+        "kind": "request",
+        "path": "/worker.js",
+        "headers": {
+          "user-agent": "Mozilla/5.0 (X11; Linux x86_64) CMLab/1.0",
+          "accept-language": "de-DE,de;q=0.9"
+        },
+        "seq": 3
+      },
+      {
+        "kind": "request",
+        "path": "/tab",
+        "headers": {
+          "sec-ch-ua": "\"Google Chrome\";v=\"155\", \"Chromium\";v=\"155\", \"Not(A:Brand\";v=\"24\"",
+          "sec-ch-ua-mobile": "?0",
+          "sec-ch-ua-platform": "\"Linux\"",
+          "sec-ch-ua-platform-version": "\"\"",
+          "sec-ch-ua-full-version-list": "",
+          "user-agent": "Mozilla/5.0 (X11; Linux x86_64) CMLab/1.0",
+          "accept-language": "de-DE,de;q=0.9"
+        },
+        "seq": 4
+      },
+      {
+        "kind": "report",
+        "headers": {
+          "sec-ch-ua-full-version-list": "",
+          "sec-ch-ua-platform": "\"Linux\"",
+          "user-agent": "Mozilla/5.0 (X11; Linux x86_64) CMLab/1.0",
+          "sec-ch-ua": "\"Google Chrome\";v=\"155\", \"Chromium\";v=\"155\", \"Not(A:Brand\";v=\"24\"",
+          "sec-ch-ua-mobile": "?0",
+          "sec-ch-ua-platform-version": "\"\"",
+          "accept-language": "de-DE,de;q=0.9"
+        },
+        "values": {
+          "ctx": "tab",
+          "ua": "Mozilla/5.0 (X11; Linux x86_64) CMLab/1.0",
+          "lang": "de-DE",
+          "langs": [
+            "de-DE"
+          ],
+          "tz": "Asia/Tokyo",
+          "off": -540,
+          "locale": "en-US",
+          "uad": {
+            "brands": [
+              "Google Chrome/155",
+              "Chromium/155",
+              "Not(A:Brand/24"
+            ],
+            "platform": "Linux"
+          }
+        },
+        "seq": 5
+      },
+      {
+        "kind": "report",
+        "headers": {
+          "user-agent": "Mozilla/5.0 (X11; Linux x86_64) CMLab/1.0",
+          "accept-language": "de-DE,de;q=0.9"
+        },
+        "values": {
+          "ctx": "worker",
+          "ua": "Mozilla/5.0 (X11; Linux x86_64) CMLab/1.0",
+          "lang": "de-DE",
+          "langs": [
+            "de-DE"
+          ],
+          "tz": "Asia/Tokyo",
+          "off": -540,
+          "locale": "en-US",
+          "uad": {
+            "brands": [
+              "Google Chrome/155",
+              "Chromium/155",
+              "Not(A:Brand/24"
+            ],
+            "platform": "Linux"
+          }
+        },
+        "seq": 6
+      }
+    ]
+  },
+  {
+    "browser": "chrome",
+    "version": "Google Chrome 155.0.8059.39",
+    "mechanism": "cli-flags+TZ-env",
+    "resist_fingerprinting": null,
+    "step": "cold-restart-same-launcher",
+    "controls_from_launcher": true,
+    "verdict": {
+      "first_request": {
+        "ua": true,
+        "lang": true,
+        "client_hints": {
+          "sec-ch-ua": "\"Google Chrome\";v=\"155\", \"Chromium\";v=\"155\", \"Not(A:Brand\";v=\"24\"",
+          "sec-ch-ua-mobile": "?0",
+          "sec-ch-ua-platform": "\"Linux\"",
+          "sec-ch-ua-platform-version": "\"\"",
+          "sec-ch-ua-full-version-list": ""
+        }
+      },
+      "window": {
+        "ua": true,
+        "lang": true,
+        "tz": true,
+        "offset": true,
+        "observed": {
+          "ua": "Mozilla/5.0 (X11; Linux x86_64) CMLab/1.0",
+          "lang": "de-DE",
+          "tz": "Asia/Tokyo",
+          "off": -540,
+          "locale": "en-US",
+          "uad": {
+            "brands": [
+              "Google Chrome/155",
+              "Chromium/155",
+              "Not(A:Brand/24"
+            ],
+            "platform": "Linux"
+          }
+        },
+        "request_ua": true
+      },
+      "worker": {
+        "ua": true,
+        "lang": true,
+        "tz": true,
+        "offset": true,
+        "observed": {
+          "ua": "Mozilla/5.0 (X11; Linux x86_64) CMLab/1.0",
+          "lang": "de-DE",
+          "tz": "Asia/Tokyo",
+          "off": -540,
+          "locale": "en-US",
+          "uad": {
+            "brands": [
+              "Google Chrome/155",
+              "Chromium/155",
+              "Not(A:Brand/24"
+            ],
+            "platform": "Linux"
+          }
+        },
+        "request_ua": true
+      },
+      "tab": {
+        "ua": true,
+        "lang": true,
+        "tz": true,
+        "offset": true,
+        "observed": {
+          "ua": "Mozilla/5.0 (X11; Linux x86_64) CMLab/1.0",
+          "lang": "de-DE",
+          "tz": "Asia/Tokyo",
+          "off": -540,
+          "locale": "en-US",
+          "uad": {
+            "brands": [
+              "Google Chrome/155",
+              "Chromium/155",
+              "Not(A:Brand/24"
+            ],
+            "platform": "Linux"
+          }
+        },
+        "request_ua": true
+      },
+      "worker_script_request": {
+        "ua": true,
+        "lang": true
+      },
+      "tab_request": {
+        "ua": true,
+        "lang": true
+      }
+    },
+    "events": [
+      {
+        "kind": "request",
+        "path": "/",
+        "headers": {
+          "sec-ch-ua": "\"Google Chrome\";v=\"155\", \"Chromium\";v=\"155\", \"Not(A:Brand\";v=\"24\"",
+          "sec-ch-ua-mobile": "?0",
+          "sec-ch-ua-platform": "\"Linux\"",
+          "sec-ch-ua-platform-version": "\"\"",
+          "sec-ch-ua-full-version-list": "",
+          "user-agent": "Mozilla/5.0 (X11; Linux x86_64) CMLab/1.0",
+          "accept-language": "de-DE,de;q=0.9"
+        },
+        "seq": 0
+      },
+      {
+        "kind": "report",
+        "headers": {
+          "sec-ch-ua-full-version-list": "",
+          "sec-ch-ua-platform": "\"Linux\"",
+          "user-agent": "Mozilla/5.0 (X11; Linux x86_64) CMLab/1.0",
+          "sec-ch-ua": "\"Google Chrome\";v=\"155\", \"Chromium\";v=\"155\", \"Not(A:Brand\";v=\"24\"",
+          "sec-ch-ua-mobile": "?0",
+          "sec-ch-ua-platform-version": "\"\"",
+          "accept-language": "de-DE,de;q=0.9"
+        },
+        "values": {
+          "ctx": "window",
+          "ua": "Mozilla/5.0 (X11; Linux x86_64) CMLab/1.0",
+          "lang": "de-DE",
+          "langs": [
+            "de-DE"
+          ],
+          "tz": "Asia/Tokyo",
+          "off": -540,
+          "locale": "en-US",
+          "uad": {
+            "brands": [
+              "Google Chrome/155",
+              "Chromium/155",
+              "Not(A:Brand/24"
+            ],
+            "platform": "Linux"
+          }
+        },
+        "seq": 1
+      },
+      {
+        "kind": "request",
+        "path": "/favicon.ico",
+        "headers": {
+          "sec-ch-ua-full-version-list": "",
+          "sec-ch-ua-platform": "\"Linux\"",
+          "user-agent": "Mozilla/5.0 (X11; Linux x86_64) CMLab/1.0",
+          "sec-ch-ua": "\"Google Chrome\";v=\"155\", \"Chromium\";v=\"155\", \"Not(A:Brand\";v=\"24\"",
+          "sec-ch-ua-mobile": "?0",
+          "sec-ch-ua-platform-version": "\"\"",
+          "accept-language": "de-DE,de;q=0.9"
+        },
+        "seq": 2
+      },
+      {
+        "kind": "request",
+        "path": "/worker.js",
+        "headers": {
+          "user-agent": "Mozilla/5.0 (X11; Linux x86_64) CMLab/1.0",
+          "accept-language": "de-DE,de;q=0.9"
+        },
+        "seq": 3
+      },
+      {
+        "kind": "request",
+        "path": "/tab",
+        "headers": {
+          "sec-ch-ua": "\"Google Chrome\";v=\"155\", \"Chromium\";v=\"155\", \"Not(A:Brand\";v=\"24\"",
+          "sec-ch-ua-mobile": "?0",
+          "sec-ch-ua-platform": "\"Linux\"",
+          "sec-ch-ua-platform-version": "\"\"",
+          "sec-ch-ua-full-version-list": "",
+          "user-agent": "Mozilla/5.0 (X11; Linux x86_64) CMLab/1.0",
+          "accept-language": "de-DE,de;q=0.9"
+        },
+        "seq": 4
+      },
+      {
+        "kind": "report",
+        "headers": {
+          "sec-ch-ua-full-version-list": "",
+          "sec-ch-ua-platform": "\"Linux\"",
+          "user-agent": "Mozilla/5.0 (X11; Linux x86_64) CMLab/1.0",
+          "sec-ch-ua": "\"Google Chrome\";v=\"155\", \"Chromium\";v=\"155\", \"Not(A:Brand\";v=\"24\"",
+          "sec-ch-ua-mobile": "?0",
+          "sec-ch-ua-platform-version": "\"\"",
+          "accept-language": "de-DE,de;q=0.9"
+        },
+        "values": {
+          "ctx": "tab",
+          "ua": "Mozilla/5.0 (X11; Linux x86_64) CMLab/1.0",
+          "lang": "de-DE",
+          "langs": [
+            "de-DE"
+          ],
+          "tz": "Asia/Tokyo",
+          "off": -540,
+          "locale": "en-US",
+          "uad": {
+            "brands": [
+              "Google Chrome/155",
+              "Chromium/155",
+              "Not(A:Brand/24"
+            ],
+            "platform": "Linux"
+          }
+        },
+        "seq": 5
+      },
+      {
+        "kind": "report",
+        "headers": {
+          "user-agent": "Mozilla/5.0 (X11; Linux x86_64) CMLab/1.0",
+          "accept-language": "de-DE,de;q=0.9"
+        },
+        "values": {
+          "ctx": "worker",
+          "ua": "Mozilla/5.0 (X11; Linux x86_64) CMLab/1.0",
+          "lang": "de-DE",
+          "langs": [
+            "de-DE"
+          ],
+          "tz": "Asia/Tokyo",
+          "off": -540,
+          "locale": "en-US",
+          "uad": {
+            "brands": [
+              "Google Chrome/155",
+              "Chromium/155",
+              "Not(A:Brand/24"
+            ],
+            "platform": "Linux"
+          }
+        },
+        "seq": 6
+      }
+    ]
+  },
+  {
+    "browser": "chrome",
+    "version": "Google Chrome 155.0.8059.39",
+    "mechanism": "cli-flags+TZ-env",
+    "resist_fingerprinting": null,
+    "step": "cold-restart-plain",
+    "controls_from_launcher": false,
+    "verdict": {
+      "first_request": {
+        "ua": false,
+        "lang": true,
+        "client_hints": {
+          "sec-ch-ua": "\"Google Chrome\";v=\"155\", \"Chromium\";v=\"155\", \"Not(A:Brand\";v=\"24\"",
+          "sec-ch-ua-mobile": "?0",
+          "sec-ch-ua-platform": "\"Linux\"",
+          "sec-ch-ua-platform-version": "\"\"",
+          "sec-ch-ua-full-version-list": "\"Google Chrome\";v=\"155.0.8059.39\", \"Chromium\";v=\"155.0.8059.39\", \"Not(A:Brand\";v=\"24.0.0.0\""
+        }
+      },
+      "window": {
+        "ua": false,
+        "lang": true,
+        "tz": false,
+        "offset": false,
+        "observed": {
+          "ua": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/155.0.0.0 Safari/537.36",
+          "lang": "de-DE",
+          "tz": "Europe/Moscow",
+          "off": -180,
+          "locale": "en-US",
+          "uad": {
+            "brands": [
+              "Google Chrome/155",
+              "Chromium/155",
+              "Not(A:Brand/24"
+            ],
+            "platform": "Linux"
+          }
+        },
+        "request_ua": false
+      },
+      "worker": {
+        "ua": false,
+        "lang": true,
+        "tz": false,
+        "offset": false,
+        "observed": {
+          "ua": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/155.0.0.0 Safari/537.36",
+          "lang": "de-DE",
+          "tz": "Europe/Moscow",
+          "off": -180,
+          "locale": "en-US",
+          "uad": {
+            "brands": [
+              "Google Chrome/155",
+              "Chromium/155",
+              "Not(A:Brand/24"
+            ],
+            "platform": "Linux"
+          }
+        },
+        "request_ua": false
+      },
+      "tab": {
+        "ua": false,
+        "lang": true,
+        "tz": false,
+        "offset": false,
+        "observed": {
+          "ua": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/155.0.0.0 Safari/537.36",
+          "lang": "de-DE",
+          "tz": "Europe/Moscow",
+          "off": -180,
+          "locale": "en-US",
+          "uad": {
+            "brands": [
+              "Google Chrome/155",
+              "Chromium/155",
+              "Not(A:Brand/24"
+            ],
+            "platform": "Linux"
+          }
+        },
+        "request_ua": false
+      },
+      "worker_script_request": {
+        "ua": false,
+        "lang": true
+      },
+      "tab_request": {
+        "ua": false,
+        "lang": true
+      }
+    },
+    "events": [
+      {
+        "kind": "request",
+        "path": "/",
+        "headers": {
+          "sec-ch-ua": "\"Google Chrome\";v=\"155\", \"Chromium\";v=\"155\", \"Not(A:Brand\";v=\"24\"",
+          "sec-ch-ua-mobile": "?0",
+          "sec-ch-ua-platform": "\"Linux\"",
+          "sec-ch-ua-platform-version": "\"\"",
+          "sec-ch-ua-full-version-list": "\"Google Chrome\";v=\"155.0.8059.39\", \"Chromium\";v=\"155.0.8059.39\", \"Not(A:Brand\";v=\"24.0.0.0\"",
+          "user-agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/155.0.0.0 Safari/537.36",
+          "accept-language": "de-DE,de;q=0.9"
+        },
+        "seq": 0
+      },
+      {
+        "kind": "report",
+        "headers": {
+          "sec-ch-ua-full-version-list": "\"Google Chrome\";v=\"155.0.8059.39\", \"Chromium\";v=\"155.0.8059.39\", \"Not(A:Brand\";v=\"24.0.0.0\"",
+          "sec-ch-ua-platform": "\"Linux\"",
+          "user-agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/155.0.0.0 Safari/537.36",
+          "sec-ch-ua": "\"Google Chrome\";v=\"155\", \"Chromium\";v=\"155\", \"Not(A:Brand\";v=\"24\"",
+          "sec-ch-ua-mobile": "?0",
+          "sec-ch-ua-platform-version": "\"\"",
+          "accept-language": "de-DE,de;q=0.9"
+        },
+        "values": {
+          "ctx": "window",
+          "ua": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/155.0.0.0 Safari/537.36",
+          "lang": "de-DE",
+          "langs": [
+            "de-DE"
+          ],
+          "tz": "Europe/Moscow",
+          "off": -180,
+          "locale": "en-US",
+          "uad": {
+            "brands": [
+              "Google Chrome/155",
+              "Chromium/155",
+              "Not(A:Brand/24"
+            ],
+            "platform": "Linux"
+          }
+        },
+        "seq": 1
+      },
+      {
+        "kind": "request",
+        "path": "/worker.js",
+        "headers": {
+          "user-agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/155.0.0.0 Safari/537.36",
+          "accept-language": "de-DE,de;q=0.9"
+        },
+        "seq": 2
+      },
+      {
+        "kind": "request",
+        "path": "/tab",
+        "headers": {
+          "sec-ch-ua": "\"Google Chrome\";v=\"155\", \"Chromium\";v=\"155\", \"Not(A:Brand\";v=\"24\"",
+          "sec-ch-ua-mobile": "?0",
+          "sec-ch-ua-platform": "\"Linux\"",
+          "sec-ch-ua-platform-version": "\"\"",
+          "sec-ch-ua-full-version-list": "\"Google Chrome\";v=\"155.0.8059.39\", \"Chromium\";v=\"155.0.8059.39\", \"Not(A:Brand\";v=\"24.0.0.0\"",
+          "user-agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/155.0.0.0 Safari/537.36",
+          "accept-language": "de-DE,de;q=0.9"
+        },
+        "seq": 3
+      },
+      {
+        "kind": "request",
+        "path": "/favicon.ico",
+        "headers": {
+          "sec-ch-ua-full-version-list": "\"Google Chrome\";v=\"155.0.8059.39\", \"Chromium\";v=\"155.0.8059.39\", \"Not(A:Brand\";v=\"24.0.0.0\"",
+          "sec-ch-ua-platform": "\"Linux\"",
+          "user-agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/155.0.0.0 Safari/537.36",
+          "sec-ch-ua": "\"Google Chrome\";v=\"155\", \"Chromium\";v=\"155\", \"Not(A:Brand\";v=\"24\"",
+          "sec-ch-ua-mobile": "?0",
+          "sec-ch-ua-platform-version": "\"\"",
+          "accept-language": "de-DE,de;q=0.9"
+        },
+        "seq": 4
+      },
+      {
+        "kind": "report",
+        "headers": {
+          "user-agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/155.0.0.0 Safari/537.36",
+          "accept-language": "de-DE,de;q=0.9"
+        },
+        "values": {
+          "ctx": "worker",
+          "ua": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/155.0.0.0 Safari/537.36",
+          "lang": "de-DE",
+          "langs": [
+            "de-DE"
+          ],
+          "tz": "Europe/Moscow",
+          "off": -180,
+          "locale": "en-US",
+          "uad": {
+            "brands": [
+              "Google Chrome/155",
+              "Chromium/155",
+              "Not(A:Brand/24"
+            ],
+            "platform": "Linux"
+          }
+        },
+        "seq": 5
+      },
+      {
+        "kind": "report",
+        "headers": {
+          "sec-ch-ua-full-version-list": "\"Google Chrome\";v=\"155.0.8059.39\", \"Chromium\";v=\"155.0.8059.39\", \"Not(A:Brand\";v=\"24.0.0.0\"",
+          "sec-ch-ua-platform": "\"Linux\"",
+          "user-agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/155.0.0.0 Safari/537.36",
+          "sec-ch-ua": "\"Google Chrome\";v=\"155\", \"Chromium\";v=\"155\", \"Not(A:Brand\";v=\"24\"",
+          "sec-ch-ua-mobile": "?0",
+          "sec-ch-ua-platform-version": "\"\"",
+          "accept-language": "de-DE,de;q=0.9"
+        },
+        "values": {
+          "ctx": "tab",
+          "ua": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/155.0.0.0 Safari/537.36",
+          "lang": "de-DE",
+          "langs": [
+            "de-DE"
+          ],
+          "tz": "Europe/Moscow",
+          "off": -180,
+          "locale": "en-US",
+          "uad": {
+            "brands": [
+              "Google Chrome/155",
+              "Chromium/155",
+              "Not(A:Brand/24"
+            ],
+            "platform": "Linux"
+          }
+        },
+        "seq": 6
+      }
+    ]
+  },
+  {
+    "browser": "brave",
+    "version": "Brave Browser 154.1.96.61",
+    "mechanism": "cli-flags+TZ-env",
+    "resist_fingerprinting": null,
+    "step": "first-launch",
+    "controls_from_launcher": true,
+    "verdict": {
+      "first_request": {
+        "ua": true,
+        "lang": true,
+        "client_hints": {
+          "sec-ch-ua": "",
+          "sec-ch-ua-mobile": "?0",
+          "sec-ch-ua-platform": "\"\""
+        }
+      },
+      "window": {
+        "ua": true,
+        "lang": true,
+        "tz": true,
+        "offset": true,
+        "observed": {
+          "ua": "Mozilla/5.0 (X11; Linux x86_64) CMLab/1.0",
+          "lang": "de-DE",
+          "tz": "Asia/Tokyo",
+          "off": -540,
+          "locale": "en-US",
+          "uad": {
+            "brands": [],
+            "platform": ""
+          }
+        },
+        "request_ua": true
+      },
+      "worker": {
+        "ua": true,
+        "lang": true,
+        "tz": true,
+        "offset": true,
+        "observed": {
+          "ua": "Mozilla/5.0 (X11; Linux x86_64) CMLab/1.0",
+          "lang": "de-DE",
+          "tz": "Asia/Tokyo",
+          "off": -540,
+          "locale": "en-US",
+          "uad": {
+            "brands": [],
+            "platform": ""
+          }
+        },
+        "request_ua": true
+      },
+      "tab": {
+        "ua": true,
+        "lang": true,
+        "tz": true,
+        "offset": true,
+        "observed": {
+          "ua": "Mozilla/5.0 (X11; Linux x86_64) CMLab/1.0",
+          "lang": "de-DE",
+          "tz": "Asia/Tokyo",
+          "off": -540,
+          "locale": "en-US",
+          "uad": {
+            "brands": [],
+            "platform": ""
+          }
+        },
+        "request_ua": true
+      },
+      "worker_script_request": {
+        "ua": true,
+        "lang": true
+      },
+      "tab_request": {
+        "ua": true,
+        "lang": true
+      }
+    },
+    "events": [
+      {
+        "kind": "request",
+        "path": "/",
+        "headers": {
+          "sec-ch-ua": "",
+          "sec-ch-ua-mobile": "?0",
+          "sec-ch-ua-platform": "\"\"",
+          "user-agent": "Mozilla/5.0 (X11; Linux x86_64) CMLab/1.0",
+          "accept-language": "de-DE,de;q=0.8"
+        },
+        "seq": 0
+      },
+      {
+        "kind": "report",
+        "headers": {
+          "sec-ch-ua-full-version-list": "",
+          "sec-ch-ua-platform": "\"\"",
+          "user-agent": "Mozilla/5.0 (X11; Linux x86_64) CMLab/1.0",
+          "sec-ch-ua": "",
+          "sec-ch-ua-mobile": "?0",
+          "sec-ch-ua-platform-version": "\"\"",
+          "accept-language": "de-DE,de;q=0.8"
+        },
+        "values": {
+          "ctx": "window",
+          "ua": "Mozilla/5.0 (X11; Linux x86_64) CMLab/1.0",
+          "lang": "de-DE",
+          "langs": [
+            "de-DE"
+          ],
+          "tz": "Asia/Tokyo",
+          "off": -540,
+          "locale": "en-US",
+          "uad": {
+            "brands": [],
+            "platform": ""
+          }
+        },
+        "seq": 1
+      },
+      {
+        "kind": "request",
+        "path": "/worker.js",
+        "headers": {
+          "user-agent": "Mozilla/5.0 (X11; Linux x86_64) CMLab/1.0",
+          "accept-language": "de-DE,de;q=0.8"
+        },
+        "seq": 2
+      },
+      {
+        "kind": "request",
+        "path": "/tab",
+        "headers": {
+          "sec-ch-ua": "",
+          "sec-ch-ua-mobile": "?0",
+          "sec-ch-ua-platform": "\"\"",
+          "sec-ch-ua-platform-version": "\"\"",
+          "sec-ch-ua-full-version-list": "",
+          "user-agent": "Mozilla/5.0 (X11; Linux x86_64) CMLab/1.0",
+          "accept-language": "de-DE,de;q=0.8"
+        },
+        "seq": 3
+      },
+      {
+        "kind": "request",
+        "path": "/favicon.ico",
+        "headers": {
+          "sec-ch-ua-full-version-list": "",
+          "sec-ch-ua-platform": "\"\"",
+          "user-agent": "Mozilla/5.0 (X11; Linux x86_64) CMLab/1.0",
+          "sec-ch-ua": "",
+          "sec-ch-ua-mobile": "?0",
+          "sec-ch-ua-platform-version": "\"\"",
+          "accept-language": "de-DE,de;q=0.8"
+        },
+        "seq": 4
+      },
+      {
+        "kind": "report",
+        "headers": {
+          "user-agent": "Mozilla/5.0 (X11; Linux x86_64) CMLab/1.0",
+          "accept-language": "de-DE,de;q=0.8"
+        },
+        "values": {
+          "ctx": "worker",
+          "ua": "Mozilla/5.0 (X11; Linux x86_64) CMLab/1.0",
+          "lang": "de-DE",
+          "langs": [
+            "de-DE"
+          ],
+          "tz": "Asia/Tokyo",
+          "off": -540,
+          "locale": "en-US",
+          "uad": {
+            "brands": [],
+            "platform": ""
+          }
+        },
+        "seq": 5
+      },
+      {
+        "kind": "report",
+        "headers": {
+          "sec-ch-ua-full-version-list": "",
+          "sec-ch-ua-platform": "\"\"",
+          "user-agent": "Mozilla/5.0 (X11; Linux x86_64) CMLab/1.0",
+          "sec-ch-ua": "",
+          "sec-ch-ua-mobile": "?0",
+          "sec-ch-ua-platform-version": "\"\"",
+          "accept-language": "de-DE,de;q=0.8"
+        },
+        "values": {
+          "ctx": "tab",
+          "ua": "Mozilla/5.0 (X11; Linux x86_64) CMLab/1.0",
+          "lang": "de-DE",
+          "langs": [
+            "de-DE"
+          ],
+          "tz": "Asia/Tokyo",
+          "off": -540,
+          "locale": "en-US",
+          "uad": {
+            "brands": [],
+            "platform": ""
+          }
+        },
+        "seq": 6
+      }
+    ]
+  },
+  {
+    "browser": "brave",
+    "version": "Brave Browser 154.1.96.61",
+    "mechanism": "cli-flags+TZ-env",
+    "resist_fingerprinting": null,
+    "step": "cold-restart-same-launcher",
+    "controls_from_launcher": true,
+    "verdict": {
+      "first_request": {
+        "ua": true,
+        "lang": true,
+        "client_hints": {
+          "sec-ch-ua": "",
+          "sec-ch-ua-mobile": "?0",
+          "sec-ch-ua-platform": "\"\"",
+          "sec-ch-ua-platform-version": "\"\"",
+          "sec-ch-ua-full-version-list": ""
+        }
+      },
+      "window": {
+        "ua": true,
+        "lang": true,
+        "tz": true,
+        "offset": true,
+        "observed": {
+          "ua": "Mozilla/5.0 (X11; Linux x86_64) CMLab/1.0",
+          "lang": "de-DE",
+          "tz": "Asia/Tokyo",
+          "off": -540,
+          "locale": "en-US",
+          "uad": {
+            "brands": [],
+            "platform": ""
+          }
+        },
+        "request_ua": true
+      },
+      "worker": {
+        "ua": true,
+        "lang": true,
+        "tz": true,
+        "offset": true,
+        "observed": {
+          "ua": "Mozilla/5.0 (X11; Linux x86_64) CMLab/1.0",
+          "lang": "de-DE",
+          "tz": "Asia/Tokyo",
+          "off": -540,
+          "locale": "en-US",
+          "uad": {
+            "brands": [],
+            "platform": ""
+          }
+        },
+        "request_ua": true
+      },
+      "tab": {
+        "ua": true,
+        "lang": true,
+        "tz": true,
+        "offset": true,
+        "observed": {
+          "ua": "Mozilla/5.0 (X11; Linux x86_64) CMLab/1.0",
+          "lang": "de-DE",
+          "tz": "Asia/Tokyo",
+          "off": -540,
+          "locale": "en-US",
+          "uad": {
+            "brands": [],
+            "platform": ""
+          }
+        },
+        "request_ua": true
+      },
+      "worker_script_request": {
+        "ua": true,
+        "lang": true
+      },
+      "tab_request": {
+        "ua": true,
+        "lang": true
+      }
+    },
+    "events": [
+      {
+        "kind": "request",
+        "path": "/",
+        "headers": {
+          "sec-ch-ua": "",
+          "sec-ch-ua-mobile": "?0",
+          "sec-ch-ua-platform": "\"\"",
+          "sec-ch-ua-platform-version": "\"\"",
+          "sec-ch-ua-full-version-list": "",
+          "user-agent": "Mozilla/5.0 (X11; Linux x86_64) CMLab/1.0",
+          "accept-language": "de-DE,de;q=0.5"
+        },
+        "seq": 0
+      },
+      {
+        "kind": "report",
+        "headers": {
+          "sec-ch-ua-full-version-list": "",
+          "sec-ch-ua-platform": "\"\"",
+          "user-agent": "Mozilla/5.0 (X11; Linux x86_64) CMLab/1.0",
+          "sec-ch-ua": "",
+          "sec-ch-ua-mobile": "?0",
+          "sec-ch-ua-platform-version": "\"\"",
+          "accept-language": "de-DE,de;q=0.5"
+        },
+        "values": {
+          "ctx": "window",
+          "ua": "Mozilla/5.0 (X11; Linux x86_64) CMLab/1.0",
+          "lang": "de-DE",
+          "langs": [
+            "de-DE"
+          ],
+          "tz": "Asia/Tokyo",
+          "off": -540,
+          "locale": "en-US",
+          "uad": {
+            "brands": [],
+            "platform": ""
+          }
+        },
+        "seq": 1
+      },
+      {
+        "kind": "request",
+        "path": "/favicon.ico",
+        "headers": {
+          "sec-ch-ua-full-version-list": "",
+          "sec-ch-ua-platform": "\"\"",
+          "user-agent": "Mozilla/5.0 (X11; Linux x86_64) CMLab/1.0",
+          "sec-ch-ua": "",
+          "sec-ch-ua-mobile": "?0",
+          "sec-ch-ua-platform-version": "\"\"",
+          "accept-language": "de-DE,de;q=0.5"
+        },
+        "seq": 2
+      },
+      {
+        "kind": "request",
+        "path": "/worker.js",
+        "headers": {
+          "user-agent": "Mozilla/5.0 (X11; Linux x86_64) CMLab/1.0",
+          "accept-language": "de-DE,de;q=0.5"
+        },
+        "seq": 3
+      },
+      {
+        "kind": "request",
+        "path": "/tab",
+        "headers": {
+          "sec-ch-ua": "",
+          "sec-ch-ua-mobile": "?0",
+          "sec-ch-ua-platform": "\"\"",
+          "sec-ch-ua-platform-version": "\"\"",
+          "sec-ch-ua-full-version-list": "",
+          "user-agent": "Mozilla/5.0 (X11; Linux x86_64) CMLab/1.0",
+          "accept-language": "de-DE,de;q=0.5"
+        },
+        "seq": 4
+      },
+      {
+        "kind": "report",
+        "headers": {
+          "sec-ch-ua-full-version-list": "",
+          "sec-ch-ua-platform": "\"\"",
+          "user-agent": "Mozilla/5.0 (X11; Linux x86_64) CMLab/1.0",
+          "sec-ch-ua": "",
+          "sec-ch-ua-mobile": "?0",
+          "sec-ch-ua-platform-version": "\"\"",
+          "accept-language": "de-DE,de;q=0.5"
+        },
+        "values": {
+          "ctx": "tab",
+          "ua": "Mozilla/5.0 (X11; Linux x86_64) CMLab/1.0",
+          "lang": "de-DE",
+          "langs": [
+            "de-DE"
+          ],
+          "tz": "Asia/Tokyo",
+          "off": -540,
+          "locale": "en-US",
+          "uad": {
+            "brands": [],
+            "platform": ""
+          }
+        },
+        "seq": 5
+      },
+      {
+        "kind": "report",
+        "headers": {
+          "user-agent": "Mozilla/5.0 (X11; Linux x86_64) CMLab/1.0",
+          "accept-language": "de-DE,de;q=0.5"
+        },
+        "values": {
+          "ctx": "worker",
+          "ua": "Mozilla/5.0 (X11; Linux x86_64) CMLab/1.0",
+          "lang": "de-DE",
+          "langs": [
+            "de-DE"
+          ],
+          "tz": "Asia/Tokyo",
+          "off": -540,
+          "locale": "en-US",
+          "uad": {
+            "brands": [],
+            "platform": ""
+          }
+        },
+        "seq": 6
+      }
+    ]
+  },
+  {
+    "browser": "brave",
+    "version": "Brave Browser 154.1.96.61",
+    "mechanism": "cli-flags+TZ-env",
+    "resist_fingerprinting": null,
+    "step": "cold-restart-plain",
+    "controls_from_launcher": false,
+    "verdict": {
+      "first_request": {
+        "ua": false,
+        "lang": true,
+        "client_hints": {
+          "sec-ch-ua": "\"Chromium\";v=\"154\", \"Brave\";v=\"154\", \"Not A(Brand\";v=\"99\"",
+          "sec-ch-ua-mobile": "?0",
+          "sec-ch-ua-platform": "\"Linux\"",
+          "sec-ch-ua-platform-version": "\"\"",
+          "sec-ch-ua-full-version-list": "\"Chromium\";v=\"154.0.0.0\", \"Brave\";v=\"154.0.0.0\", \"Not A(Brand\";v=\"99.0.0.0\""
+        }
+      },
+      "window": {
+        "ua": false,
+        "lang": true,
+        "tz": false,
+        "offset": false,
+        "observed": {
+          "ua": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/154.0.0.0 Safari/537.36",
+          "lang": "de-DE",
+          "tz": "Europe/Moscow",
+          "off": -180,
+          "locale": "en-US",
+          "uad": {
+            "brands": [
+              "Chromium/154",
+              "Brave/154",
+              "Not A(Brand/99"
+            ],
+            "platform": "Linux"
+          }
+        },
+        "request_ua": false
+      },
+      "worker": {
+        "ua": false,
+        "lang": true,
+        "tz": false,
+        "offset": false,
+        "observed": {
+          "ua": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/154.0.0.0 Safari/537.36",
+          "lang": "de-DE",
+          "tz": "Europe/Moscow",
+          "off": -180,
+          "locale": "en-US",
+          "uad": {
+            "brands": [
+              "Chromium/154",
+              "Brave/154",
+              "Not A(Brand/99"
+            ],
+            "platform": "Linux"
+          }
+        },
+        "request_ua": false
+      },
+      "tab": {
+        "ua": false,
+        "lang": true,
+        "tz": false,
+        "offset": false,
+        "observed": {
+          "ua": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/154.0.0.0 Safari/537.36",
+          "lang": "de-DE",
+          "tz": "Europe/Moscow",
+          "off": -180,
+          "locale": "en-US",
+          "uad": {
+            "brands": [
+              "Chromium/154",
+              "Brave/154",
+              "Not A(Brand/99"
+            ],
+            "platform": "Linux"
+          }
+        },
+        "request_ua": false
+      },
+      "worker_script_request": {
+        "ua": false,
+        "lang": true
+      },
+      "tab_request": {
+        "ua": false,
+        "lang": true
+      }
+    },
+    "events": [
+      {
+        "kind": "request",
+        "path": "/",
+        "headers": {
+          "sec-ch-ua": "\"Chromium\";v=\"154\", \"Brave\";v=\"154\", \"Not A(Brand\";v=\"99\"",
+          "sec-ch-ua-mobile": "?0",
+          "sec-ch-ua-platform": "\"Linux\"",
+          "sec-ch-ua-platform-version": "\"\"",
+          "sec-ch-ua-full-version-list": "\"Chromium\";v=\"154.0.0.0\", \"Brave\";v=\"154.0.0.0\", \"Not A(Brand\";v=\"99.0.0.0\"",
+          "user-agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/154.0.0.0 Safari/537.36",
+          "accept-language": "de-DE,de;q=0.7"
+        },
+        "seq": 0
+      },
+      {
+        "kind": "report",
+        "headers": {
+          "sec-ch-ua-full-version-list": "\"Chromium\";v=\"154.0.0.0\", \"Brave\";v=\"154.0.0.0\", \"Not A(Brand\";v=\"99.0.0.0\"",
+          "sec-ch-ua-platform": "\"Linux\"",
+          "user-agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/154.0.0.0 Safari/537.36",
+          "sec-ch-ua": "\"Chromium\";v=\"154\", \"Brave\";v=\"154\", \"Not A(Brand\";v=\"99\"",
+          "sec-ch-ua-mobile": "?0",
+          "sec-ch-ua-platform-version": "\"\"",
+          "accept-language": "de-DE,de;q=0.7"
+        },
+        "values": {
+          "ctx": "window",
+          "ua": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/154.0.0.0 Safari/537.36",
+          "lang": "de-DE",
+          "langs": [
+            "de-DE"
+          ],
+          "tz": "Europe/Moscow",
+          "off": -180,
+          "locale": "en-US",
+          "uad": {
+            "brands": [
+              "Chromium/154",
+              "Brave/154",
+              "Not A(Brand/99"
+            ],
+            "platform": "Linux"
+          }
+        },
+        "seq": 1
+      },
+      {
+        "kind": "request",
+        "path": "/favicon.ico",
+        "headers": {
+          "sec-ch-ua-full-version-list": "\"Chromium\";v=\"154.0.0.0\", \"Brave\";v=\"154.0.0.0\", \"Not A(Brand\";v=\"99.0.0.0\"",
+          "sec-ch-ua-platform": "\"Linux\"",
+          "user-agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/154.0.0.0 Safari/537.36",
+          "sec-ch-ua": "\"Chromium\";v=\"154\", \"Brave\";v=\"154\", \"Not A(Brand\";v=\"99\"",
+          "sec-ch-ua-mobile": "?0",
+          "sec-ch-ua-platform-version": "\"\"",
+          "accept-language": "de-DE,de;q=0.7"
+        },
+        "seq": 2
+      },
+      {
+        "kind": "request",
+        "path": "/tab",
+        "headers": {
+          "sec-ch-ua": "\"Chromium\";v=\"154\", \"Brave\";v=\"154\", \"Not A(Brand\";v=\"99\"",
+          "sec-ch-ua-mobile": "?0",
+          "sec-ch-ua-platform": "\"Linux\"",
+          "sec-ch-ua-platform-version": "\"\"",
+          "sec-ch-ua-full-version-list": "\"Chromium\";v=\"154.0.0.0\", \"Brave\";v=\"154.0.0.0\", \"Not A(Brand\";v=\"99.0.0.0\"",
+          "user-agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/154.0.0.0 Safari/537.36",
+          "accept-language": "de-DE,de;q=0.7"
+        },
+        "seq": 3
+      },
+      {
+        "kind": "request",
+        "path": "/worker.js",
+        "headers": {
+          "user-agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/154.0.0.0 Safari/537.36",
+          "accept-language": "de-DE,de;q=0.7"
+        },
+        "seq": 4
+      },
+      {
+        "kind": "report",
+        "headers": {
+          "sec-ch-ua-full-version-list": "\"Chromium\";v=\"154.0.0.0\", \"Brave\";v=\"154.0.0.0\", \"Not A(Brand\";v=\"99.0.0.0\"",
+          "sec-ch-ua-platform": "\"Linux\"",
+          "user-agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/154.0.0.0 Safari/537.36",
+          "sec-ch-ua": "\"Chromium\";v=\"154\", \"Brave\";v=\"154\", \"Not A(Brand\";v=\"99\"",
+          "sec-ch-ua-mobile": "?0",
+          "sec-ch-ua-platform-version": "\"\"",
+          "accept-language": "de-DE,de;q=0.7"
+        },
+        "values": {
+          "ctx": "tab",
+          "ua": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/154.0.0.0 Safari/537.36",
+          "lang": "de-DE",
+          "langs": [
+            "de-DE"
+          ],
+          "tz": "Europe/Moscow",
+          "off": -180,
+          "locale": "en-US",
+          "uad": {
+            "brands": [
+              "Chromium/154",
+              "Brave/154",
+              "Not A(Brand/99"
+            ],
+            "platform": "Linux"
+          }
+        },
+        "seq": 5
+      },
+      {
+        "kind": "report",
+        "headers": {
+          "user-agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/154.0.0.0 Safari/537.36",
+          "accept-language": "de-DE,de;q=0.7"
+        },
+        "values": {
+          "ctx": "worker",
+          "ua": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/154.0.0.0 Safari/537.36",
+          "lang": "de-DE",
+          "langs": [
+            "de-DE"
+          ],
+          "tz": "Europe/Moscow",
+          "off": -180,
+          "locale": "en-US",
+          "uad": {
+            "brands": [
+              "Chromium/154",
+              "Brave/154",
+              "Not A(Brand/99"
+            ],
+            "platform": "Linux"
+          }
+        },
+        "seq": 6
+      }
+    ]
+  },
+  {
+    "browser": "librewolf",
+    "version": "LibreWolf 157.0-1",
+    "mechanism": "user.js-prefs+TZ-env",
+    "resist_fingerprinting": true,
+    "step": "first-launch",
+    "controls_from_launcher": true,
+    "verdict": {
+      "first_request": {
+        "ua": false,
+        "lang": true,
+        "client_hints": {}
+      },
+      "window": {
+        "ua": false,
+        "lang": true,
+        "tz": false,
+        "offset": false,
+        "observed": {
+          "ua": "Mozilla/5.0 (X11; Linux x86_64; rv:157.0) Gecko/20100101 Firefox/157.0",
+          "lang": "de-DE",
+          "tz": "Atlantic/Reykjavik",
+          "off": 0,
+          "locale": "de",
+          "uad": null
+        },
+        "request_ua": false
+      },
+      "worker": {
+        "ua": false,
+        "lang": true,
+        "tz": false,
+        "offset": false,
+        "observed": {
+          "ua": "Mozilla/5.0 (X11; Linux x86_64; rv:157.0) Gecko/20100101 Firefox/157.0",
+          "lang": "de-DE",
+          "tz": "Atlantic/Reykjavik",
+          "off": 0,
+          "locale": "de",
+          "uad": null
+        },
+        "request_ua": false
+      },
+      "tab": {
+        "ua": false,
+        "lang": true,
+        "tz": false,
+        "offset": false,
+        "observed": {
+          "ua": "Mozilla/5.0 (X11; Linux x86_64; rv:157.0) Gecko/20100101 Firefox/157.0",
+          "lang": "de-DE",
+          "tz": "Atlantic/Reykjavik",
+          "off": 0,
+          "locale": "de",
+          "uad": null
+        },
+        "request_ua": false
+      },
+      "worker_script_request": {
+        "ua": false,
+        "lang": true
+      },
+      "tab_request": {
+        "ua": false,
+        "lang": true
+      }
+    },
+    "events": [
+      {
+        "kind": "request",
+        "path": "/",
+        "headers": {
+          "user-agent": "Mozilla/5.0 (X11; Linux x86_64; rv:157.0) Gecko/20100101 Firefox/157.0",
+          "accept-language": "de-DE"
+        },
+        "seq": 0
+      },
+      {
+        "kind": "report",
+        "headers": {
+          "user-agent": "Mozilla/5.0 (X11; Linux x86_64; rv:157.0) Gecko/20100101 Firefox/157.0",
+          "accept-language": "de-DE"
+        },
+        "values": {
+          "ctx": "window",
+          "ua": "Mozilla/5.0 (X11; Linux x86_64; rv:157.0) Gecko/20100101 Firefox/157.0",
+          "lang": "de-DE",
+          "langs": [
+            "de-DE"
+          ],
+          "tz": "Atlantic/Reykjavik",
+          "off": 0,
+          "locale": "de"
+        },
+        "seq": 1
+      },
+      {
+        "kind": "request",
+        "path": "/favicon.ico",
+        "headers": {
+          "user-agent": "Mozilla/5.0 (X11; Linux x86_64; rv:157.0) Gecko/20100101 Firefox/157.0",
+          "accept-language": "de-DE"
+        },
+        "seq": 2
+      },
+      {
+        "kind": "request",
+        "path": "/tab",
+        "headers": {
+          "user-agent": "Mozilla/5.0 (X11; Linux x86_64; rv:157.0) Gecko/20100101 Firefox/157.0",
+          "accept-language": "de-DE"
+        },
+        "seq": 3
+      },
+      {
+        "kind": "request",
+        "path": "/worker.js",
+        "headers": {
+          "user-agent": "Mozilla/5.0 (X11; Linux x86_64; rv:157.0) Gecko/20100101 Firefox/157.0",
+          "accept-language": "de-DE"
+        },
+        "seq": 4
+      },
+      {
+        "kind": "report",
+        "headers": {
+          "user-agent": "Mozilla/5.0 (X11; Linux x86_64; rv:157.0) Gecko/20100101 Firefox/157.0",
+          "accept-language": "de-DE"
+        },
+        "values": {
+          "ctx": "worker",
+          "ua": "Mozilla/5.0 (X11; Linux x86_64; rv:157.0) Gecko/20100101 Firefox/157.0",
+          "lang": "de-DE",
+          "langs": [
+            "de-DE"
+          ],
+          "tz": "Atlantic/Reykjavik",
+          "off": 0,
+          "locale": "de"
+        },
+        "seq": 5
+      },
+      {
+        "kind": "report",
+        "headers": {
+          "user-agent": "Mozilla/5.0 (X11; Linux x86_64; rv:157.0) Gecko/20100101 Firefox/157.0",
+          "accept-language": "de-DE"
+        },
+        "values": {
+          "ctx": "tab",
+          "ua": "Mozilla/5.0 (X11; Linux x86_64; rv:157.0) Gecko/20100101 Firefox/157.0",
+          "lang": "de-DE",
+          "langs": [
+            "de-DE"
+          ],
+          "tz": "Atlantic/Reykjavik",
+          "off": 0,
+          "locale": "de"
+        },
+        "seq": 6
+      }
+    ]
+  },
+  {
+    "browser": "librewolf",
+    "version": "LibreWolf 157.0-1",
+    "mechanism": "user.js-prefs+TZ-env",
+    "resist_fingerprinting": true,
+    "step": "cold-restart-same-launcher",
+    "controls_from_launcher": true,
+    "verdict": {
+      "first_request": {
+        "ua": false,
+        "lang": true,
+        "client_hints": {}
+      },
+      "window": {
+        "ua": false,
+        "lang": true,
+        "tz": false,
+        "offset": false,
+        "observed": {
+          "ua": "Mozilla/5.0 (X11; Linux x86_64; rv:157.0) Gecko/20100101 Firefox/157.0",
+          "lang": "de-DE",
+          "tz": "Atlantic/Reykjavik",
+          "off": 0,
+          "locale": "de",
+          "uad": null
+        },
+        "request_ua": false
+      },
+      "worker": {
+        "ua": false,
+        "lang": true,
+        "tz": false,
+        "offset": false,
+        "observed": {
+          "ua": "Mozilla/5.0 (X11; Linux x86_64; rv:157.0) Gecko/20100101 Firefox/157.0",
+          "lang": "de-DE",
+          "tz": "Atlantic/Reykjavik",
+          "off": 0,
+          "locale": "de",
+          "uad": null
+        },
+        "request_ua": false
+      },
+      "tab": {
+        "ua": false,
+        "lang": true,
+        "tz": false,
+        "offset": false,
+        "observed": {
+          "ua": "Mozilla/5.0 (X11; Linux x86_64; rv:157.0) Gecko/20100101 Firefox/157.0",
+          "lang": "de-DE",
+          "tz": "Atlantic/Reykjavik",
+          "off": 0,
+          "locale": "de",
+          "uad": null
+        },
+        "request_ua": false
+      },
+      "worker_script_request": {
+        "ua": false,
+        "lang": true
+      },
+      "tab_request": {
+        "ua": false,
+        "lang": true
+      }
+    },
+    "events": [
+      {
+        "kind": "request",
+        "path": "/",
+        "headers": {
+          "user-agent": "Mozilla/5.0 (X11; Linux x86_64; rv:157.0) Gecko/20100101 Firefox/157.0",
+          "accept-language": "de-DE"
+        },
+        "seq": 0
+      },
+      {
+        "kind": "report",
+        "headers": {
+          "user-agent": "Mozilla/5.0 (X11; Linux x86_64; rv:157.0) Gecko/20100101 Firefox/157.0",
+          "accept-language": "de-DE"
+        },
+        "values": {
+          "ctx": "window",
+          "ua": "Mozilla/5.0 (X11; Linux x86_64; rv:157.0) Gecko/20100101 Firefox/157.0",
+          "lang": "de-DE",
+          "langs": [
+            "de-DE"
+          ],
+          "tz": "Atlantic/Reykjavik",
+          "off": 0,
+          "locale": "de"
+        },
+        "seq": 1
+      },
+      {
+        "kind": "request",
+        "path": "/favicon.ico",
+        "headers": {
+          "user-agent": "Mozilla/5.0 (X11; Linux x86_64; rv:157.0) Gecko/20100101 Firefox/157.0",
+          "accept-language": "de-DE"
+        },
+        "seq": 2
+      },
+      {
+        "kind": "request",
+        "path": "/tab",
+        "headers": {
+          "user-agent": "Mozilla/5.0 (X11; Linux x86_64; rv:157.0) Gecko/20100101 Firefox/157.0",
+          "accept-language": "de-DE"
+        },
+        "seq": 3
+      },
+      {
+        "kind": "request",
+        "path": "/worker.js",
+        "headers": {
+          "user-agent": "Mozilla/5.0 (X11; Linux x86_64; rv:157.0) Gecko/20100101 Firefox/157.0",
+          "accept-language": "de-DE"
+        },
+        "seq": 4
+      },
+      {
+        "kind": "report",
+        "headers": {
+          "user-agent": "Mozilla/5.0 (X11; Linux x86_64; rv:157.0) Gecko/20100101 Firefox/157.0",
+          "accept-language": "de-DE"
+        },
+        "values": {
+          "ctx": "worker",
+          "ua": "Mozilla/5.0 (X11; Linux x86_64; rv:157.0) Gecko/20100101 Firefox/157.0",
+          "lang": "de-DE",
+          "langs": [
+            "de-DE"
+          ],
+          "tz": "Atlantic/Reykjavik",
+          "off": 0,
+          "locale": "de"
+        },
+        "seq": 5
+      },
+      {
+        "kind": "report",
+        "headers": {
+          "user-agent": "Mozilla/5.0 (X11; Linux x86_64; rv:157.0) Gecko/20100101 Firefox/157.0",
+          "accept-language": "de-DE"
+        },
+        "values": {
+          "ctx": "tab",
+          "ua": "Mozilla/5.0 (X11; Linux x86_64; rv:157.0) Gecko/20100101 Firefox/157.0",
+          "lang": "de-DE",
+          "langs": [
+            "de-DE"
+          ],
+          "tz": "Atlantic/Reykjavik",
+          "off": 0,
+          "locale": "de"
+        },
+        "seq": 6
+      }
+    ]
+  },
+  {
+    "browser": "librewolf",
+    "version": "LibreWolf 157.0-1",
+    "mechanism": "user.js-prefs+TZ-env",
+    "resist_fingerprinting": true,
+    "step": "cold-restart-plain",
+    "controls_from_launcher": false,
+    "verdict": {
+      "first_request": {
+        "ua": false,
+        "lang": true,
+        "client_hints": {}
+      },
+      "window": {
+        "ua": false,
+        "lang": true,
+        "tz": false,
+        "offset": false,
+        "observed": {
+          "ua": "Mozilla/5.0 (X11; Linux x86_64; rv:157.0) Gecko/20100101 Firefox/157.0",
+          "lang": "de-DE",
+          "tz": "Atlantic/Reykjavik",
+          "off": 0,
+          "locale": "de",
+          "uad": null
+        },
+        "request_ua": false
+      },
+      "worker": {
+        "ua": false,
+        "lang": true,
+        "tz": false,
+        "offset": false,
+        "observed": {
+          "ua": "Mozilla/5.0 (X11; Linux x86_64; rv:157.0) Gecko/20100101 Firefox/157.0",
+          "lang": "de-DE",
+          "tz": "Atlantic/Reykjavik",
+          "off": 0,
+          "locale": "de",
+          "uad": null
+        },
+        "request_ua": false
+      },
+      "tab": {
+        "ua": false,
+        "lang": true,
+        "tz": false,
+        "offset": false,
+        "observed": {
+          "ua": "Mozilla/5.0 (X11; Linux x86_64; rv:157.0) Gecko/20100101 Firefox/157.0",
+          "lang": "de-DE",
+          "tz": "Atlantic/Reykjavik",
+          "off": 0,
+          "locale": "de",
+          "uad": null
+        },
+        "request_ua": false
+      },
+      "worker_script_request": {
+        "ua": false,
+        "lang": true
+      },
+      "tab_request": {
+        "ua": false,
+        "lang": true
+      }
+    },
+    "events": [
+      {
+        "kind": "request",
+        "path": "/",
+        "headers": {
+          "user-agent": "Mozilla/5.0 (X11; Linux x86_64; rv:157.0) Gecko/20100101 Firefox/157.0",
+          "accept-language": "de-DE"
+        },
+        "seq": 0
+      },
+      {
+        "kind": "report",
+        "headers": {
+          "user-agent": "Mozilla/5.0 (X11; Linux x86_64; rv:157.0) Gecko/20100101 Firefox/157.0",
+          "accept-language": "de-DE"
+        },
+        "values": {
+          "ctx": "window",
+          "ua": "Mozilla/5.0 (X11; Linux x86_64; rv:157.0) Gecko/20100101 Firefox/157.0",
+          "lang": "de-DE",
+          "langs": [
+            "de-DE"
+          ],
+          "tz": "Atlantic/Reykjavik",
+          "off": 0,
+          "locale": "de"
+        },
+        "seq": 1
+      },
+      {
+        "kind": "request",
+        "path": "/favicon.ico",
+        "headers": {
+          "user-agent": "Mozilla/5.0 (X11; Linux x86_64; rv:157.0) Gecko/20100101 Firefox/157.0",
+          "accept-language": "de-DE"
+        },
+        "seq": 2
+      },
+      {
+        "kind": "request",
+        "path": "/tab",
+        "headers": {
+          "user-agent": "Mozilla/5.0 (X11; Linux x86_64; rv:157.0) Gecko/20100101 Firefox/157.0",
+          "accept-language": "de-DE"
+        },
+        "seq": 3
+      },
+      {
+        "kind": "request",
+        "path": "/worker.js",
+        "headers": {
+          "user-agent": "Mozilla/5.0 (X11; Linux x86_64; rv:157.0) Gecko/20100101 Firefox/157.0",
+          "accept-language": "de-DE"
+        },
+        "seq": 4
+      },
+      {
+        "kind": "report",
+        "headers": {
+          "user-agent": "Mozilla/5.0 (X11; Linux x86_64; rv:157.0) Gecko/20100101 Firefox/157.0",
+          "accept-language": "de-DE"
+        },
+        "values": {
+          "ctx": "worker",
+          "ua": "Mozilla/5.0 (X11; Linux x86_64; rv:157.0) Gecko/20100101 Firefox/157.0",
+          "lang": "de-DE",
+          "langs": [
+            "de-DE"
+          ],
+          "tz": "Atlantic/Reykjavik",
+          "off": 0,
+          "locale": "de"
+        },
+        "seq": 5
+      },
+      {
+        "kind": "report",
+        "headers": {
+          "user-agent": "Mozilla/5.0 (X11; Linux x86_64; rv:157.0) Gecko/20100101 Firefox/157.0",
+          "accept-language": "de-DE"
+        },
+        "values": {
+          "ctx": "tab",
+          "ua": "Mozilla/5.0 (X11; Linux x86_64; rv:157.0) Gecko/20100101 Firefox/157.0",
+          "lang": "de-DE",
+          "langs": [
+            "de-DE"
+          ],
+          "tz": "Atlantic/Reykjavik",
+          "off": 0,
+          "locale": "de"
+        },
+        "seq": 6
+      }
+    ]
+  },
+  {
+    "browser": "librewolf",
+    "version": "LibreWolf 157.0-1",
+    "mechanism": "user.js-prefs+TZ-env",
+    "resist_fingerprinting": false,
+    "step": "first-launch",
+    "controls_from_launcher": true,
+    "verdict": {
+      "first_request": {
+        "ua": true,
+        "lang": true,
+        "client_hints": {}
+      },
+      "window": {
+        "ua": true,
+        "lang": true,
+        "tz": true,
+        "offset": true,
+        "observed": {
+          "ua": "Mozilla/5.0 (X11; Linux x86_64) CMLab/1.0",
+          "lang": "de-DE",
+          "tz": "Asia/Tokyo",
+          "off": -540,
+          "locale": "de",
+          "uad": null
+        },
+        "request_ua": true
+      },
+      "worker": {
+        "ua": true,
+        "lang": true,
+        "tz": true,
+        "offset": true,
+        "observed": {
+          "ua": "Mozilla/5.0 (X11; Linux x86_64) CMLab/1.0",
+          "lang": "de-DE",
+          "tz": "Asia/Tokyo",
+          "off": -540,
+          "locale": "de",
+          "uad": null
+        },
+        "request_ua": true
+      },
+      "tab": {
+        "ua": true,
+        "lang": true,
+        "tz": true,
+        "offset": true,
+        "observed": {
+          "ua": "Mozilla/5.0 (X11; Linux x86_64) CMLab/1.0",
+          "lang": "de-DE",
+          "tz": "Asia/Tokyo",
+          "off": -540,
+          "locale": "de",
+          "uad": null
+        },
+        "request_ua": true
+      },
+      "worker_script_request": {
+        "ua": true,
+        "lang": true
+      },
+      "tab_request": {
+        "ua": true,
+        "lang": true
+      }
+    },
+    "events": [
+      {
+        "kind": "request",
+        "path": "/",
+        "headers": {
+          "user-agent": "Mozilla/5.0 (X11; Linux x86_64) CMLab/1.0",
+          "accept-language": "de-DE"
+        },
+        "seq": 0
+      },
+      {
+        "kind": "report",
+        "headers": {
+          "user-agent": "Mozilla/5.0 (X11; Linux x86_64) CMLab/1.0",
+          "accept-language": "de-DE"
+        },
+        "values": {
+          "ctx": "window",
+          "ua": "Mozilla/5.0 (X11; Linux x86_64) CMLab/1.0",
+          "lang": "de-DE",
+          "langs": [
+            "de-DE"
+          ],
+          "tz": "Asia/Tokyo",
+          "off": -540,
+          "locale": "de"
+        },
+        "seq": 1
+      },
+      {
+        "kind": "request",
+        "path": "/favicon.ico",
+        "headers": {
+          "user-agent": "Mozilla/5.0 (X11; Linux x86_64) CMLab/1.0",
+          "accept-language": "de-DE"
+        },
+        "seq": 2
+      },
+      {
+        "kind": "request",
+        "path": "/tab",
+        "headers": {
+          "user-agent": "Mozilla/5.0 (X11; Linux x86_64) CMLab/1.0",
+          "accept-language": "de-DE"
+        },
+        "seq": 3
+      },
+      {
+        "kind": "request",
+        "path": "/worker.js",
+        "headers": {
+          "user-agent": "Mozilla/5.0 (X11; Linux x86_64) CMLab/1.0",
+          "accept-language": "de-DE"
+        },
+        "seq": 4
+      },
+      {
+        "kind": "report",
+        "headers": {
+          "user-agent": "Mozilla/5.0 (X11; Linux x86_64) CMLab/1.0",
+          "accept-language": "de-DE"
+        },
+        "values": {
+          "ctx": "worker",
+          "ua": "Mozilla/5.0 (X11; Linux x86_64) CMLab/1.0",
+          "lang": "de-DE",
+          "langs": [
+            "de-DE"
+          ],
+          "tz": "Asia/Tokyo",
+          "off": -540,
+          "locale": "de"
+        },
+        "seq": 5
+      },
+      {
+        "kind": "report",
+        "headers": {
+          "user-agent": "Mozilla/5.0 (X11; Linux x86_64) CMLab/1.0",
+          "accept-language": "de-DE"
+        },
+        "values": {
+          "ctx": "tab",
+          "ua": "Mozilla/5.0 (X11; Linux x86_64) CMLab/1.0",
+          "lang": "de-DE",
+          "langs": [
+            "de-DE"
+          ],
+          "tz": "Asia/Tokyo",
+          "off": -540,
+          "locale": "de"
+        },
+        "seq": 6
+      }
+    ]
+  },
+  {
+    "browser": "librewolf",
+    "version": "LibreWolf 157.0-1",
+    "mechanism": "user.js-prefs+TZ-env",
+    "resist_fingerprinting": false,
+    "step": "cold-restart-same-launcher",
+    "controls_from_launcher": true,
+    "verdict": {
+      "first_request": {
+        "ua": true,
+        "lang": true,
+        "client_hints": {}
+      },
+      "window": {
+        "ua": true,
+        "lang": true,
+        "tz": true,
+        "offset": true,
+        "observed": {
+          "ua": "Mozilla/5.0 (X11; Linux x86_64) CMLab/1.0",
+          "lang": "de-DE",
+          "tz": "Asia/Tokyo",
+          "off": -540,
+          "locale": "de",
+          "uad": null
+        },
+        "request_ua": true
+      },
+      "worker": {
+        "ua": true,
+        "lang": true,
+        "tz": true,
+        "offset": true,
+        "observed": {
+          "ua": "Mozilla/5.0 (X11; Linux x86_64) CMLab/1.0",
+          "lang": "de-DE",
+          "tz": "Asia/Tokyo",
+          "off": -540,
+          "locale": "de",
+          "uad": null
+        },
+        "request_ua": true
+      },
+      "tab": {
+        "ua": true,
+        "lang": true,
+        "tz": true,
+        "offset": true,
+        "observed": {
+          "ua": "Mozilla/5.0 (X11; Linux x86_64) CMLab/1.0",
+          "lang": "de-DE",
+          "tz": "Asia/Tokyo",
+          "off": -540,
+          "locale": "de",
+          "uad": null
+        },
+        "request_ua": true
+      },
+      "worker_script_request": {
+        "ua": true,
+        "lang": true
+      },
+      "tab_request": {
+        "ua": true,
+        "lang": true
+      }
+    },
+    "events": [
+      {
+        "kind": "request",
+        "path": "/",
+        "headers": {
+          "user-agent": "Mozilla/5.0 (X11; Linux x86_64) CMLab/1.0",
+          "accept-language": "de-DE"
+        },
+        "seq": 0
+      },
+      {
+        "kind": "report",
+        "headers": {
+          "user-agent": "Mozilla/5.0 (X11; Linux x86_64) CMLab/1.0",
+          "accept-language": "de-DE"
+        },
+        "values": {
+          "ctx": "window",
+          "ua": "Mozilla/5.0 (X11; Linux x86_64) CMLab/1.0",
+          "lang": "de-DE",
+          "langs": [
+            "de-DE"
+          ],
+          "tz": "Asia/Tokyo",
+          "off": -540,
+          "locale": "de"
+        },
+        "seq": 1
+      },
+      {
+        "kind": "request",
+        "path": "/favicon.ico",
+        "headers": {
+          "user-agent": "Mozilla/5.0 (X11; Linux x86_64) CMLab/1.0",
+          "accept-language": "de-DE"
+        },
+        "seq": 2
+      },
+      {
+        "kind": "request",
+        "path": "/tab",
+        "headers": {
+          "user-agent": "Mozilla/5.0 (X11; Linux x86_64) CMLab/1.0",
+          "accept-language": "de-DE"
+        },
+        "seq": 3
+      },
+      {
+        "kind": "request",
+        "path": "/worker.js",
+        "headers": {
+          "user-agent": "Mozilla/5.0 (X11; Linux x86_64) CMLab/1.0",
+          "accept-language": "de-DE"
+        },
+        "seq": 4
+      },
+      {
+        "kind": "report",
+        "headers": {
+          "user-agent": "Mozilla/5.0 (X11; Linux x86_64) CMLab/1.0",
+          "accept-language": "de-DE"
+        },
+        "values": {
+          "ctx": "worker",
+          "ua": "Mozilla/5.0 (X11; Linux x86_64) CMLab/1.0",
+          "lang": "de-DE",
+          "langs": [
+            "de-DE"
+          ],
+          "tz": "Asia/Tokyo",
+          "off": -540,
+          "locale": "de"
+        },
+        "seq": 5
+      },
+      {
+        "kind": "report",
+        "headers": {
+          "user-agent": "Mozilla/5.0 (X11; Linux x86_64) CMLab/1.0",
+          "accept-language": "de-DE"
+        },
+        "values": {
+          "ctx": "tab",
+          "ua": "Mozilla/5.0 (X11; Linux x86_64) CMLab/1.0",
+          "lang": "de-DE",
+          "langs": [
+            "de-DE"
+          ],
+          "tz": "Asia/Tokyo",
+          "off": -540,
+          "locale": "de"
+        },
+        "seq": 6
+      }
+    ]
+  },
+  {
+    "browser": "librewolf",
+    "version": "LibreWolf 157.0-1",
+    "mechanism": "user.js-prefs+TZ-env",
+    "resist_fingerprinting": false,
+    "step": "cold-restart-plain",
+    "controls_from_launcher": false,
+    "verdict": {
+      "first_request": {
+        "ua": true,
+        "lang": true,
+        "client_hints": {}
+      },
+      "window": {
+        "ua": true,
+        "lang": true,
+        "tz": false,
+        "offset": false,
+        "observed": {
+          "ua": "Mozilla/5.0 (X11; Linux x86_64) CMLab/1.0",
+          "lang": "de-DE",
+          "tz": "Europe/Moscow",
+          "off": -180,
+          "locale": "de",
+          "uad": null
+        },
+        "request_ua": true
+      },
+      "worker": {
+        "ua": true,
+        "lang": true,
+        "tz": false,
+        "offset": false,
+        "observed": {
+          "ua": "Mozilla/5.0 (X11; Linux x86_64) CMLab/1.0",
+          "lang": "de-DE",
+          "tz": "Europe/Moscow",
+          "off": -180,
+          "locale": "de",
+          "uad": null
+        },
+        "request_ua": true
+      },
+      "tab": {
+        "ua": true,
+        "lang": true,
+        "tz": false,
+        "offset": false,
+        "observed": {
+          "ua": "Mozilla/5.0 (X11; Linux x86_64) CMLab/1.0",
+          "lang": "de-DE",
+          "tz": "Europe/Moscow",
+          "off": -180,
+          "locale": "de",
+          "uad": null
+        },
+        "request_ua": true
+      },
+      "worker_script_request": {
+        "ua": true,
+        "lang": true
+      },
+      "tab_request": {
+        "ua": true,
+        "lang": true
+      }
+    },
+    "events": [
+      {
+        "kind": "request",
+        "path": "/",
+        "headers": {
+          "user-agent": "Mozilla/5.0 (X11; Linux x86_64) CMLab/1.0",
+          "accept-language": "de-DE"
+        },
+        "seq": 0
+      },
+      {
+        "kind": "report",
+        "headers": {
+          "user-agent": "Mozilla/5.0 (X11; Linux x86_64) CMLab/1.0",
+          "accept-language": "de-DE"
+        },
+        "values": {
+          "ctx": "window",
+          "ua": "Mozilla/5.0 (X11; Linux x86_64) CMLab/1.0",
+          "lang": "de-DE",
+          "langs": [
+            "de-DE"
+          ],
+          "tz": "Europe/Moscow",
+          "off": -180,
+          "locale": "de"
+        },
+        "seq": 1
+      },
+      {
+        "kind": "request",
+        "path": "/favicon.ico",
+        "headers": {
+          "user-agent": "Mozilla/5.0 (X11; Linux x86_64) CMLab/1.0",
+          "accept-language": "de-DE"
+        },
+        "seq": 2
+      },
+      {
+        "kind": "request",
+        "path": "/tab",
+        "headers": {
+          "user-agent": "Mozilla/5.0 (X11; Linux x86_64) CMLab/1.0",
+          "accept-language": "de-DE"
+        },
+        "seq": 3
+      },
+      {
+        "kind": "request",
+        "path": "/worker.js",
+        "headers": {
+          "user-agent": "Mozilla/5.0 (X11; Linux x86_64) CMLab/1.0",
+          "accept-language": "de-DE"
+        },
+        "seq": 4
+      },
+      {
+        "kind": "report",
+        "headers": {
+          "user-agent": "Mozilla/5.0 (X11; Linux x86_64) CMLab/1.0",
+          "accept-language": "de-DE"
+        },
+        "values": {
+          "ctx": "worker",
+          "ua": "Mozilla/5.0 (X11; Linux x86_64) CMLab/1.0",
+          "lang": "de-DE",
+          "langs": [
+            "de-DE"
+          ],
+          "tz": "Europe/Moscow",
+          "off": -180,
+          "locale": "de"
+        },
+        "seq": 5
+      },
+      {
+        "kind": "report",
+        "headers": {
+          "user-agent": "Mozilla/5.0 (X11; Linux x86_64) CMLab/1.0",
+          "accept-language": "de-DE"
+        },
+        "values": {
+          "ctx": "tab",
+          "ua": "Mozilla/5.0 (X11; Linux x86_64) CMLab/1.0",
+          "lang": "de-DE",
+          "langs": [
+            "de-DE"
+          ],
+          "tz": "Europe/Moscow",
+          "off": -180,
+          "locale": "de"
+        },
+        "seq": 6
+      }
+    ]
+  }
+]
