@@ -43,7 +43,8 @@ function snap(ctx){
     langs: Array.from(navigator.languages || []),
     tz: Intl.DateTimeFormat().resolvedOptions().timeZone,
     off: new Date(2026, 0, 15).getTimezoneOffset(),
-    locale: Intl.DateTimeFormat().resolvedOptions().locale};
+    locale: Intl.DateTimeFormat().resolvedOptions().locale,
+    webdriver: self.navigator.webdriver === true};
   if (self.navigator.userAgentData) {
     o.uad = {brands: navigator.userAgentData.brands.map(b => b.brand + '/' + b.version),
              platform: navigator.userAgentData.platform};

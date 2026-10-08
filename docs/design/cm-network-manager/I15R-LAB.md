@@ -74,6 +74,40 @@ python3 docs/design/cm-network-manager/tools/i15r_lab.py <OUT_DIR>
 
    Region-согласование часового пояса и RFP несовместимы: включён RFP — часовой пояс всегда UTC.
 
+## Второй прогон: согласованная подмена через CDP
+
+Скрипт: [tools/i15r_cdp_lab.py](tools/i15r_cdp_lab.py) (та же изоляция и тот же сервер).
+
+```sh
+python3 docs/design/cm-network-manager/tools/i15r_cdp_lab.py <OUT_DIR>
+```
+
+**Механизм.** Chromium запускается с `--remote-debugging-pipe` (fd 3 и 4, без TCP-порта).
+
+1. `Target.setAutoAttach(waitForDebuggerOnStart)` останавливает каждую новую цель (страницу, вкладку, Worker) до выполнения.
+2. В цель отправляются `Network/Emulation.setUserAgentOverride` вместе с `userAgentMetadata`, `Emulation.setTimezoneOverride` и `setLocaleOverride`.
+3. Затем `Runtime.runIfWaitingForDebugger`.
+4. Вкладка создаётся на `about:blank`, и URL открывается через `Page.navigate` только после overrides.
+
+Маркеры применения: `CMLab` в UA, `platformVersion` `6.66.0`.
+
+| Браузер | Вариант | Первый запрос (UA, язык, Client Hints) | Окно / Worker / вкладка (UA, язык, TZ, метаданные) | `navigator.webdriver` окно / Worker / вкладка |
+|---|---|---|---|---|
+| Chrome 155 | CDP | согласованы | все Y | **true** / false / **true** |
+| Chrome 155 | CDP + `--disable-blink-features=AutomationControlled` | согласованы | все Y | false / false / false |
+| Brave 154 | CDP | согласованы | все Y | **true** / false / **true** |
+| Brave 154 | CDP + флаг | согласованы | все Y | false / false / false |
+
+Вариант «CDP + `TZ` в окружении» ничего не меняет: CDP задаёт часовой пояс и Worker-у. Два прогона совпали (6 из 6 строк). Данные: [cdp-runs.json](i15r-evidence/2026-10-08/cdp-runs.json), [cdp-observations.json](i15r-evidence/2026-10-08/cdp-observations.json).
+
+**Что нашлось по дороге**
+
+7. **Порядок важнее механизма.** В первой версии скрипта вкладка создавалась сразу с URL (`Target.createTarget(url)`). Навигация успевала уйти раньше overrides: первый запрос нёс `HeadlessChrome/155`, `en-US` и настоящий бренд Brave, а все последующие запросы были уже подменены. Правило: цель создаётся пустой, навигация начинается только после подтверждённых overrides.
+8. **CDP выдаёт автоматизацию.** Под `--remote-debugging-pipe` `navigator.webdriver = true` в окне и вкладке, но `false` в Worker. Это одновременно признак автоматизации и противоречие между контекстами. Без CDP (базовый прогон) `webdriver` везде `false`. Флаг `--disable-blink-features=AutomationControlled` убирает признак во всех контекстах.
+9. **Метаданные должны совпадать с настоящим движком.** В лаборатории Brave получил метаданные «Google Chrome 155», и заголовки этому подчинились. Это ложь о движке, которую выдают другие каналы (функции Brave, версия Chromium 154). В продукте метаданные берутся у самого движка; меняется только то, что должно соответствовать региону.
+
+Не проверено: видимый (не headless) режим. Там Chrome может показывать служебные плашки о флагах; сайтам они не видны, но пользователю видны.
+
 ## Следствия для I15 и I14
 
 - **Часовой пояс** нельзя доверять одному `TZ` в окружении лаунчера: голый запуск его теряет. Для REGION-оси (I14) нужен control, сохраняемый в профиле, либо запрет запуска профиля мимо CM. Это вход для I15.T01.
@@ -85,5 +119,7 @@ python3 docs/design/cm-network-manager/tools/i15r_lab.py <OUT_DIR>
 
 - Canvas, WebGL, шрифты, аудио, TLS — по [матрице покрытия](I15R-COVERAGE.md) это следующий слой; здесь только UA, язык и часовой пояс.
 - Service Worker и SharedWorker: проверен только dedicated Worker.
-- CDP-механизм (`Emulation.setUserAgentOverride` и `setTimezoneOverride`) — кандидат на согласованную подмену; в этом прогоне не запускался.
+- CDP проверен только в headless-режиме и только для UA, Client Hints, языка и часового пояса.
 - Решения Q26/Q27 (каталог устройств) — задача I15-R.T04.a. Их принимает пользователь.
+
+Механизмы, которые проект строит на этих фактах, — в [ADR-BROWSER-IDENTITY.md](ADR-BROWSER-IDENTITY.md).

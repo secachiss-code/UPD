@@ -1,0 +1,830 @@
+[
+  {
+    "browser": "chrome",
+    "version": "Google Chrome 155.0.8059.39",
+    "mechanism": "cdp-pipe",
+    "attached_targets": [
+      "browser_ui",
+      "browser_ui",
+      "page",
+      "background_page",
+      "service_worker",
+      "page",
+      "page",
+      "worker"
+    ],
+    "verdict": {
+      "first_request": {
+        "ua": true,
+        "lang": true,
+        "client_hints": {
+          "sec-ch-ua": "\"Google Chrome\";v=\"155\", \"Chromium\";v=\"155\", \"Not(A:Brand\";v=\"24\"",
+          "sec-ch-ua-mobile": "?0",
+          "sec-ch-ua-platform": "\"Linux\""
+        },
+        "client_hints_consistent": true
+      },
+      "window": {
+        "ua": true,
+        "lang": true,
+        "tz": true,
+        "offset": true,
+        "observed": {
+          "ua": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36 CMLab/1.0",
+          "lang": "de-DE",
+          "tz": "Asia/Tokyo",
+          "off": -540,
+          "locale": "de-DE",
+          "uad": {
+            "brands": [
+              "Google Chrome/155",
+              "Chromium/155",
+              "Not(A:Brand/24"
+            ],
+            "platform": "Linux"
+          },
+          "platformVersion": "6.66.0",
+          "fullVersionList": [
+            "Google Chrome/155.0.8059.39",
+            "Chromium/155.0.8059.39",
+            "Not(A:Brand/24.0.0.0"
+          ]
+        },
+        "request_ua": true,
+        "platform_version_marker": true,
+        "webdriver_visible": true,
+        "request_client_hints": {
+          "sec-ch-ua-full-version-list": "\"Google Chrome\";v=\"155.0.8059.39\", \"Chromium\";v=\"155.0.8059.39\", \"Not(A:Brand\";v=\"24.0.0.0\"",
+          "sec-ch-ua-platform": "\"Linux\"",
+          "sec-ch-ua": "\"Google Chrome\";v=\"155\", \"Chromium\";v=\"155\", \"Not(A:Brand\";v=\"24\"",
+          "sec-ch-ua-mobile": "?0",
+          "sec-ch-ua-platform-version": "\"6.66.0\""
+        }
+      },
+      "worker": {
+        "ua": true,
+        "lang": true,
+        "tz": true,
+        "offset": true,
+        "observed": {
+          "ua": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36 CMLab/1.0",
+          "lang": "de-DE",
+          "tz": "Asia/Tokyo",
+          "off": -540,
+          "locale": "de-DE",
+          "uad": {
+            "brands": [
+              "Google Chrome/155",
+              "Chromium/155",
+              "Not(A:Brand/24"
+            ],
+            "platform": "Linux"
+          },
+          "platformVersion": "6.66.0",
+          "fullVersionList": [
+            "Google Chrome/155.0.8059.39",
+            "Chromium/155.0.8059.39",
+            "Not(A:Brand/24.0.0.0"
+          ]
+        },
+        "request_ua": true,
+        "platform_version_marker": true,
+        "webdriver_visible": false,
+        "request_client_hints": {}
+      },
+      "tab": {
+        "ua": true,
+        "lang": true,
+        "tz": true,
+        "offset": true,
+        "observed": {
+          "ua": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36 CMLab/1.0",
+          "lang": "de-DE",
+          "tz": "Asia/Tokyo",
+          "off": -540,
+          "locale": "de-DE",
+          "uad": {
+            "brands": [
+              "Google Chrome/155",
+              "Chromium/155",
+              "Not(A:Brand/24"
+            ],
+            "platform": "Linux"
+          },
+          "platformVersion": "6.66.0",
+          "fullVersionList": [
+            "Google Chrome/155.0.8059.39",
+            "Chromium/155.0.8059.39",
+            "Not(A:Brand/24.0.0.0"
+          ]
+        },
+        "request_ua": true,
+        "platform_version_marker": true,
+        "webdriver_visible": true,
+        "request_client_hints": {
+          "sec-ch-ua-full-version-list": "\"Google Chrome\";v=\"155.0.8059.39\", \"Chromium\";v=\"155.0.8059.39\", \"Not(A:Brand\";v=\"24.0.0.0\"",
+          "sec-ch-ua-platform": "\"Linux\"",
+          "sec-ch-ua": "\"Google Chrome\";v=\"155\", \"Chromium\";v=\"155\", \"Not(A:Brand\";v=\"24\"",
+          "sec-ch-ua-mobile": "?0",
+          "sec-ch-ua-platform-version": "\"6.66.0\""
+        }
+      },
+      "worker_script_request": {
+        "ua": true,
+        "lang": true
+      },
+      "tab_request": {
+        "ua": true,
+        "lang": true
+      }
+    }
+  },
+  {
+    "browser": "chrome",
+    "version": "Google Chrome 155.0.8059.39",
+    "mechanism": "cdp-pipe+TZ-env",
+    "attached_targets": [
+      "browser_ui",
+      "browser_ui",
+      "background_page",
+      "page",
+      "service_worker",
+      "page",
+      "page",
+      "worker"
+    ],
+    "verdict": {
+      "first_request": {
+        "ua": true,
+        "lang": true,
+        "client_hints": {
+          "sec-ch-ua": "\"Google Chrome\";v=\"155\", \"Chromium\";v=\"155\", \"Not(A:Brand\";v=\"24\"",
+          "sec-ch-ua-mobile": "?0",
+          "sec-ch-ua-platform": "\"Linux\""
+        },
+        "client_hints_consistent": true
+      },
+      "window": {
+        "ua": true,
+        "lang": true,
+        "tz": true,
+        "offset": true,
+        "observed": {
+          "ua": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36 CMLab/1.0",
+          "lang": "de-DE",
+          "tz": "Asia/Tokyo",
+          "off": -540,
+          "locale": "de-DE",
+          "uad": {
+            "brands": [
+              "Google Chrome/155",
+              "Chromium/155",
+              "Not(A:Brand/24"
+            ],
+            "platform": "Linux"
+          },
+          "platformVersion": "6.66.0",
+          "fullVersionList": [
+            "Google Chrome/155.0.8059.39",
+            "Chromium/155.0.8059.39",
+            "Not(A:Brand/24.0.0.0"
+          ]
+        },
+        "request_ua": true,
+        "platform_version_marker": true,
+        "webdriver_visible": true,
+        "request_client_hints": {
+          "sec-ch-ua-full-version-list": "\"Google Chrome\";v=\"155.0.8059.39\", \"Chromium\";v=\"155.0.8059.39\", \"Not(A:Brand\";v=\"24.0.0.0\"",
+          "sec-ch-ua-platform": "\"Linux\"",
+          "sec-ch-ua": "\"Google Chrome\";v=\"155\", \"Chromium\";v=\"155\", \"Not(A:Brand\";v=\"24\"",
+          "sec-ch-ua-mobile": "?0",
+          "sec-ch-ua-platform-version": "\"6.66.0\""
+        }
+      },
+      "worker": {
+        "ua": true,
+        "lang": true,
+        "tz": true,
+        "offset": true,
+        "observed": {
+          "ua": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36 CMLab/1.0",
+          "lang": "de-DE",
+          "tz": "Asia/Tokyo",
+          "off": -540,
+          "locale": "de-DE",
+          "uad": {
+            "brands": [
+              "Google Chrome/155",
+              "Chromium/155",
+              "Not(A:Brand/24"
+            ],
+            "platform": "Linux"
+          },
+          "platformVersion": "6.66.0",
+          "fullVersionList": [
+            "Google Chrome/155.0.8059.39",
+            "Chromium/155.0.8059.39",
+            "Not(A:Brand/24.0.0.0"
+          ]
+        },
+        "request_ua": true,
+        "platform_version_marker": true,
+        "webdriver_visible": false,
+        "request_client_hints": {}
+      },
+      "tab": {
+        "ua": true,
+        "lang": true,
+        "tz": true,
+        "offset": true,
+        "observed": {
+          "ua": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36 CMLab/1.0",
+          "lang": "de-DE",
+          "tz": "Asia/Tokyo",
+          "off": -540,
+          "locale": "de-DE",
+          "uad": {
+            "brands": [
+              "Google Chrome/155",
+              "Chromium/155",
+              "Not(A:Brand/24"
+            ],
+            "platform": "Linux"
+          },
+          "platformVersion": "6.66.0",
+          "fullVersionList": [
+            "Google Chrome/155.0.8059.39",
+            "Chromium/155.0.8059.39",
+            "Not(A:Brand/24.0.0.0"
+          ]
+        },
+        "request_ua": true,
+        "platform_version_marker": true,
+        "webdriver_visible": true,
+        "request_client_hints": {
+          "sec-ch-ua-full-version-list": "\"Google Chrome\";v=\"155.0.8059.39\", \"Chromium\";v=\"155.0.8059.39\", \"Not(A:Brand\";v=\"24.0.0.0\"",
+          "sec-ch-ua-platform": "\"Linux\"",
+          "sec-ch-ua": "\"Google Chrome\";v=\"155\", \"Chromium\";v=\"155\", \"Not(A:Brand\";v=\"24\"",
+          "sec-ch-ua-mobile": "?0",
+          "sec-ch-ua-platform-version": "\"6.66.0\""
+        }
+      },
+      "worker_script_request": {
+        "ua": true,
+        "lang": true
+      },
+      "tab_request": {
+        "ua": true,
+        "lang": true
+      }
+    }
+  },
+  {
+    "browser": "chrome",
+    "version": "Google Chrome 155.0.8059.39",
+    "mechanism": "cdp-pipe+AutomationControlled-off",
+    "attached_targets": [
+      "page",
+      "browser_ui",
+      "background_page",
+      "browser_ui",
+      "service_worker",
+      "page",
+      "page",
+      "worker"
+    ],
+    "verdict": {
+      "first_request": {
+        "ua": true,
+        "lang": true,
+        "client_hints": {
+          "sec-ch-ua": "\"Google Chrome\";v=\"155\", \"Chromium\";v=\"155\", \"Not(A:Brand\";v=\"24\"",
+          "sec-ch-ua-mobile": "?0",
+          "sec-ch-ua-platform": "\"Linux\""
+        },
+        "client_hints_consistent": true
+      },
+      "window": {
+        "ua": true,
+        "lang": true,
+        "tz": true,
+        "offset": true,
+        "observed": {
+          "ua": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36 CMLab/1.0",
+          "lang": "de-DE",
+          "tz": "Asia/Tokyo",
+          "off": -540,
+          "locale": "de-DE",
+          "uad": {
+            "brands": [
+              "Google Chrome/155",
+              "Chromium/155",
+              "Not(A:Brand/24"
+            ],
+            "platform": "Linux"
+          },
+          "platformVersion": "6.66.0",
+          "fullVersionList": [
+            "Google Chrome/155.0.8059.39",
+            "Chromium/155.0.8059.39",
+            "Not(A:Brand/24.0.0.0"
+          ]
+        },
+        "request_ua": true,
+        "platform_version_marker": true,
+        "webdriver_visible": false,
+        "request_client_hints": {
+          "sec-ch-ua-full-version-list": "\"Google Chrome\";v=\"155.0.8059.39\", \"Chromium\";v=\"155.0.8059.39\", \"Not(A:Brand\";v=\"24.0.0.0\"",
+          "sec-ch-ua-platform": "\"Linux\"",
+          "sec-ch-ua": "\"Google Chrome\";v=\"155\", \"Chromium\";v=\"155\", \"Not(A:Brand\";v=\"24\"",
+          "sec-ch-ua-mobile": "?0",
+          "sec-ch-ua-platform-version": "\"6.66.0\""
+        }
+      },
+      "worker": {
+        "ua": true,
+        "lang": true,
+        "tz": true,
+        "offset": true,
+        "observed": {
+          "ua": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36 CMLab/1.0",
+          "lang": "de-DE",
+          "tz": "Asia/Tokyo",
+          "off": -540,
+          "locale": "de-DE",
+          "uad": {
+            "brands": [
+              "Google Chrome/155",
+              "Chromium/155",
+              "Not(A:Brand/24"
+            ],
+            "platform": "Linux"
+          },
+          "platformVersion": "6.66.0",
+          "fullVersionList": [
+            "Google Chrome/155.0.8059.39",
+            "Chromium/155.0.8059.39",
+            "Not(A:Brand/24.0.0.0"
+          ]
+        },
+        "request_ua": true,
+        "platform_version_marker": true,
+        "webdriver_visible": false,
+        "request_client_hints": {}
+      },
+      "tab": {
+        "ua": true,
+        "lang": true,
+        "tz": true,
+        "offset": true,
+        "observed": {
+          "ua": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36 CMLab/1.0",
+          "lang": "de-DE",
+          "tz": "Asia/Tokyo",
+          "off": -540,
+          "locale": "de-DE",
+          "uad": {
+            "brands": [
+              "Google Chrome/155",
+              "Chromium/155",
+              "Not(A:Brand/24"
+            ],
+            "platform": "Linux"
+          },
+          "platformVersion": "6.66.0",
+          "fullVersionList": [
+            "Google Chrome/155.0.8059.39",
+            "Chromium/155.0.8059.39",
+            "Not(A:Brand/24.0.0.0"
+          ]
+        },
+        "request_ua": true,
+        "platform_version_marker": true,
+        "webdriver_visible": false,
+        "request_client_hints": {
+          "sec-ch-ua-full-version-list": "\"Google Chrome\";v=\"155.0.8059.39\", \"Chromium\";v=\"155.0.8059.39\", \"Not(A:Brand\";v=\"24.0.0.0\"",
+          "sec-ch-ua-platform": "\"Linux\"",
+          "sec-ch-ua": "\"Google Chrome\";v=\"155\", \"Chromium\";v=\"155\", \"Not(A:Brand\";v=\"24\"",
+          "sec-ch-ua-mobile": "?0",
+          "sec-ch-ua-platform-version": "\"6.66.0\""
+        }
+      },
+      "worker_script_request": {
+        "ua": true,
+        "lang": true
+      },
+      "tab_request": {
+        "ua": true,
+        "lang": true
+      }
+    }
+  },
+  {
+    "browser": "brave",
+    "version": "Brave Browser 154.1.96.61",
+    "mechanism": "cdp-pipe",
+    "attached_targets": [
+      "page",
+      "page",
+      "page",
+      "worker"
+    ],
+    "verdict": {
+      "first_request": {
+        "ua": true,
+        "lang": true,
+        "client_hints": {
+          "sec-ch-ua": "\"Google Chrome\";v=\"155\", \"Chromium\";v=\"155\", \"Not(A:Brand\";v=\"24\"",
+          "sec-ch-ua-mobile": "?0",
+          "sec-ch-ua-platform": "\"Linux\""
+        },
+        "client_hints_consistent": true
+      },
+      "window": {
+        "ua": true,
+        "lang": true,
+        "tz": true,
+        "offset": true,
+        "observed": {
+          "ua": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36 CMLab/1.0",
+          "lang": "de-DE",
+          "tz": "Asia/Tokyo",
+          "off": -540,
+          "locale": "de-DE",
+          "uad": {
+            "brands": [
+              "Google Chrome/155",
+              "Chromium/155",
+              "Not(A:Brand/24"
+            ],
+            "platform": "Linux"
+          },
+          "platformVersion": "6.66.0",
+          "fullVersionList": [
+            "Google Chrome/155.0.8059.39",
+            "Chromium/155.0.8059.39",
+            "Not(A:Brand/24.0.0.0"
+          ]
+        },
+        "request_ua": true,
+        "platform_version_marker": true,
+        "webdriver_visible": true,
+        "request_client_hints": {
+          "sec-ch-ua-full-version-list": "\"Google Chrome\";v=\"155.0.8059.39\", \"Chromium\";v=\"155.0.8059.39\", \"Not(A:Brand\";v=\"24.0.0.0\"",
+          "sec-ch-ua-platform": "\"Linux\"",
+          "sec-ch-ua": "\"Google Chrome\";v=\"155\", \"Chromium\";v=\"155\", \"Not(A:Brand\";v=\"24\"",
+          "sec-ch-ua-mobile": "?0",
+          "sec-ch-ua-platform-version": "\"6.66.0\""
+        }
+      },
+      "worker": {
+        "ua": true,
+        "lang": true,
+        "tz": true,
+        "offset": true,
+        "observed": {
+          "ua": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36 CMLab/1.0",
+          "lang": "de-DE",
+          "tz": "Asia/Tokyo",
+          "off": -540,
+          "locale": "de-DE",
+          "uad": {
+            "brands": [
+              "Google Chrome/155",
+              "Chromium/155",
+              "Not(A:Brand/24"
+            ],
+            "platform": "Linux"
+          },
+          "platformVersion": "6.66.0",
+          "fullVersionList": [
+            "Google Chrome/155.0.8059.39",
+            "Chromium/155.0.8059.39",
+            "Not(A:Brand/24.0.0.0"
+          ]
+        },
+        "request_ua": true,
+        "platform_version_marker": true,
+        "webdriver_visible": false,
+        "request_client_hints": {}
+      },
+      "tab": {
+        "ua": true,
+        "lang": true,
+        "tz": true,
+        "offset": true,
+        "observed": {
+          "ua": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36 CMLab/1.0",
+          "lang": "de-DE",
+          "tz": "Asia/Tokyo",
+          "off": -540,
+          "locale": "de-DE",
+          "uad": {
+            "brands": [
+              "Google Chrome/155",
+              "Chromium/155",
+              "Not(A:Brand/24"
+            ],
+            "platform": "Linux"
+          },
+          "platformVersion": "6.66.0",
+          "fullVersionList": [
+            "Google Chrome/155.0.8059.39",
+            "Chromium/155.0.8059.39",
+            "Not(A:Brand/24.0.0.0"
+          ]
+        },
+        "request_ua": true,
+        "platform_version_marker": true,
+        "webdriver_visible": true,
+        "request_client_hints": {
+          "sec-ch-ua-full-version-list": "\"Google Chrome\";v=\"155.0.8059.39\", \"Chromium\";v=\"155.0.8059.39\", \"Not(A:Brand\";v=\"24.0.0.0\"",
+          "sec-ch-ua-platform": "\"Linux\"",
+          "sec-ch-ua": "\"Google Chrome\";v=\"155\", \"Chromium\";v=\"155\", \"Not(A:Brand\";v=\"24\"",
+          "sec-ch-ua-mobile": "?0",
+          "sec-ch-ua-platform-version": "\"6.66.0\""
+        }
+      },
+      "worker_script_request": {
+        "ua": true,
+        "lang": true
+      },
+      "tab_request": {
+        "ua": true,
+        "lang": true
+      }
+    }
+  },
+  {
+    "browser": "brave",
+    "version": "Brave Browser 154.1.96.61",
+    "mechanism": "cdp-pipe+TZ-env",
+    "attached_targets": [
+      "page",
+      "page",
+      "page",
+      "worker"
+    ],
+    "verdict": {
+      "first_request": {
+        "ua": true,
+        "lang": true,
+        "client_hints": {
+          "sec-ch-ua": "\"Google Chrome\";v=\"155\", \"Chromium\";v=\"155\", \"Not(A:Brand\";v=\"24\"",
+          "sec-ch-ua-mobile": "?0",
+          "sec-ch-ua-platform": "\"Linux\""
+        },
+        "client_hints_consistent": true
+      },
+      "window": {
+        "ua": true,
+        "lang": true,
+        "tz": true,
+        "offset": true,
+        "observed": {
+          "ua": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36 CMLab/1.0",
+          "lang": "de-DE",
+          "tz": "Asia/Tokyo",
+          "off": -540,
+          "locale": "de-DE",
+          "uad": {
+            "brands": [
+              "Google Chrome/155",
+              "Chromium/155",
+              "Not(A:Brand/24"
+            ],
+            "platform": "Linux"
+          },
+          "platformVersion": "6.66.0",
+          "fullVersionList": [
+            "Google Chrome/155.0.8059.39",
+            "Chromium/155.0.8059.39",
+            "Not(A:Brand/24.0.0.0"
+          ]
+        },
+        "request_ua": true,
+        "platform_version_marker": true,
+        "webdriver_visible": true,
+        "request_client_hints": {
+          "sec-ch-ua-full-version-list": "\"Google Chrome\";v=\"155.0.8059.39\", \"Chromium\";v=\"155.0.8059.39\", \"Not(A:Brand\";v=\"24.0.0.0\"",
+          "sec-ch-ua-platform": "\"Linux\"",
+          "sec-ch-ua": "\"Google Chrome\";v=\"155\", \"Chromium\";v=\"155\", \"Not(A:Brand\";v=\"24\"",
+          "sec-ch-ua-mobile": "?0",
+          "sec-ch-ua-platform-version": "\"6.66.0\""
+        }
+      },
+      "worker": {
+        "ua": true,
+        "lang": true,
+        "tz": true,
+        "offset": true,
+        "observed": {
+          "ua": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36 CMLab/1.0",
+          "lang": "de-DE",
+          "tz": "Asia/Tokyo",
+          "off": -540,
+          "locale": "de-DE",
+          "uad": {
+            "brands": [
+              "Google Chrome/155",
+              "Chromium/155",
+              "Not(A:Brand/24"
+            ],
+            "platform": "Linux"
+          },
+          "platformVersion": "6.66.0",
+          "fullVersionList": [
+            "Google Chrome/155.0.8059.39",
+            "Chromium/155.0.8059.39",
+            "Not(A:Brand/24.0.0.0"
+          ]
+        },
+        "request_ua": true,
+        "platform_version_marker": true,
+        "webdriver_visible": false,
+        "request_client_hints": {}
+      },
+      "tab": {
+        "ua": true,
+        "lang": true,
+        "tz": true,
+        "offset": true,
+        "observed": {
+          "ua": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36 CMLab/1.0",
+          "lang": "de-DE",
+          "tz": "Asia/Tokyo",
+          "off": -540,
+          "locale": "de-DE",
+          "uad": {
+            "brands": [
+              "Google Chrome/155",
+              "Chromium/155",
+              "Not(A:Brand/24"
+            ],
+            "platform": "Linux"
+          },
+          "platformVersion": "6.66.0",
+          "fullVersionList": [
+            "Google Chrome/155.0.8059.39",
+            "Chromium/155.0.8059.39",
+            "Not(A:Brand/24.0.0.0"
+          ]
+        },
+        "request_ua": true,
+        "platform_version_marker": true,
+        "webdriver_visible": true,
+        "request_client_hints": {
+          "sec-ch-ua-full-version-list": "\"Google Chrome\";v=\"155.0.8059.39\", \"Chromium\";v=\"155.0.8059.39\", \"Not(A:Brand\";v=\"24.0.0.0\"",
+          "sec-ch-ua-platform": "\"Linux\"",
+          "sec-ch-ua": "\"Google Chrome\";v=\"155\", \"Chromium\";v=\"155\", \"Not(A:Brand\";v=\"24\"",
+          "sec-ch-ua-mobile": "?0",
+          "sec-ch-ua-platform-version": "\"6.66.0\""
+        }
+      },
+      "worker_script_request": {
+        "ua": true,
+        "lang": true
+      },
+      "tab_request": {
+        "ua": true,
+        "lang": true
+      }
+    }
+  },
+  {
+    "browser": "brave",
+    "version": "Brave Browser 154.1.96.61",
+    "mechanism": "cdp-pipe+AutomationControlled-off",
+    "attached_targets": [
+      "page",
+      "page",
+      "page",
+      "worker"
+    ],
+    "verdict": {
+      "first_request": {
+        "ua": true,
+        "lang": true,
+        "client_hints": {
+          "sec-ch-ua": "\"Google Chrome\";v=\"155\", \"Chromium\";v=\"155\", \"Not(A:Brand\";v=\"24\"",
+          "sec-ch-ua-mobile": "?0",
+          "sec-ch-ua-platform": "\"Linux\""
+        },
+        "client_hints_consistent": true
+      },
+      "window": {
+        "ua": true,
+        "lang": true,
+        "tz": true,
+        "offset": true,
+        "observed": {
+          "ua": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36 CMLab/1.0",
+          "lang": "de-DE",
+          "tz": "Asia/Tokyo",
+          "off": -540,
+          "locale": "de-DE",
+          "uad": {
+            "brands": [
+              "Google Chrome/155",
+              "Chromium/155",
+              "Not(A:Brand/24"
+            ],
+            "platform": "Linux"
+          },
+          "platformVersion": "6.66.0",
+          "fullVersionList": [
+            "Google Chrome/155.0.8059.39",
+            "Chromium/155.0.8059.39",
+            "Not(A:Brand/24.0.0.0"
+          ]
+        },
+        "request_ua": true,
+        "platform_version_marker": true,
+        "webdriver_visible": false,
+        "request_client_hints": {
+          "sec-ch-ua-full-version-list": "\"Google Chrome\";v=\"155.0.8059.39\", \"Chromium\";v=\"155.0.8059.39\", \"Not(A:Brand\";v=\"24.0.0.0\"",
+          "sec-ch-ua-platform": "\"Linux\"",
+          "sec-ch-ua": "\"Google Chrome\";v=\"155\", \"Chromium\";v=\"155\", \"Not(A:Brand\";v=\"24\"",
+          "sec-ch-ua-mobile": "?0",
+          "sec-ch-ua-platform-version": "\"6.66.0\""
+        }
+      },
+      "worker": {
+        "ua": true,
+        "lang": true,
+        "tz": true,
+        "offset": true,
+        "observed": {
+          "ua": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36 CMLab/1.0",
+          "lang": "de-DE",
+          "tz": "Asia/Tokyo",
+          "off": -540,
+          "locale": "de-DE",
+          "uad": {
+            "brands": [
+              "Google Chrome/155",
+              "Chromium/155",
+              "Not(A:Brand/24"
+            ],
+            "platform": "Linux"
+          },
+          "platformVersion": "6.66.0",
+          "fullVersionList": [
+            "Google Chrome/155.0.8059.39",
+            "Chromium/155.0.8059.39",
+            "Not(A:Brand/24.0.0.0"
+          ]
+        },
+        "request_ua": true,
+        "platform_version_marker": true,
+        "webdriver_visible": false,
+        "request_client_hints": {}
+      },
+      "tab": {
+        "ua": true,
+        "lang": true,
+        "tz": true,
+        "offset": true,
+        "observed": {
+          "ua": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36 CMLab/1.0",
+          "lang": "de-DE",
+          "tz": "Asia/Tokyo",
+          "off": -540,
+          "locale": "de-DE",
+          "uad": {
+            "brands": [
+              "Google Chrome/155",
+              "Chromium/155",
+              "Not(A:Brand/24"
+            ],
+            "platform": "Linux"
+          },
+          "platformVersion": "6.66.0",
+          "fullVersionList": [
+            "Google Chrome/155.0.8059.39",
+            "Chromium/155.0.8059.39",
+            "Not(A:Brand/24.0.0.0"
+          ]
+        },
+        "request_ua": true,
+        "platform_version_marker": true,
+        "webdriver_visible": false,
+        "request_client_hints": {
+          "sec-ch-ua-full-version-list": "\"Google Chrome\";v=\"155.0.8059.39\", \"Chromium\";v=\"155.0.8059.39\", \"Not(A:Brand\";v=\"24.0.0.0\"",
+          "sec-ch-ua-platform": "\"Linux\"",
+          "sec-ch-ua": "\"Google Chrome\";v=\"155\", \"Chromium\";v=\"155\", \"Not(A:Brand\";v=\"24\"",
+          "sec-ch-ua-mobile": "?0",
+          "sec-ch-ua-platform-version": "\"6.66.0\""
+        }
+      },
+      "worker_script_request": {
+        "ua": true,
+        "lang": true
+      },
+      "tab_request": {
+        "ua": true,
+        "lang": true
+      }
+    }
+  }
+]

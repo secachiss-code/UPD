@@ -2490,7 +2490,7 @@
       "depends_on": [
         "I15.T02.a"
       ],
-      "what": "Липкая согласованная личность, явная смена, история, version policy.",
+      "what": "Липкая согласованная личность: стратегия local|crowd, настоящий движок и версия, пресет I14; явная смена, история, version policy; одна identity — один туннель и каталог данных (ADR-BROWSER-IDENTITY M6).",
       "outputs": "src/env/identity.rs",
       "done_when": "Только свойства со статусом go.",
       "decision": null,
@@ -2498,19 +2498,84 @@
       "critical": true
     },
     {
-      "id": "I15.T04.a",
+      "id": "I15.T03.b",
       "milestone": "I15",
-      "title": "Интеграция до первого запроса",
-      "size": "L",
-      "level": "L3",
+      "title": "Валидатор согласованности",
+      "size": "M",
+      "level": "L1",
       "depends_on": [
         "I15.T03.a"
       ],
-      "what": "Frames/workers/restarts; identity не меняется в живом процессе.",
-      "outputs": "src/env/adapters/*",
-      "done_when": "Capture первого запроса.",
+      "what": "Чистая функция до запуска (ADR-BROWSER-IDENTITY M1): UA/Client Hints только настоящие для движка; crowd не сочетается с региональным TZ и подменой языка; navigator.language, Accept-Language и Intl-локаль из одного пресета; механизм обязан действовать до первого запроса и в Worker; признак автоматизации снят; версия браузера прошла лабораторный прогон. Отказы типизированы, без значений профиля.",
+      "outputs": "src/env/identity.rs",
+      "done_when": "Fixtures на каждое правило из I15R-LAB (п. 1–9): отказ с нужным кодом.",
       "decision": null,
       "wave": 47,
+      "critical": true
+    },
+    {
+      "id": "I15.T04.a",
+      "milestone": "I15",
+      "title": "CDP-контроллер Chromium",
+      "size": "L",
+      "level": "L3",
+      "depends_on": [
+        "I15.T03.b"
+      ],
+      "what": "ADR-BROWSER-IDENTITY M2: --remote-debugging-pipe, --disable-blink-features=AutomationControlled, setAutoAttach(waitForDebuggerOnStart) рекурсивно, Network/Emulation overrides с настоящими метаданными движка, навигация только после overrides; fail-closed при потере pipe. Дополнительно проверить видимый режим, Service/Shared Worker, расширения, PDF.",
+      "outputs": "src/env/adapters/chromium.rs",
+      "done_when": "Capture первого запроса и всех контекстов согласован; закрытие pipe завершает браузер.",
+      "decision": null,
+      "wave": 48,
+      "critical": true
+    },
+    {
+      "id": "I15.T04.b",
+      "milestone": "I15",
+      "title": "Профиль, привязанный к CM",
+      "size": "M",
+      "level": "L3",
+      "depends_on": [
+        "I15.T04.a"
+      ],
+      "what": "ADR-BROWSER-IDENTITY M3: каталог профиля CM 0700, маркеры запуска и завершения, обнаружение запуска мимо CM → APP blocked до подтверждения; controls, живущие в профиле, задаются тем же пресетом.",
+      "outputs": "src/env/profile_guard.rs",
+      "done_when": "Сценарий голого запуска профиля обнаружен и виден в UI.",
+      "decision": null,
+      "wave": 49,
+      "critical": true
+    },
+    {
+      "id": "I15.T04.c",
+      "milestone": "I15",
+      "title": "Firefox-адаптер local и crowd",
+      "size": "M",
+      "level": "L3",
+      "depends_on": [
+        "I15.T04.b",
+        "I14.T03.a"
+      ],
+      "what": "ADR-BROWSER-IDENTITY M4: crowd — проверка, что RFP включён и не переопределён; local — prefs user.js по пресету и TZ через приватный /etc/localtime в mount ns.",
+      "outputs": "src/env/adapters/firefox.rs",
+      "done_when": "Лабораторный прогон: голый перезапуск внутри окружения CM сохраняет TZ.",
+      "decision": null,
+      "wave": 50,
+      "critical": true
+    },
+    {
+      "id": "I15.T04.d",
+      "milestone": "I15",
+      "title": "Регрессия на версию браузера",
+      "size": "S",
+      "level": "L3",
+      "depends_on": [
+        "I15.T04.c"
+      ],
+      "what": "ADR-BROWSER-IDENTITY M5: tools/i15r_lab.py и i15r_cdp_lab.py как проверка; без прогона новая версия — partial с возрастом проверки.",
+      "outputs": "i15-evidence/<версия>",
+      "done_when": "Прогон на текущих версиях Chrome, Brave, LibreWolf записан.",
+      "decision": null,
+      "wave": 51,
       "critical": true
     },
     {
@@ -2520,13 +2585,13 @@
       "size": "M",
       "level": "L4",
       "depends_on": [
-        "I15.T04.a"
+        "I15.T04.d"
       ],
-      "what": "Частичные/unsupported свойства показываются.",
+      "what": "Частичные/unsupported свойства показываются; один аккаунт в двух профилях показывается как связанность профилей.",
       "outputs": "i15-evidence",
       "done_when": "Нет неподтверждённых гарантий в UI.",
       "decision": null,
-      "wave": 48,
+      "wave": 52,
       "critical": true
     },
     {
@@ -2708,7 +2773,7 @@
       "outputs": "I17-UI-CONTRACT.md",
       "done_when": "Нет provisional полей.",
       "decision": null,
-      "wave": 49,
+      "wave": 53,
       "critical": true
     },
     {
@@ -2724,7 +2789,7 @@
       "outputs": "src/tui/*",
       "done_when": "Фоновая модель как в 0.2.7.",
       "decision": null,
-      "wave": 50,
+      "wave": 54,
       "critical": true
     },
     {
@@ -2740,7 +2805,7 @@
       "outputs": "src/diag/export.rs",
       "done_when": "Сканер секретов по экспорту = 0.",
       "decision": null,
-      "wave": 51,
+      "wave": 55,
       "critical": true
     },
     {
@@ -2756,7 +2821,7 @@
       "outputs": "cosmic/src/*",
       "done_when": "Ручная проверка на COSMIC.",
       "decision": null,
-      "wave": 52,
+      "wave": 56,
       "critical": true
     },
     {
@@ -2772,7 +2837,7 @@
       "outputs": "i17-evidence",
       "done_when": "Snapshot ↔ evidence совпадают.",
       "decision": null,
-      "wave": 53,
+      "wave": 57,
       "critical": true
     },
     {
@@ -2924,7 +2989,7 @@
       "outputs": "I18-TRACE.md",
       "done_when": "Трассировка полная.",
       "decision": null,
-      "wave": 54,
+      "wave": 58,
       "critical": true
     },
     {
@@ -2940,7 +3005,7 @@
       "outputs": "i18-evidence",
       "done_when": "Все критерии pass или явный blocked.",
       "decision": null,
-      "wave": 55,
+      "wave": 59,
       "critical": true
     },
     {
@@ -2956,7 +3021,7 @@
       "outputs": "i18-evidence/regress",
       "done_when": "Без регресса.",
       "decision": null,
-      "wave": 56,
+      "wave": 60,
       "critical": true
     },
     {
@@ -2972,7 +3037,7 @@
       "outputs": "RELEASE-SCOPE.md",
       "done_when": "Нет неподтверждённых гарантий.",
       "decision": null,
-      "wave": 57,
+      "wave": 61,
       "critical": true
     },
     {
@@ -2988,7 +3053,7 @@
       "outputs": "I18-ACCEPTANCE.md",
       "done_when": "Решение пользователя.",
       "decision": null,
-      "wave": 58,
+      "wave": 62,
       "critical": true
     }
   ],
@@ -3101,7 +3166,11 @@
     "I15.T01.a",
     "I15.T02.a",
     "I15.T03.a",
+    "I15.T03.b",
     "I15.T04.a",
+    "I15.T04.b",
+    "I15.T04.c",
+    "I15.T04.d",
     "I15.T05.a",
     "I17.T01.a",
     "I17.T02.a",

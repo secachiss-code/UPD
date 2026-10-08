@@ -9,24 +9,29 @@
   "level": "L3",
   "status": "PASS",
   "executor": "coordinator (Claude)",
-  "command": "python3 docs/design/cm-network-manager/tools/i15r_lab.py <OUT_DIR>",
+  "command": "python3 docs/design/cm-network-manager/tools/i15r_lab.py <OUT_DIR>; python3 docs/design/cm-network-manager/tools/i15r_cdp_lab.py <OUT_DIR>",
   "isolation": "unshare -rn (lo only); temporary HOME, XDG dirs and profile per browser, removed after the run; the user's profiles were not read",
   "browsers": {
     "chrome": "Google Chrome 155.0.8059.39",
     "brave": "Brave Browser 154.1.96.61",
     "librewolf": "LibreWolf 157.0-1"
   },
-  "reproducibility": "two consecutive full runs gave identical verdicts in 12 of 12 rows",
+  "reproducibility": "base protocol: two consecutive runs identical in 12 of 12 rows; CDP protocol: two consecutive runs identical in 6 of 6 rows",
   "files": {
-    "runs.json": "5c73e7250c731264c5abd55415871c024873e03a1f636a7e3904c123d598b525",
+    "runs.json": "8fefef5f0f4a01df2ca63a692299d9607ed63aba807a52cd29693cc50e4b1497",
     "observations.json": "24f92be1228345356e24bb5f2f226c6617c4944e9cae3ae829a0056f2951d165",
-    "tools/i15r_lab.py": "da0be3ad7ae63c141df8df002b4d5cf7453e25a43e98218c0fd90fce5ba2217a"
+    "cdp-runs.json": "bd61492a4591d28113d45d6ebc00a959d69de4229579f10a325cb225a6fca170",
+    "cdp-observations.json": "9829e66af6b064d499744e1bc7000671f9e7de65bde634b8efedf719ad62aef9",
+    "tools/i15r_lab.py": "add2646eb086a0d3f393005946040012b9014424164d21b1b4e034fd16cd9ffe",
+    "tools/i15r_cdp_lab.py": "91fb080307600ab103ce48985256d41f3f8ba57f8874bf3f59a9396a7d3bdb8b"
   },
   "report": "../../I15R-LAB.md",
   "not_closed": [
     "Canvas, WebGL, fonts, audio, TLS were not measured.",
     "Service and shared workers were not measured.",
-    "CDP overrides were not run.",
+    "CDP was measured headless only.",
     "Q26/Q27 are the user's decisions in I15-R.T04.a."
-  ]
+  ],
+  "findings_cdp": "CDP over --remote-debugging-pipe with navigation after overrides gives consistent UA, Client Hints, language and timezone on the first request, window, worker and tab in Chrome and Brave. CDP alone exposes navigator.webdriver=true in window and tab (false in worker); --disable-blink-features=AutomationControlled removes it everywhere.",
+  "mechanisms": "../../ADR-BROWSER-IDENTITY.md"
 }

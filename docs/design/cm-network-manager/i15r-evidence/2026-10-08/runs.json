@@ -125,6 +125,7 @@
           "tz": "Asia/Tokyo",
           "off": -540,
           "locale": "en-US",
+          "webdriver": false,
           "uad": {
             "brands": [
               "Google Chrome/155",
@@ -194,6 +195,7 @@
           "tz": "Asia/Tokyo",
           "off": -540,
           "locale": "en-US",
+          "webdriver": false,
           "uad": {
             "brands": [
               "Google Chrome/155",
@@ -221,6 +223,7 @@
           "tz": "Asia/Tokyo",
           "off": -540,
           "locale": "en-US",
+          "webdriver": false,
           "uad": {
             "brands": [
               "Google Chrome/155",
@@ -364,6 +367,7 @@
           "tz": "Asia/Tokyo",
           "off": -540,
           "locale": "en-US",
+          "webdriver": false,
           "uad": {
             "brands": [
               "Google Chrome/155",
@@ -377,6 +381,15 @@
       },
       {
         "kind": "request",
+        "path": "/worker.js",
+        "headers": {
+          "user-agent": "Mozilla/5.0 (X11; Linux x86_64) CMLab/1.0",
+          "accept-language": "de-DE,de;q=0.9"
+        },
+        "seq": 2
+      },
+      {
+        "kind": "request",
         "path": "/favicon.ico",
         "headers": {
           "sec-ch-ua-full-version-list": "",
@@ -385,15 +398,6 @@
           "sec-ch-ua": "\"Google Chrome\";v=\"155\", \"Chromium\";v=\"155\", \"Not(A:Brand\";v=\"24\"",
           "sec-ch-ua-mobile": "?0",
           "sec-ch-ua-platform-version": "\"\"",
-          "accept-language": "de-DE,de;q=0.9"
-        },
-        "seq": 2
-      },
-      {
-        "kind": "request",
-        "path": "/worker.js",
-        "headers": {
-          "user-agent": "Mozilla/5.0 (X11; Linux x86_64) CMLab/1.0",
           "accept-language": "de-DE,de;q=0.9"
         },
         "seq": 3
@@ -433,6 +437,7 @@
           "tz": "Asia/Tokyo",
           "off": -540,
           "locale": "en-US",
+          "webdriver": false,
           "uad": {
             "brands": [
               "Google Chrome/155",
@@ -460,6 +465,7 @@
           "tz": "Asia/Tokyo",
           "off": -540,
           "locale": "en-US",
+          "webdriver": false,
           "uad": {
             "brands": [
               "Google Chrome/155",
@@ -603,6 +609,7 @@
           "tz": "Europe/Moscow",
           "off": -180,
           "locale": "en-US",
+          "webdriver": false,
           "uad": {
             "brands": [
               "Google Chrome/155",
@@ -625,20 +632,6 @@
       },
       {
         "kind": "request",
-        "path": "/tab",
-        "headers": {
-          "sec-ch-ua": "\"Google Chrome\";v=\"155\", \"Chromium\";v=\"155\", \"Not(A:Brand\";v=\"24\"",
-          "sec-ch-ua-mobile": "?0",
-          "sec-ch-ua-platform": "\"Linux\"",
-          "sec-ch-ua-platform-version": "\"\"",
-          "sec-ch-ua-full-version-list": "\"Google Chrome\";v=\"155.0.8059.39\", \"Chromium\";v=\"155.0.8059.39\", \"Not(A:Brand\";v=\"24.0.0.0\"",
-          "user-agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/155.0.0.0 Safari/537.36",
-          "accept-language": "de-DE,de;q=0.9"
-        },
-        "seq": 3
-      },
-      {
-        "kind": "request",
         "path": "/favicon.ico",
         "headers": {
           "sec-ch-ua-full-version-list": "\"Google Chrome\";v=\"155.0.8059.39\", \"Chromium\";v=\"155.0.8059.39\", \"Not(A:Brand\";v=\"24.0.0.0\"",
@@ -649,34 +642,21 @@
           "sec-ch-ua-platform-version": "\"\"",
           "accept-language": "de-DE,de;q=0.9"
         },
-        "seq": 4
+        "seq": 3
       },
       {
-        "kind": "report",
+        "kind": "request",
+        "path": "/tab",
         "headers": {
+          "sec-ch-ua": "\"Google Chrome\";v=\"155\", \"Chromium\";v=\"155\", \"Not(A:Brand\";v=\"24\"",
+          "sec-ch-ua-mobile": "?0",
+          "sec-ch-ua-platform": "\"Linux\"",
+          "sec-ch-ua-platform-version": "\"\"",
+          "sec-ch-ua-full-version-list": "\"Google Chrome\";v=\"155.0.8059.39\", \"Chromium\";v=\"155.0.8059.39\", \"Not(A:Brand\";v=\"24.0.0.0\"",
           "user-agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/155.0.0.0 Safari/537.36",
           "accept-language": "de-DE,de;q=0.9"
         },
-        "values": {
-          "ctx": "worker",
-          "ua": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/155.0.0.0 Safari/537.36",
-          "lang": "de-DE",
-          "langs": [
-            "de-DE"
-          ],
-          "tz": "Europe/Moscow",
-          "off": -180,
-          "locale": "en-US",
-          "uad": {
-            "brands": [
-              "Google Chrome/155",
-              "Chromium/155",
-              "Not(A:Brand/24"
-            ],
-            "platform": "Linux"
-          }
-        },
-        "seq": 5
+        "seq": 4
       },
       {
         "kind": "report",
@@ -699,6 +679,35 @@
           "tz": "Europe/Moscow",
           "off": -180,
           "locale": "en-US",
+          "webdriver": false,
+          "uad": {
+            "brands": [
+              "Google Chrome/155",
+              "Chromium/155",
+              "Not(A:Brand/24"
+            ],
+            "platform": "Linux"
+          }
+        },
+        "seq": 5
+      },
+      {
+        "kind": "report",
+        "headers": {
+          "user-agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/155.0.0.0 Safari/537.36",
+          "accept-language": "de-DE,de;q=0.9"
+        },
+        "values": {
+          "ctx": "worker",
+          "ua": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/155.0.0.0 Safari/537.36",
+          "lang": "de-DE",
+          "langs": [
+            "de-DE"
+          ],
+          "tz": "Europe/Moscow",
+          "off": -180,
+          "locale": "en-US",
+          "webdriver": false,
           "uad": {
             "brands": [
               "Google Chrome/155",
@@ -801,7 +810,7 @@
           "sec-ch-ua-mobile": "?0",
           "sec-ch-ua-platform": "\"\"",
           "user-agent": "Mozilla/5.0 (X11; Linux x86_64) CMLab/1.0",
-          "accept-language": "de-DE,de;q=0.8"
+          "accept-language": "de-DE,de;q=0.6"
         },
         "seq": 0
       },
@@ -814,7 +823,7 @@
           "sec-ch-ua": "",
           "sec-ch-ua-mobile": "?0",
           "sec-ch-ua-platform-version": "\"\"",
-          "accept-language": "de-DE,de;q=0.8"
+          "accept-language": "de-DE,de;q=0.6"
         },
         "values": {
           "ctx": "window",
@@ -826,6 +835,7 @@
           "tz": "Asia/Tokyo",
           "off": -540,
           "locale": "en-US",
+          "webdriver": false,
           "uad": {
             "brands": [],
             "platform": ""
@@ -838,7 +848,7 @@
         "path": "/worker.js",
         "headers": {
           "user-agent": "Mozilla/5.0 (X11; Linux x86_64) CMLab/1.0",
-          "accept-language": "de-DE,de;q=0.8"
+          "accept-language": "de-DE,de;q=0.6"
         },
         "seq": 2
       },
@@ -852,7 +862,7 @@
           "sec-ch-ua-platform-version": "\"\"",
           "sec-ch-ua-full-version-list": "",
           "user-agent": "Mozilla/5.0 (X11; Linux x86_64) CMLab/1.0",
-          "accept-language": "de-DE,de;q=0.8"
+          "accept-language": "de-DE,de;q=0.6"
         },
         "seq": 3
       },
@@ -866,7 +876,7 @@
           "sec-ch-ua": "",
           "sec-ch-ua-mobile": "?0",
           "sec-ch-ua-platform-version": "\"\"",
-          "accept-language": "de-DE,de;q=0.8"
+          "accept-language": "de-DE,de;q=0.6"
         },
         "seq": 4
       },
@@ -874,7 +884,7 @@
         "kind": "report",
         "headers": {
           "user-agent": "Mozilla/5.0 (X11; Linux x86_64) CMLab/1.0",
-          "accept-language": "de-DE,de;q=0.8"
+          "accept-language": "de-DE,de;q=0.6"
         },
         "values": {
           "ctx": "worker",
@@ -886,6 +896,7 @@
           "tz": "Asia/Tokyo",
           "off": -540,
           "locale": "en-US",
+          "webdriver": false,
           "uad": {
             "brands": [],
             "platform": ""
@@ -902,7 +913,7 @@
           "sec-ch-ua": "",
           "sec-ch-ua-mobile": "?0",
           "sec-ch-ua-platform-version": "\"\"",
-          "accept-language": "de-DE,de;q=0.8"
+          "accept-language": "de-DE,de;q=0.6"
         },
         "values": {
           "ctx": "tab",
@@ -914,6 +925,7 @@
           "tz": "Asia/Tokyo",
           "off": -540,
           "locale": "en-US",
+          "webdriver": false,
           "uad": {
             "brands": [],
             "platform": ""
@@ -1016,7 +1028,7 @@
           "sec-ch-ua-platform-version": "\"\"",
           "sec-ch-ua-full-version-list": "",
           "user-agent": "Mozilla/5.0 (X11; Linux x86_64) CMLab/1.0",
-          "accept-language": "de-DE,de;q=0.5"
+          "accept-language": "de-DE,de;q=0.7"
         },
         "seq": 0
       },
@@ -1029,7 +1041,7 @@
           "sec-ch-ua": "",
           "sec-ch-ua-mobile": "?0",
           "sec-ch-ua-platform-version": "\"\"",
-          "accept-language": "de-DE,de;q=0.5"
+          "accept-language": "de-DE,de;q=0.7"
         },
         "values": {
           "ctx": "window",
@@ -1041,6 +1053,7 @@
           "tz": "Asia/Tokyo",
           "off": -540,
           "locale": "en-US",
+          "webdriver": false,
           "uad": {
             "brands": [],
             "platform": ""
@@ -1050,26 +1063,12 @@
       },
       {
         "kind": "request",
-        "path": "/favicon.ico",
-        "headers": {
-          "sec-ch-ua-full-version-list": "",
-          "sec-ch-ua-platform": "\"\"",
-          "user-agent": "Mozilla/5.0 (X11; Linux x86_64) CMLab/1.0",
-          "sec-ch-ua": "",
-          "sec-ch-ua-mobile": "?0",
-          "sec-ch-ua-platform-version": "\"\"",
-          "accept-language": "de-DE,de;q=0.5"
-        },
-        "seq": 2
-      },
-      {
-        "kind": "request",
         "path": "/worker.js",
         "headers": {
           "user-agent": "Mozilla/5.0 (X11; Linux x86_64) CMLab/1.0",
-          "accept-language": "de-DE,de;q=0.5"
+          "accept-language": "de-DE,de;q=0.7"
         },
-        "seq": 3
+        "seq": 2
       },
       {
         "kind": "request",
@@ -1081,12 +1080,13 @@
           "sec-ch-ua-platform-version": "\"\"",
           "sec-ch-ua-full-version-list": "",
           "user-agent": "Mozilla/5.0 (X11; Linux x86_64) CMLab/1.0",
-          "accept-language": "de-DE,de;q=0.5"
+          "accept-language": "de-DE,de;q=0.7"
         },
-        "seq": 4
+        "seq": 3
       },
       {
-        "kind": "report",
+        "kind": "request",
+        "path": "/favicon.ico",
         "headers": {
           "sec-ch-ua-full-version-list": "",
           "sec-ch-ua-platform": "\"\"",
@@ -1094,30 +1094,15 @@
           "sec-ch-ua": "",
           "sec-ch-ua-mobile": "?0",
           "sec-ch-ua-platform-version": "\"\"",
-          "accept-language": "de-DE,de;q=0.5"
+          "accept-language": "de-DE,de;q=0.7"
         },
-        "values": {
-          "ctx": "tab",
-          "ua": "Mozilla/5.0 (X11; Linux x86_64) CMLab/1.0",
-          "lang": "de-DE",
-          "langs": [
-            "de-DE"
-          ],
-          "tz": "Asia/Tokyo",
-          "off": -540,
-          "locale": "en-US",
-          "uad": {
-            "brands": [],
-            "platform": ""
-          }
-        },
-        "seq": 5
+        "seq": 4
       },
       {
         "kind": "report",
         "headers": {
           "user-agent": "Mozilla/5.0 (X11; Linux x86_64) CMLab/1.0",
-          "accept-language": "de-DE,de;q=0.5"
+          "accept-language": "de-DE,de;q=0.7"
         },
         "values": {
           "ctx": "worker",
@@ -1129,6 +1114,36 @@
           "tz": "Asia/Tokyo",
           "off": -540,
           "locale": "en-US",
+          "webdriver": false,
+          "uad": {
+            "brands": [],
+            "platform": ""
+          }
+        },
+        "seq": 5
+      },
+      {
+        "kind": "report",
+        "headers": {
+          "sec-ch-ua-full-version-list": "",
+          "sec-ch-ua-platform": "\"\"",
+          "user-agent": "Mozilla/5.0 (X11; Linux x86_64) CMLab/1.0",
+          "sec-ch-ua": "",
+          "sec-ch-ua-mobile": "?0",
+          "sec-ch-ua-platform-version": "\"\"",
+          "accept-language": "de-DE,de;q=0.7"
+        },
+        "values": {
+          "ctx": "tab",
+          "ua": "Mozilla/5.0 (X11; Linux x86_64) CMLab/1.0",
+          "lang": "de-DE",
+          "langs": [
+            "de-DE"
+          ],
+          "tz": "Asia/Tokyo",
+          "off": -540,
+          "locale": "en-US",
+          "webdriver": false,
           "uad": {
             "brands": [],
             "platform": ""
@@ -1243,7 +1258,7 @@
           "sec-ch-ua-platform-version": "\"\"",
           "sec-ch-ua-full-version-list": "\"Chromium\";v=\"154.0.0.0\", \"Brave\";v=\"154.0.0.0\", \"Not A(Brand\";v=\"99.0.0.0\"",
           "user-agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/154.0.0.0 Safari/537.36",
-          "accept-language": "de-DE,de;q=0.7"
+          "accept-language": "de-DE,de;q=0.6"
         },
         "seq": 0
       },
@@ -1256,7 +1271,7 @@
           "sec-ch-ua": "\"Chromium\";v=\"154\", \"Brave\";v=\"154\", \"Not A(Brand\";v=\"99\"",
           "sec-ch-ua-mobile": "?0",
           "sec-ch-ua-platform-version": "\"\"",
-          "accept-language": "de-DE,de;q=0.7"
+          "accept-language": "de-DE,de;q=0.6"
         },
         "values": {
           "ctx": "window",
@@ -1268,6 +1283,7 @@
           "tz": "Europe/Moscow",
           "off": -180,
           "locale": "en-US",
+          "webdriver": false,
           "uad": {
             "brands": [
               "Chromium/154",
@@ -1281,15 +1297,10 @@
       },
       {
         "kind": "request",
-        "path": "/favicon.ico",
+        "path": "/worker.js",
         "headers": {
-          "sec-ch-ua-full-version-list": "\"Chromium\";v=\"154.0.0.0\", \"Brave\";v=\"154.0.0.0\", \"Not A(Brand\";v=\"99.0.0.0\"",
-          "sec-ch-ua-platform": "\"Linux\"",
           "user-agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/154.0.0.0 Safari/537.36",
-          "sec-ch-ua": "\"Chromium\";v=\"154\", \"Brave\";v=\"154\", \"Not A(Brand\";v=\"99\"",
-          "sec-ch-ua-mobile": "?0",
-          "sec-ch-ua-platform-version": "\"\"",
-          "accept-language": "de-DE,de;q=0.7"
+          "accept-language": "de-DE,de;q=0.6"
         },
         "seq": 2
       },
@@ -1303,16 +1314,21 @@
           "sec-ch-ua-platform-version": "\"\"",
           "sec-ch-ua-full-version-list": "\"Chromium\";v=\"154.0.0.0\", \"Brave\";v=\"154.0.0.0\", \"Not A(Brand\";v=\"99.0.0.0\"",
           "user-agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/154.0.0.0 Safari/537.36",
-          "accept-language": "de-DE,de;q=0.7"
+          "accept-language": "de-DE,de;q=0.6"
         },
         "seq": 3
       },
       {
         "kind": "request",
-        "path": "/worker.js",
+        "path": "/favicon.ico",
         "headers": {
+          "sec-ch-ua-full-version-list": "\"Chromium\";v=\"154.0.0.0\", \"Brave\";v=\"154.0.0.0\", \"Not A(Brand\";v=\"99.0.0.0\"",
+          "sec-ch-ua-platform": "\"Linux\"",
           "user-agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/154.0.0.0 Safari/537.36",
-          "accept-language": "de-DE,de;q=0.7"
+          "sec-ch-ua": "\"Chromium\";v=\"154\", \"Brave\";v=\"154\", \"Not A(Brand\";v=\"99\"",
+          "sec-ch-ua-mobile": "?0",
+          "sec-ch-ua-platform-version": "\"\"",
+          "accept-language": "de-DE,de;q=0.6"
         },
         "seq": 4
       },
@@ -1325,7 +1341,7 @@
           "sec-ch-ua": "\"Chromium\";v=\"154\", \"Brave\";v=\"154\", \"Not A(Brand\";v=\"99\"",
           "sec-ch-ua-mobile": "?0",
           "sec-ch-ua-platform-version": "\"\"",
-          "accept-language": "de-DE,de;q=0.7"
+          "accept-language": "de-DE,de;q=0.6"
         },
         "values": {
           "ctx": "tab",
@@ -1337,6 +1353,7 @@
           "tz": "Europe/Moscow",
           "off": -180,
           "locale": "en-US",
+          "webdriver": false,
           "uad": {
             "brands": [
               "Chromium/154",
@@ -1352,7 +1369,7 @@
         "kind": "report",
         "headers": {
           "user-agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/154.0.0.0 Safari/537.36",
-          "accept-language": "de-DE,de;q=0.7"
+          "accept-language": "de-DE,de;q=0.6"
         },
         "values": {
           "ctx": "worker",
@@ -1364,6 +1381,7 @@
           "tz": "Europe/Moscow",
           "off": -180,
           "locale": "en-US",
+          "webdriver": false,
           "uad": {
             "brands": [
               "Chromium/154",
@@ -1469,7 +1487,8 @@
           ],
           "tz": "Atlantic/Reykjavik",
           "off": 0,
-          "locale": "de"
+          "locale": "de",
+          "webdriver": false
         },
         "seq": 1
       },
@@ -1515,7 +1534,8 @@
           ],
           "tz": "Atlantic/Reykjavik",
           "off": 0,
-          "locale": "de"
+          "locale": "de",
+          "webdriver": false
         },
         "seq": 5
       },
@@ -1534,7 +1554,8 @@
           ],
           "tz": "Atlantic/Reykjavik",
           "off": 0,
-          "locale": "de"
+          "locale": "de",
+          "webdriver": false
         },
         "seq": 6
       }
@@ -1632,7 +1653,8 @@
           ],
           "tz": "Atlantic/Reykjavik",
           "off": 0,
-          "locale": "de"
+          "locale": "de",
+          "webdriver": false
         },
         "seq": 1
       },
@@ -1678,7 +1700,8 @@
           ],
           "tz": "Atlantic/Reykjavik",
           "off": 0,
-          "locale": "de"
+          "locale": "de",
+          "webdriver": false
         },
         "seq": 5
       },
@@ -1697,7 +1720,8 @@
           ],
           "tz": "Atlantic/Reykjavik",
           "off": 0,
-          "locale": "de"
+          "locale": "de",
+          "webdriver": false
         },
         "seq": 6
       }
@@ -1795,7 +1819,8 @@
           ],
           "tz": "Atlantic/Reykjavik",
           "off": 0,
-          "locale": "de"
+          "locale": "de",
+          "webdriver": false
         },
         "seq": 1
       },
@@ -1841,7 +1866,8 @@
           ],
           "tz": "Atlantic/Reykjavik",
           "off": 0,
-          "locale": "de"
+          "locale": "de",
+          "webdriver": false
         },
         "seq": 5
       },
@@ -1860,7 +1886,8 @@
           ],
           "tz": "Atlantic/Reykjavik",
           "off": 0,
-          "locale": "de"
+          "locale": "de",
+          "webdriver": false
         },
         "seq": 6
       }
@@ -1958,7 +1985,8 @@
           ],
           "tz": "Asia/Tokyo",
           "off": -540,
-          "locale": "de"
+          "locale": "de",
+          "webdriver": false
         },
         "seq": 1
       },
@@ -2004,7 +2032,8 @@
           ],
           "tz": "Asia/Tokyo",
           "off": -540,
-          "locale": "de"
+          "locale": "de",
+          "webdriver": false
         },
         "seq": 5
       },
@@ -2023,7 +2052,8 @@
           ],
           "tz": "Asia/Tokyo",
           "off": -540,
-          "locale": "de"
+          "locale": "de",
+          "webdriver": false
         },
         "seq": 6
       }
@@ -2121,7 +2151,8 @@
           ],
           "tz": "Asia/Tokyo",
           "off": -540,
-          "locale": "de"
+          "locale": "de",
+          "webdriver": false
         },
         "seq": 1
       },
@@ -2167,7 +2198,8 @@
           ],
           "tz": "Asia/Tokyo",
           "off": -540,
-          "locale": "de"
+          "locale": "de",
+          "webdriver": false
         },
         "seq": 5
       },
@@ -2186,7 +2218,8 @@
           ],
           "tz": "Asia/Tokyo",
           "off": -540,
-          "locale": "de"
+          "locale": "de",
+          "webdriver": false
         },
         "seq": 6
       }
@@ -2284,7 +2317,8 @@
           ],
           "tz": "Europe/Moscow",
           "off": -180,
-          "locale": "de"
+          "locale": "de",
+          "webdriver": false
         },
         "seq": 1
       },
@@ -2330,7 +2364,8 @@
           ],
           "tz": "Europe/Moscow",
           "off": -180,
-          "locale": "de"
+          "locale": "de",
+          "webdriver": false
         },
         "seq": 5
       },
@@ -2349,7 +2384,8 @@
           ],
           "tz": "Europe/Moscow",
           "off": -180,
-          "locale": "de"
+          "locale": "de",
+          "webdriver": false
         },
         "seq": 6
       }
