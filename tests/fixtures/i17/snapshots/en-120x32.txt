@@ -1,0 +1,32 @@
+
+╭ Tunnels (mock) · mock 5/6 · host-off-app-active ─────────────────────────────────────────────────────────────────────╮
+│Host: off · App sessions: 1                                                                                           │
+│Condition: degraded · separate tunnels                                                                                │
+│Axis     Status               Age                                                                                     │
+│NET      ✕ blocked            30 s                                                                                    │
+│REGION   ! error              2 d · stale                                                                             │
+│STATE    ✓ verified           45 s                                                                                    │
+│APP      ✓ verified           45 s                                                                                    │
+│Last failure: exit country did not match                                                                              │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+
+
+

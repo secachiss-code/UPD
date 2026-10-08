@@ -3,6 +3,7 @@
 mod process;
 mod progress;
 mod host;
+mod mock_tunnels;
 
 use cm::backend::{self, Backend};
 use cm::common::*;
@@ -30,6 +31,8 @@ enum Screen {
     Vpn,
     Aur,
     Lang,
+    /// макет страницы туннелей (I17-D.T03.a), только при CM_TUI_MOCK_TUNNELS=1
+    Tunnels,
 }
 
 #[derive(Clone, Copy, PartialEq, Debug)]
@@ -317,6 +320,7 @@ struct App<'a> {
     scr: Screen,
     sel: usize,
     msg: String,
+    mock: mock_tunnels::MockPage,
     p_kind: PagerKind,
     p_title: String,
     p_src: String,
@@ -420,6 +424,7 @@ impl<'a> App<'a> {
             scr: Screen::Menu,
             sel: 0,
             msg: String::new(),
+            mock: mock_tunnels::MockPage::default(),
             p_kind: PagerKind::List,
             p_title: String::new(),
             p_src: String::new(),
@@ -923,6 +928,14 @@ impl<'a> App<'a> {
             Screen::Vpn => self.key_vpn(k),
             Screen::Aur => self.key_aur(k),
             Screen::Lang => self.key_lang(k),
+            Screen::Tunnels => {
+                match self.mock.key(k, mock_tunnels::scenarios().len()) {
+                    mock_tunnels::Outcome::Back => self.scr = Screen::Vpn,
+                    mock_tunnels::Outcome::Message(m) => self.msg = m.into(),
+                    mock_tunnels::Outcome::Stay => {}
+                }
+                None
+            }
         }
     }
 
@@ -1445,6 +1458,9 @@ impl App<'_> {
             (Screen::Vpn, _) if self.v.confirm.is_some() => vec![("y/enter", t!("удалить")), ("n/esc", t!("отмена"))],
             (Screen::Vpn, _) => {
                 let mut k = vec![("q", t!("назад")), ("tab 1-3", t!("вкладка")), ("s", t!("вкл/выкл"))];
+                if mock_tunnels::enabled() {
+                    k.push(("m", t!("макет туннелей")));
+                }
                 match self.v.tab {
                     0 => k.extend([("←→", t!("группа")), ("enter", t!("выбрать сервер")), ("t", t!("замерить задержку"))]),
                     1 => k.extend([("enter", t!("сделать активной")), ("n", t!("добавить")), ("u", t!("обновить")), ("x", t!("удалить"))]),
@@ -1468,6 +1484,7 @@ impl App<'_> {
             (Screen::Mirrors, _) if self.b.mirrors_managed() => vec![("q", t!("назад")), ("c", t!("замерить")), ("s", t!("искать заново")), ("a", t!("применить")), ("n", t!("добавить")), ("x", t!("удалить")), ("+/-", t!("сколько закреплять")), ("r", t!("обновить"))],
             (Screen::Mirrors, _) => vec![("q", t!("назад"))],
             (Screen::Lang, _) => vec![("↑↓", t!("выбор")), ("enter", t!("выбрать")), ("q", t!("назад"))],
+            (Screen::Tunnels, _) => self.mock.keys(),
             (Screen::Aur, _) if self.aur.list.is_empty() => vec![("q", t!("назад")), ("/ s", t!("искать"))],
             (Screen::Aur, _) => vec![("q", t!("назад")), ("/ s", t!("искать")), ("↑↓", t!("выбор")), ("enter", t!("установить"))],
         };
@@ -1524,6 +1541,7 @@ impl App<'_> {
             Screen::Vpn => self.draw_vpn(f, body),
             Screen::Aur => self.draw_aur(f, body),
             Screen::Lang => self.draw_lang(f, body),
+            Screen::Tunnels => mock_tunnels::draw(f, body, &self.mock, &mock_tunnels::scenarios()),
         }
     }
 
@@ -1904,6 +1922,7 @@ impl App<'_> {
             KeyCode::Char(c @ '1'..='3') => self.v.tab = c as usize - '1' as usize,
             KeyCode::Char('r') => self.v.at = None,
             KeyCode::Char('s') => return cmd(&["vpn", if self.service() == "active" { "stop" } else { "start" }]),
+            KeyCode::Char('m') if mock_tunnels::enabled() => self.scr = Screen::Tunnels,
             _ => {
                 return match self.v.tab {
                     0 => self.key_vpn_servers(k),

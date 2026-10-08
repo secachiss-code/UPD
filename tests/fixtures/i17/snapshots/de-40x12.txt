@@ -1,0 +1,12 @@
+
+Tunnel (Muster) · Muster 5/6 · host-off-
+Host: aus · App-Sitzungen: 1
+Zustand: eingeschränkt · getrennte Tunne
+NET     ✕ blockiert            30 s
+REGION  ! Fehler               2 T. ⚠
+STATE   ✓ bestätigt            45 s
+APP     ✓ bestätigt            45 s
+Letzter Fehler: abweichendes Ausgangslan
+
+
+

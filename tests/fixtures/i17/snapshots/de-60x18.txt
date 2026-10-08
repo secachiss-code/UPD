@@ -1,0 +1,18 @@
+
+╭ Tunnel (Muster) · Muster 5/6 · host-off-app-active ──────╮
+│Host: aus · App-Sitzungen: 1                              │
+│Zustand: eingeschränkt · getrennte Tunnel                 │
+│Achse    Status               Alter                       │
+│NET      ✕ blockiert          30 s                        │
+│REGION   ! Fehler             2 T. · veraltet             │
+│STATE    ✓ bestätigt          45 s                        │
+│APP      ✓ bestätigt          45 s                        │
+│Letzter Fehler: abweichendes Ausgangsland                 │
+│                                                          │
+│                                                          │
+│                                                          │
+│                                                          │
+╰──────────────────────────────────────────────────────────╯
+
+
+

@@ -1,0 +1,24 @@
+
+╭ Tunnel (bozza) · bozza 5/6 · host-off-app-active ────────────────────────────╮
+│Host: off · Sessioni app: 1                                                   │
+│Condizione: degradato · tunnel separati                                       │
+│Asse     Stato                Età                                             │
+│NET      ✕ bloccato           30 s                                            │
+│REGION   ! errore             2 g · non aggiornato                            │
+│STATE    ✓ verificato         45 s                                            │
+│APP      ✓ verificato         45 s                                            │
+│Ultimo errore: paese di uscita non corrisponde                                │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+
+
+

@@ -4,41 +4,59 @@
     "host": "off",
     "apps": "separate",
     "condition": "unknown",
-    "axes": { "net": "unknown", "region": "unknown", "state": "unknown", "app": "unknown" }
+    "axes": { "net": "unknown", "region": "unknown", "state": "unknown", "app": "unknown" },
+    "age_s": { "net": null, "region": null, "state": null, "app": null },
+    "failure": null,
+    "sessions": 0
   },
   {
     "name": "host-proxy",
     "host": "proxy",
     "apps": "separate",
     "condition": "degraded",
-    "axes": { "net": "partial", "region": "verified", "state": "verified", "app": "unknown" }
+    "axes": { "net": "partial", "region": "verified", "state": "verified", "app": "unknown" },
+    "age_s": { "net": 40, "region": 300, "state": 5400, "app": null },
+    "failure": null,
+    "sessions": 1
   },
   {
     "name": "host-tunnel",
     "host": "tunnel",
     "apps": "shared",
     "condition": "unknown",
-    "axes": { "net": "verified", "region": "partial", "state": "partial", "app": "partial" }
+    "axes": { "net": "verified", "region": "partial", "state": "partial", "app": "partial" },
+    "age_s": { "net": 12, "region": 900, "state": 600, "app": 7200 },
+    "failure": null,
+    "sessions": 2
   },
   {
     "name": "apps-separate-blocked",
     "host": "tunnel",
     "apps": "separate",
     "condition": "blocked",
-    "axes": { "net": "blocked", "region": "blocked", "state": "blocked", "app": "blocked" }
+    "axes": { "net": "blocked", "region": "blocked", "state": "blocked", "app": "blocked" },
+    "age_s": { "net": 8, "region": 8, "state": 8, "app": 8 },
+    "failure": "dns-check",
+    "sessions": 2
   },
   {
     "name": "host-off-app-active",
     "host": "off",
     "apps": "separate",
     "condition": "degraded",
-    "axes": { "net": "blocked", "region": "error", "state": "verified", "app": "verified" }
+    "axes": { "net": "blocked", "region": "error", "state": "verified", "app": "verified" },
+    "age_s": { "net": 30, "region": 200000, "state": 45, "app": 45 },
+    "failure": "region-mismatch",
+    "sessions": 1
   },
   {
     "name": "shared-unknown",
     "host": "proxy",
     "apps": "shared",
     "condition": "unknown",
-    "axes": { "net": "error", "region": "unknown", "state": "error", "app": "error" }
+    "axes": { "net": "error", "region": "unknown", "state": "error", "app": "error" },
+    "age_s": { "net": 15, "region": null, "state": 15, "app": 15 },
+    "failure": "api-down",
+    "sessions": 3
   }
 ]

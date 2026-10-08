@@ -1,0 +1,44 @@
+{
+  "date": "2026-10-08",
+  "git_revision": "659421b4bcf50c9966bc564f312ef87355a5563a",
+  "dirty_tree": true,
+  "package": "I17-D",
+  "tasks": [
+    "I17-D.T03.a",
+    "I17-D.T04.a",
+    "I17-D.T05.a"
+  ],
+  "level": "L1",
+  "status": "PASS",
+  "executor": "coordinator (Claude)",
+  "checks": [
+    {
+      "id": "I17-D.T03.a",
+      "command": "cargo test --offline --locked --target x86_64-unknown-linux-musl --bin cm mock_tunnels",
+      "result": "PASS",
+      "detail": "src/tui/mock_tunnels.rs, behind CM_TUI_MOCK_TUNNELS=1 (key m on the VPN screen). Every fixture renders NET/REGION/STATE/APP with a symbol, a word and the evidence age; no row sums the axes into ok. Evidence older than one hour is marked stale. Stop follows I17D-NAV: the question names the consequence, takes the table's place, y/Enter or n/Esc answer it, other keys keep it."
+    },
+    {
+      "id": "I17-D.T04.a",
+      "command": "(cd cosmic && cargo build && cargo test tunnel)",
+      "result": "PASS",
+      "detail": "cosmic/res/icons/cm-tunnel-{app-only,partial,blocked}-symbolic.svg, embedded by cosmic/src/tunnel_icons.rs. Single symbolic colour #2e3436, so light and dark themes recolour them; distinct from each other and from the update badges. Rendered at 16 px and 96 px on light and dark backgrounds during review."
+    },
+    {
+      "id": "I17-D.T05.a",
+      "command": "cargo test --bin cm mock_tunnels::tests::snapshots_per_size_and_language (CM_UPDATE_SNAPSHOTS=1 rewrites)",
+      "result": "PASS",
+      "detail": "24 snapshots: 40x12, 60x18, 80x24, 120x32 in ru, en, de, it, zh, ar. Each asserts the four axes, the failure line and the live session count; non-Russian snapshots must contain no Cyrillic. The German failure text was reworded so a 40-column cut keeps its negation."
+    }
+  ],
+  "hashes": {
+    "src/tui/mock_tunnels.rs": "9349bf3c11ccf54eb84bcf9810b166002ccc0675104c6432a87a71d86732ea56",
+    "cosmic/src/tunnel_icons.rs": "57e4cec61602381b36990f01041801868118b7245c0a219f8802f1ac5f83640e",
+    "tests/fixtures/i17/states.json": "10536748c84da3c290200a5a59a835c07e55577dc094dff3759f0565cedf964b",
+    "snapshots": 24
+  },
+  "not_closed": [
+    "Real tunnel states replace the fixtures in I17 (I17.T01.a and later).",
+    "Right-to-left layout for Arabic is the terminal's: text is shaped but the table stays left-to-right, as on the other screens."
+  ]
+}
