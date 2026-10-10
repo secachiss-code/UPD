@@ -1396,6 +1396,17 @@ fn system_units(bin: &str, watch: Option<&str>) -> Vec<(&'static str, String)> {
         "cm-helper.service",
         format!("[Unit]\nDescription=cm: privileged helper for the graphical interface\nRequires=cm-helper.socket\nAfter=cm-helper.socket\n\n[Service]\nType=simple\nExecStart={bin} helper\nKillMode=process\n"),
     ));
+    // контроллер туннелей приложений: запускается по обращению к сокету; личность клиента
+    // берёт из сокета, права проверяет через polkit. KillMode=process: остановка службы
+    // не трогает приложения пользователя, ядра контроллер останавливает сам.
+    u.push((
+        "cm-controller.socket",
+        "[Unit]\nDescription=cm: controller socket for application tunnels\n\n[Socket]\nListenStream=/run/cm/controller.sock\nSocketMode=0666\nDirectoryMode=0755\nRemoveOnStop=yes\n\n[Install]\nWantedBy=sockets.target\n".to_string(),
+    ));
+    u.push((
+        "cm-controller.service",
+        format!("[Unit]\nDescription=cm: privileged controller for application tunnels\nRequires=cm-controller.socket\nAfter=cm-controller.socket\n\n[Service]\nType=simple\nExecStart={bin} controller serve --socket /run/cm/controller.sock\nStateDirectory=cm/users\nStateDirectoryMode=0711\nKillMode=process\n"),
+    ));
     if let Some(w) = watch {
         u.push((
             "cm-mirrors.path",
@@ -1703,7 +1714,7 @@ fn logged_in_users() -> Vec<String> {
 
 fn enable_units(b: &dyn Backend, c: &Config, ok: &dyn Fn(String)) -> Result<(), String> {
     let _ = run(true, &[], "systemctl", &["daemon-reload"]);
-    let mut enable = vec!["cm-auto.timer", "cm-net.timer", "cm-helper.socket"];
+    let mut enable = vec!["cm-auto.timer", "cm-net.timer", "cm-helper.socket", "cm-controller.socket"];
     if b.mirrors_managed() && b.watch_path().is_some() {
         enable.push("cm-mirrors.path");
     }
@@ -1904,7 +1915,7 @@ fn cmd_uninstall(b: &dyn Backend, pkg: bool) -> i32 {
     }
     if systemd() {
         let mut names: Vec<&str> = system_units(PKG_BIN, Some("-")).iter().map(|x| x.0).collect();
-        names.retain(|n| !n.ends_with(".service") || *n == vpn::SERVICE || *n == "cm-helper.service");
+        names.retain(|n| !n.ends_with(".service") || *n == vpn::SERVICE || *n == "cm-helper.service" || *n == "cm-controller.service");
         let _ = run(true, &[], "systemctl", &["--global", "disable", "cm-notify.timer"]);
         for user in logged_in_users() {
             let _ = run(true, &[], "systemctl", &["--user", "-M", &format!("{user}@"), "stop", "cm-notify.timer"]);
@@ -2160,6 +2171,18 @@ mod contract_tests {
         let m = action(helper::ACTION_MANAGE);
         assert!(m.contains("<allow_active>auth_admin_keep</allow_active>") && m.contains("<allow_inactive>auth_admin</allow_inactive>"), "{m}");
         assert!(p.contains("xml:lang=\"ru\"") && p.contains("<!-- Managed by cm -->"));
+    }
+
+    #[test]
+    fn i06_controller_is_socket_activated_and_keeps_user_applications() {
+        let units = system_units("/usr/bin/cm", None);
+        let socket = &units.iter().find(|u| u.0 == "cm-controller.socket").unwrap().1;
+        assert!(socket.contains("ListenStream=/run/cm/controller.sock\n") && socket.contains("SocketMode=0666\n"));
+        let service = &units.iter().find(|u| u.0 == "cm-controller.service").unwrap().1;
+        assert!(service.contains("ExecStart=/usr/bin/cm controller serve --socket /run/cm/controller.sock\n"));
+        assert!(service.contains("StateDirectory=cm/users\n") && service.contains("StateDirectoryMode=0711\n"));
+        assert!(service.contains("KillMode=process\n") && !service.contains("[Install]"), "запускается только по сокету");
+        assert_eq!(cm::controller::owner::SYSTEM_BASE, "/var/lib/cm/users");
     }
 
     #[test]
