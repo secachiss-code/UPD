@@ -1583,120 +1583,236 @@
       "critical": false
     },
     {
-      "id": "I06.T01.b",
+      "id": "I06.P1",
       "milestone": "I06",
-      "title": "Typed протокол и polkit-действия",
-      "size": "M",
+      "title": "Описать кадры запроса и ответа контроллера",
+      "size": "S",
       "level": "L1",
       "depends_on": [
         "I06.T01.a",
         "H.09"
       ],
-      "what": "Versioned serde enum, классы операций → отдельные polkit actions, лимиты размера сообщения.",
-      "outputs": "src/controller/protocol.rs; polkit policy",
-      "done_when": "Fuzz-цель декодера готова.",
+      "what": "I06-DAG.md, вершина I06.P1.",
+      "outputs": "src/controller/mod.rs, src/controller/protocol.rs, src/lib.rs",
+      "done_when": "C01: Кадр несёт только версию, ключ и операцию; uid, путей и байтов конфига в схеме нет.; C03: У каждого класса операций своё действие polkit; `manage` не используется.",
       "decision": null,
       "wave": 5,
       "critical": false
     },
     {
-      "id": "I06.T02.a",
+      "id": "I06.P2",
       "milestone": "I06",
-      "title": "Идентификация peer",
+      "title": "Декодировать и кодировать кадры с жёсткими пределами",
       "size": "M",
       "level": "L1",
       "depends_on": [
-        "I06.T01.b"
+        "I06.P1"
       ],
-      "what": "SO_PEERCRED + pidfd + start time + cgroup + logind session + netns inode; правила передачи FD.",
-      "outputs": "src/controller/peer.rs",
-      "done_when": "PID reuse ловится через pidfd в тесте.",
+      "what": "I06-DAG.md, вершина I06.P2.",
+      "outputs": "src/controller/codec.rs",
+      "done_when": "C02: Декодер отвергает всё, что не является точным кадром версии 1, и не читает больше 64 КиБ.",
       "decision": null,
       "wave": 6,
       "critical": false
     },
     {
-      "id": "I06.T02.b",
+      "id": "I06.P3",
       "milestone": "I06",
-      "title": "Возврат к исходному пользователю",
-      "size": "S",
+      "title": "Сопоставить классы операций с действиями polkit и проверять права",
+      "size": "M",
       "level": "L1",
       "depends_on": [
-        "I06.T02.a"
+        "I06.P1"
       ],
-      "what": "AppLaunch выполняется под uid/gid/groups вызывающего, не root.",
-      "outputs": "src/controller/drop.rs",
-      "done_when": "Тест: дочерний процесс имеет uid вызывающего и пустые capabilities.",
+      "what": "I06-DAG.md, вершина I06.P3.",
+      "outputs": "src/controller/actions.rs, src/helper/auth.rs, src/main.rs, src/i18n_table.rs",
+      "done_when": "C04: Проверка прав получает личность peer целиком и не знает uid из запроса; реализация pkcheck одна.",
       "decision": null,
-      "wave": 7,
+      "wave": 6,
       "critical": false
     },
     {
-      "id": "I06.T03.a",
+      "id": "I06.I1",
       "milestone": "I06",
-      "title": "Журнал владения и транзакции",
-      "size": "L",
+      "title": "Установить личность процесса на другом конце сокета",
+      "size": "M",
       "level": "L1",
       "depends_on": [
-        "I06.T02.a",
-        "I04.T02.b"
+        "I06.T01.a"
       ],
-      "what": "allocate/apply/check/stop/reconcile; журнал в Store; compensation при частичном отказе; ключи идемпотентности.",
-      "outputs": "src/controller/txn.rs",
-      "done_when": "Fault injection на каждом шаге → консистентное состояние после reconcile.",
+      "what": "I06-DAG.md, вершина I06.I1.",
+      "outputs": "src/controller/peer.rs",
+      "done_when": "C05: uid, gid и pid берутся только из SO_PEERCRED; подмена PID после захвата обнаруживается.; C06: Диспетчер проверяет личность перед каждой операцией, а не один раз на соединение.",
       "decision": null,
-      "wave": 7,
+      "wave": 5,
       "critical": false
     },
     {
-      "id": "I06.T03.b",
+      "id": "I06.I2",
       "milestone": "I06",
-      "title": "Интеграция с CoreAdapter",
+      "title": "Вычислить каталог, файл конфига и имя юнита владельца из uid peer",
+      "size": "M",
+      "level": "L1",
+      "depends_on": [
+        "I06.I1"
+      ],
+      "what": "I06-DAG.md, вершина I06.I2.",
+      "outputs": "src/controller/owner.rs, src/core/unit.rs",
+      "done_when": "C07: Каталог, конфиг и имя юнита однозначно определяются uid peer и именем экземпляра; чужой файл не читается.",
+      "decision": null,
+      "wave": 6,
+      "critical": false
+    },
+    {
+      "id": "I06.H1",
+      "milestone": "I06",
+      "title": "Подготовить дочерний процесс: дескрипторы, пределы, capabilities, секреты через fd",
+      "size": "M",
+      "level": "L1",
+      "depends_on": [
+        "I06.T01.a"
+      ],
+      "what": "I06-DAG.md, вершина I06.H1.",
+      "outputs": "src/controller/harden.rs",
+      "done_when": "C08: Дочерний процесс не наследует дескрипторы, capabilities и возможность их вернуть.",
+      "decision": null,
+      "wave": 5,
+      "critical": false
+    },
+    {
+      "id": "I06.I3",
+      "milestone": "I06",
+      "title": "Запускать процесс от имени вызывающего пользователя, а не root",
       "size": "M",
       "level": "L2",
       "depends_on": [
-        "I06.T03.a",
+        "I06.H1"
+      ],
+      "what": "I06-DAG.md, вершина I06.I3.",
+      "outputs": "src/controller/drop.rs, src/core/mihomo/lifecycle.rs",
+      "done_when": "C09: Процесс worker и приложения работает под uid, gid и группами вызывающего и не может вернуть root.",
+      "decision": null,
+      "wave": 6,
+      "critical": false
+    },
+    {
+      "id": "I06.T1",
+      "milestone": "I06",
+      "title": "Вести журнал владения с дозаписью и восстановлением после обрыва",
+      "size": "M",
+      "level": "L1",
+      "depends_on": [
+        "I04.T02.b"
+      ],
+      "what": "I06-DAG.md, вершина I06.T1.",
+      "outputs": "src/controller/journal.rs",
+      "done_when": "C10: Журнал переживает обрыв записи и восстанавливает состояние каждой транзакции.; C12: Повторный запрос с тем же ключом не выполняется второй раз.",
+      "decision": null,
+      "wave": 4,
+      "critical": false
+    },
+    {
+      "id": "I06.T2",
+      "milestone": "I06",
+      "title": "Выполнять шаги транзакции с компенсацией и восстановлением",
+      "size": "L",
+      "level": "L1",
+      "depends_on": [
+        "I06.T1"
+      ],
+      "what": "I06-DAG.md, вершина I06.T2.",
+      "outputs": "src/controller/txn.rs",
+      "done_when": "C11: При отказе шага выполненное откатывается в обратном порядке; обрыв процесса оставляет след, по которому reconcile завершает откат.",
+      "decision": null,
+      "wave": 5,
+      "critical": false
+    },
+    {
+      "id": "I06.T3",
+      "milestone": "I06",
+      "title": "Хранить поколения и отвечать на повторный запрос сохранённым ответом",
+      "size": "M",
+      "level": "L1",
+      "depends_on": [
+        "I06.T1"
+      ],
+      "what": "I06-DAG.md, вершина I06.T3.",
+      "outputs": "src/controller/registry.rs",
+      "done_when": "C13: Устаревшее поколение отвергается; поколение хранится атомарно и по uid.",
+      "decision": null,
+      "wave": 5,
+      "critical": false
+    },
+    {
+      "id": "I06.W1",
+      "milestone": "I06",
+      "title": "Управлять жизненным циклом worker через CoreAdapter как транзакциями",
+      "size": "L",
+      "level": "L2",
+      "depends_on": [
+        "I06.T2",
+        "I06.T3",
+        "I06.I2",
+        "I06.I3",
         "I04.T05.a"
       ],
-      "what": "Контроллер управляет instance через адаптер; generation ownership.",
+      "what": "I06-DAG.md, вершина I06.W1.",
       "outputs": "src/controller/core_ops.rs",
-      "done_when": "Harness: старт/стоп instance только через контроллер.",
+      "done_when": "C14: Жизненный цикл worker идёт только через контроллер; отказ адаптера не оставляет следов; экземпляры разных uid не видят друг друга.",
       "decision": null,
       "wave": 9,
       "critical": true
     },
     {
-      "id": "I06.T04.a",
+      "id": "I06.W2",
       "milestone": "I06",
-      "title": "Ужесточение",
+      "title": "Провести кадр через проверки и вернуть ответ без утечек",
       "size": "M",
       "level": "L1",
       "depends_on": [
-        "I06.T03.b"
+        "I06.P2",
+        "I06.P3",
+        "I06.I1",
+        "I06.W1"
       ],
-      "what": "Bounding capabilities, close_range для унаследованных FD, секреты через memfd/FD (не argv/env), rlimits, квоты instance, лимит конкурентных операций, таймауты, редакция диагностики.",
-      "outputs": "src/controller/*",
-      "done_when": "Чек-лист с тестом на каждый пункт.",
+      "what": "I06-DAG.md, вершина I06.W2.",
+      "outputs": "src/controller/dispatch.rs",
+      "done_when": "C15: Каждый кадр проходит один и тот же порядок проверок; ответ не содержит ничего кроме кода и данных ответа.",
       "decision": null,
       "wave": 10,
       "critical": true
     },
     {
-      "id": "I06.T05.a",
+      "id": "I06.S1",
       "milestone": "I06",
-      "title": "Отрицательные проверки",
+      "title": "Дать вход `cm controller serve` на unix-сокете",
       "size": "M",
       "level": "L2",
       "depends_on": [
-        "I06.T04.a",
-        "I06.T02.b",
-        "I04.T05.c"
+        "I06.W2"
       ],
-      "what": "Чужой uid, PID reuse, argv/path injection, устаревший запрос, crash посреди транзакции, fuzz декодера (cargo-fuzz, ≥1 ч).",
-      "outputs": "i06-evidence",
-      "done_when": "0 обходов; найденные креши исправлены и превращены в регрессии.",
+      "what": "I06-DAG.md, вершина I06.S1.",
+      "outputs": "src/controller/server.rs, src/main.rs",
+      "done_when": "C16: Сервис на сокете выполняет полный сценарий worker и выдерживает отрицательные проверки.",
       "decision": null,
       "wave": 11,
+      "critical": true
+    },
+    {
+      "id": "I06.T05.a",
+      "milestone": "I06",
+      "title": "Принять контроллер отрицательными проверками",
+      "size": "M",
+      "level": "L2",
+      "depends_on": [
+        "I06.S1",
+        "I04.T05.c"
+      ],
+      "what": "I06-DAG.md, вершина I06.T05.a.",
+      "outputs": "docs/design/cm-network-manager/i06-evidence/<дата>/summary.json",
+      "done_when": "Все рёбра I06-DAG проверены, обходов нет, evidence записан.",
+      "decision": null,
+      "wave": 12,
       "critical": true
     },
     {
@@ -1713,7 +1829,7 @@
       "outputs": "I07-PACKET-FLOW.md + схема",
       "done_when": "Ревью: каждый пакетный путь имеет владельца.",
       "decision": null,
-      "wave": 12,
+      "wave": 13,
       "critical": true
     },
     {
@@ -1729,7 +1845,7 @@
       "outputs": "ADR-FIREWALL-BACKEND.md",
       "done_when": "Матрица дистрибутивов из «Поддерживаемых систем».",
       "decision": null,
-      "wave": 13,
+      "wave": 14,
       "critical": true
     },
     {
@@ -1745,7 +1861,7 @@
       "outputs": "src/net/egress.rs",
       "done_when": "Capture: endpoint ядра идёт мимо TUN при включённом host tunnel.",
       "decision": null,
-      "wave": 14,
+      "wave": 15,
       "critical": true
     },
     {
@@ -1761,7 +1877,7 @@
       "outputs": "src/net/host.rs",
       "done_when": "Все 6 переходов проверены на harness.",
       "decision": null,
-      "wave": 15,
+      "wave": 16,
       "critical": true
     },
     {
@@ -1777,7 +1893,7 @@
       "outputs": "src/net/integration.rs",
       "done_when": "Включение/выключение Wi-Fi и чужого VPN не ломает состояние.",
       "decision": null,
-      "wave": 16,
+      "wave": 17,
       "critical": true
     },
     {
@@ -1793,7 +1909,7 @@
       "outputs": "i07-evidence (для I08)",
       "done_when": "App workers сохраняют egress; утечек нет на capture.",
       "decision": null,
-      "wave": 17,
+      "wave": 18,
       "critical": true
     },
     {
@@ -1809,7 +1925,7 @@
       "outputs": "QUESTIONS.md Q09",
       "done_when": "Решение пользователя.",
       "decision": null,
-      "wave": 13,
+      "wave": 14,
       "critical": false
     },
     {
@@ -1826,7 +1942,7 @@
       "outputs": "ADR-APP-NETNS.md",
       "done_when": "Все пути выхода перечислены и закрыты либо разрешены по Q09.",
       "decision": null,
-      "wave": 18,
+      "wave": 19,
       "critical": true
     },
     {
@@ -1843,7 +1959,7 @@
       "outputs": "src/net/appns.rs",
       "done_when": "До подключения worker любой выход блокируется (capture).",
       "decision": null,
-      "wave": 19,
+      "wave": 20,
       "critical": true
     },
     {
@@ -1859,7 +1975,7 @@
       "outputs": "tests/netharness/run-in-ns",
       "done_when": "Процесс получает uid пользователя и только этот netns.",
       "decision": null,
-      "wave": 20,
+      "wave": 21,
       "critical": true
     },
     {
@@ -1875,7 +1991,7 @@
       "outputs": "i08-evidence",
       "done_when": "Каждый путь: прошёл через tunnel или заблокирован.",
       "decision": null,
-      "wave": 21,
+      "wave": 22,
       "critical": true
     },
     {
@@ -1891,7 +2007,7 @@
       "outputs": "i08-evidence",
       "done_when": "Удаление одного не задевает другого.",
       "decision": null,
-      "wave": 22,
+      "wave": 23,
       "critical": true
     },
     {
@@ -1907,7 +2023,7 @@
       "outputs": "src/net/state.rs",
       "done_when": "Property-тест: недопустимые переходы невозможны.",
       "decision": null,
-      "wave": 23,
+      "wave": 24,
       "critical": true
     },
     {
@@ -1923,7 +2039,7 @@
       "outputs": "src/net/block.rs",
       "done_when": "kill всех процессов CM → приложение без сети, не напрямую.",
       "decision": null,
-      "wave": 24,
+      "wave": 25,
       "critical": true
     },
     {
@@ -1939,7 +2055,7 @@
       "outputs": "packaging/systemd/cm-reconcile.service",
       "done_when": "Reboot посреди reload → консистентное состояние.",
       "decision": null,
-      "wave": 25,
+      "wave": 26,
       "critical": true
     },
     {
@@ -1955,7 +2071,7 @@
       "outputs": "src/net/failure.rs",
       "done_when": "Решение по Q13 применено.",
       "decision": null,
-      "wave": 26,
+      "wave": 27,
       "critical": true
     },
     {
@@ -1971,7 +2087,7 @@
       "outputs": "i09-evidence/fault-matrix",
       "done_when": "0 прямых утечек.",
       "decision": null,
-      "wave": 27,
+      "wave": 28,
       "critical": true
     },
     {
@@ -2004,7 +2120,7 @@
       "outputs": "i10-evidence/mihomo",
       "done_when": "Таблица qtype × результат.",
       "decision": null,
-      "wave": 23,
+      "wave": 24,
       "critical": false
     },
     {
@@ -2038,7 +2154,7 @@
       "outputs": "ADR-DNS.md",
       "done_when": "Решение по данным проб.",
       "decision": null,
-      "wave": 24,
+      "wave": 25,
       "critical": false
     },
     {
@@ -2055,7 +2171,7 @@
       "outputs": "src/net/dns.rs",
       "done_when": "Capture без DNS вне tunnel.",
       "decision": null,
-      "wave": 28,
+      "wave": 29,
       "critical": true
     },
     {
@@ -2071,7 +2187,7 @@
       "outputs": "i10-evidence/matrix",
       "done_when": "Pass или явный block на обоих адаптерах.",
       "decision": null,
-      "wave": 29,
+      "wave": 30,
       "critical": true
     },
     {
@@ -2087,7 +2203,7 @@
       "outputs": "profiles/model.rs",
       "done_when": "Валидация с отказами на относительный путь/NUL.",
       "decision": null,
-      "wave": 30,
+      "wave": 31,
       "critical": true
     },
     {
@@ -2103,7 +2219,7 @@
       "outputs": "src/controller/launch.rs",
       "done_when": "Harness: процесс в нужном netns/cgroup под uid пользователя.",
       "decision": null,
-      "wave": 31,
+      "wave": 32,
       "critical": true
     },
     {
@@ -2119,7 +2235,7 @@
       "outputs": "src/app/*.rs",
       "done_when": "Fixtures имён с пробелами, кавычками, юникодом.",
       "decision": null,
-      "wave": 32,
+      "wave": 33,
       "critical": true
     },
     {
@@ -2135,7 +2251,7 @@
       "outputs": "src/app/instance.rs",
       "done_when": "Сценарий браузера: второй запуск не уходит в host-сеть молча.",
       "decision": null,
-      "wave": 33,
+      "wave": 34,
       "critical": true
     },
     {
@@ -2151,7 +2267,7 @@
       "outputs": "i11-evidence",
       "done_when": "Все сценарии воспроизводимы.",
       "decision": null,
-      "wave": 34,
+      "wave": 35,
       "critical": true
     },
     {
@@ -2167,7 +2283,7 @@
       "outputs": "src/app/assign.rs",
       "done_when": "Две подписки одновременно на разных apps.",
       "decision": null,
-      "wave": 35,
+      "wave": 36,
       "critical": true
     },
     {
@@ -2183,7 +2299,7 @@
       "outputs": "src/app/shared.rs",
       "done_when": "Property-тест refcount.",
       "decision": null,
-      "wave": 36,
+      "wave": 37,
       "critical": true
     },
     {
@@ -2199,7 +2315,7 @@
       "outputs": "src/app/env.rs",
       "done_when": "Private state не смешивается.",
       "decision": null,
-      "wave": 37,
+      "wave": 38,
       "critical": true
     },
     {
@@ -2215,7 +2331,7 @@
       "outputs": "src/app/reassign.rs",
       "done_when": "Сценарий исчезновения узла посреди сессии.",
       "decision": null,
-      "wave": 38,
+      "wave": 39,
       "critical": true
     },
     {
@@ -2231,7 +2347,7 @@
       "outputs": "i12-evidence",
       "done_when": "Все сценарии pass.",
       "decision": null,
-      "wave": 39,
+      "wave": 40,
       "critical": true
     },
     {
@@ -2247,7 +2363,7 @@
       "outputs": "I13-MATRIX.md",
       "done_when": "Для каждой ячейки известен executor.",
       "decision": null,
-      "wave": 35,
+      "wave": 36,
       "critical": false
     },
     {
@@ -2264,7 +2380,7 @@
       "outputs": "tests/brokers/",
       "done_when": "Fixtures воспроизводимы.",
       "decision": null,
-      "wave": 40,
+      "wave": 41,
       "critical": true
     },
     {
@@ -2280,7 +2396,7 @@
       "outputs": "src/app/packaging/*.rs",
       "done_when": "Каждый адаптер: supported/partial/unsupported с причиной.",
       "decision": null,
-      "wave": 41,
+      "wave": 42,
       "critical": true
     },
     {
@@ -2296,7 +2412,7 @@
       "outputs": "src/app/broker_policy.rs",
       "done_when": "UI/CLI показывает последствия.",
       "decision": null,
-      "wave": 42,
+      "wave": 43,
       "critical": true
     },
     {
@@ -2312,7 +2428,7 @@
       "outputs": "i13-evidence",
       "done_when": "Матрица заполнена доказательствами.",
       "decision": null,
-      "wave": 43,
+      "wave": 44,
       "critical": true
     },
     {
@@ -2328,7 +2444,7 @@
       "outputs": "src/env/geo.rs",
       "done_when": "Политика расхождений проверена fixtures.",
       "decision": null,
-      "wave": 30,
+      "wave": 31,
       "critical": false
     },
     {
@@ -2346,7 +2462,7 @@
       "outputs": "src/env/apply.rs",
       "done_when": "Хост не меняется.",
       "decision": null,
-      "wave": 32,
+      "wave": 33,
       "critical": false
     },
     {
@@ -2362,7 +2478,7 @@
       "outputs": "i14-evidence",
       "done_when": "Значения совпадают с пресетом.",
       "decision": null,
-      "wave": 33,
+      "wave": 34,
       "critical": false
     },
     {
@@ -2378,7 +2494,7 @@
       "outputs": "src/env/geo.rs",
       "done_when": "Сценарий смены страны.",
       "decision": null,
-      "wave": 34,
+      "wave": 35,
       "critical": false
     },
     {
@@ -2770,7 +2886,7 @@
       "outputs": "ADR-APP-ADAPTER.md",
       "done_when": "Scope согласован с G4/G5.",
       "decision": null,
-      "wave": 44,
+      "wave": 45,
       "critical": true
     },
     {
@@ -2786,7 +2902,7 @@
       "outputs": "src/env/private.rs",
       "done_when": "Каждая граница проверена.",
       "decision": null,
-      "wave": 45,
+      "wave": 46,
       "critical": true
     },
     {
@@ -2803,7 +2919,7 @@
       "outputs": "i15-evidence",
       "done_when": "Нет неподтверждённых гарантий в UI.",
       "decision": null,
-      "wave": 46,
+      "wave": 47,
       "critical": true
     },
     {
@@ -2825,7 +2941,7 @@
       "outputs": "src/quality/constraints.rs",
       "done_when": "Fixtures отсечения.",
       "decision": null,
-      "wave": 40,
+      "wave": 41,
       "critical": false
     },
     {
@@ -2841,7 +2957,7 @@
       "outputs": "src/quality/metrics.rs",
       "done_when": "Budget не превышается.",
       "decision": null,
-      "wave": 41,
+      "wave": 42,
       "critical": false
     },
     {
@@ -2857,7 +2973,7 @@
       "outputs": "i16-evidence/pilot",
       "done_when": "Параметры выведены из данных.",
       "decision": null,
-      "wave": 42,
+      "wave": 43,
       "critical": false
     },
     {
@@ -2873,7 +2989,7 @@
       "outputs": "src/quality/select.rs",
       "done_when": "Property-тест отсутствия флаппинга.",
       "decision": null,
-      "wave": 43,
+      "wave": 44,
       "critical": false
     },
     {
@@ -2889,7 +3005,7 @@
       "outputs": "i16-evidence",
       "done_when": "Каждое решение объяснимо.",
       "decision": null,
-      "wave": 44,
+      "wave": 45,
       "critical": false
     },
     {
@@ -2985,7 +3101,7 @@
       "outputs": "I17-UI-CONTRACT.md",
       "done_when": "Нет provisional полей.",
       "decision": null,
-      "wave": 47,
+      "wave": 48,
       "critical": true
     },
     {
@@ -3001,7 +3117,7 @@
       "outputs": "src/tui/*",
       "done_when": "Фоновая модель как в 0.2.7.",
       "decision": null,
-      "wave": 48,
+      "wave": 49,
       "critical": true
     },
     {
@@ -3017,7 +3133,7 @@
       "outputs": "src/diag/export.rs",
       "done_when": "Сканер секретов по экспорту = 0.",
       "decision": null,
-      "wave": 49,
+      "wave": 50,
       "critical": true
     },
     {
@@ -3033,7 +3149,7 @@
       "outputs": "cosmic/src/*",
       "done_when": "Ручная проверка на COSMIC.",
       "decision": null,
-      "wave": 50,
+      "wave": 51,
       "critical": true
     },
     {
@@ -3049,7 +3165,7 @@
       "outputs": "i17-evidence",
       "done_when": "Snapshot ↔ evidence совпадают.",
       "decision": null,
-      "wave": 51,
+      "wave": 52,
       "critical": true
     },
     {
@@ -3201,7 +3317,7 @@
       "outputs": "I18-TRACE.md",
       "done_when": "Трассировка полная.",
       "decision": null,
-      "wave": 52,
+      "wave": 53,
       "critical": true
     },
     {
@@ -3217,7 +3333,7 @@
       "outputs": "i18-evidence",
       "done_when": "Все критерии pass или явный blocked.",
       "decision": null,
-      "wave": 53,
+      "wave": 54,
       "critical": true
     },
     {
@@ -3233,7 +3349,7 @@
       "outputs": "i18-evidence/regress",
       "done_when": "Без регресса.",
       "decision": null,
-      "wave": 54,
+      "wave": 55,
       "critical": true
     },
     {
@@ -3249,7 +3365,7 @@
       "outputs": "RELEASE-SCOPE.md",
       "done_when": "Нет неподтверждённых гарантий.",
       "decision": null,
-      "wave": 55,
+      "wave": 56,
       "critical": true
     },
     {
@@ -3265,7 +3381,7 @@
       "outputs": "I18-ACCEPTANCE.md",
       "done_when": "Решение пользователя.",
       "decision": null,
-      "wave": 56,
+      "wave": 57,
       "critical": true
     }
   ],
@@ -3340,8 +3456,9 @@
     "I04.T04.a",
     "I04.T04.c",
     "I04.T05.a",
-    "I06.T03.b",
-    "I06.T04.a",
+    "I06.W1",
+    "I06.W2",
+    "I06.S1",
     "I06.T05.a",
     "I07.T01.a",
     "I07.T01.b",
@@ -3395,7 +3512,10 @@
     "V.05",
     "I05.T02.a",
     "I05.T04.a",
-    "I06.T01.b",
+    "I06.P1",
+    "I06.I1",
+    "I06.H1",
+    "I06.T1",
     "I10.T01.a",
     "I15-R.T04.a",
     "X.02",
@@ -3422,10 +3542,6 @@
     },
     {
       "task": "I06.T01.a",
-      "before_closure_of": "I04.T05"
-    },
-    {
-      "task": "I06.T01.b",
       "before_closure_of": "I04.T05"
     },
     {

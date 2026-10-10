@@ -74,6 +74,14 @@ DONE = [
     "BI.G1", "BI.G2", "BI.G3", "BI.L3", "BI.C1", "BI.C2", "BI.C3", "BI.Z",
 ]
 
+import direction_kit  # noqa: E402
+
+
+def kit_tasks(module):
+    """Вершины направления, описанного в формате direction_kit, как подзадачи рубежа."""
+    return direction_kit.tasks_for_remaining(module.V, module.E, module.CFG)
+
+
 MILESTONES = []  # (id, title, priority, lane, deps_text, goal, questions, gate)
 TASKS = []       # dicts
 
@@ -426,25 +434,11 @@ M("I06", "Привилегированный контроллер", "P0", "root"
 T("I06.T01.a", "ADR Q08: helper или отдельный сервис", "M", "D", ["H.07", "I04.T01.a"],
   "Сравнить расширение helper (сериализация пакетных операций) и `cm-netd` для параллельных сетевых операций.",
   "ADR-CONTROLLER.md", "Решение с учётом Q16 (несколько пользователей).")
-T("I06.T01.b", "Typed протокол и polkit-действия", "M", "L1", ["a", "H.09"],
-  "Versioned serde enum, классы операций → отдельные polkit actions, лимиты размера сообщения.",
-  "src/controller/protocol.rs; polkit policy", "Fuzz-цель декодера готова.")
-T("I06.T02.a", "Идентификация peer", "M", "L1", ["I06.T01.b"],
-  "SO_PEERCRED + pidfd + start time + cgroup + logind session + netns inode; правила передачи FD.",
-  "src/controller/peer.rs", "PID reuse ловится через pidfd в тесте.")
-T("I06.T02.b", "Возврат к исходному пользователю", "S", "L1", ["a"],
-  "AppLaunch выполняется под uid/gid/groups вызывающего, не root.", "src/controller/drop.rs", "Тест: дочерний процесс имеет uid вызывающего и пустые capabilities.")
-T("I06.T03.a", "Журнал владения и транзакции", "L", "L1", ["I06.T02.a", "I04.T02.b"],
-  "allocate/apply/check/stop/reconcile; журнал в Store; compensation при частичном отказе; ключи идемпотентности.",
-  "src/controller/txn.rs", "Fault injection на каждом шаге → консистентное состояние после reconcile.")
-T("I06.T03.b", "Интеграция с CoreAdapter", "M", "L2", ["a", "I04.T05.a"],
-  "Контроллер управляет instance через адаптер; generation ownership.", "src/controller/core_ops.rs", "Harness: старт/стоп instance только через контроллер.")
-T("I06.T04.a", "Ужесточение", "M", "L1", ["I06.T03.b"],
-  "Bounding capabilities, close_range для унаследованных FD, секреты через memfd/FD (не argv/env), rlimits, квоты instance, "
-  "лимит конкурентных операций, таймауты, редакция диагностики.", "src/controller/*", "Чек-лист с тестом на каждый пункт.")
-T("I06.T05.a", "Отрицательные проверки", "M", "L2", ["I06.T04.a", "I06.T02.b", "I04.T05.c"],
-  "Чужой uid, PID reuse, argv/path injection, устаревший запрос, crash посреди транзакции, fuzz декодера (cargo-fuzz, ≥1 ч).",
-  "i06-evidence", "0 обходов; найденные креши исправлены и превращены в регрессии.")
+# Вершины и рёбра-контракты рубежа — tools/i06_dag.py (I06-DAG.md). Приёмка сохраняет id I06.T05.a.
+import i06_dag  # noqa: E402
+
+for _t in kit_tasks(i06_dag):
+    T(_t["id"], _t["title"], _t["size"], _t["level"], _t["deps"] or ["I06.T01.a"], _t["what"], _t["out"], _t["done"])
 
 # ───────────────────────────── I07: режимы хоста и outer egress ─────────────────────────────
 M("I07", "Режимы хоста и outer egress", "P0", "net",

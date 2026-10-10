@@ -42,6 +42,10 @@ def executor(task):
         return USER_DECIDES[tid]
     if tid in ON_HOST:
         return "пользователь на хосте выполняет; Grok готовит driver и разбирает evidence"
+    if tid == "I06.T05.a":
+        return "роль 2: тесты и отрицательные проверки по рёбрам I06-DAG (TESTS-I06.md)"
+    if task["milestone"] == "I06" and tid != "I06.T01.a":
+        return "Grok (код за один проход, GROK-I06-CODE.md); тесты — роль 2"
     if tid == "BI.Z":
         return "роль 2: тесты и лаборатория по рёбрам BI-DAG (TESTS-BI.md)"
     if task["milestone"] == "BI":
