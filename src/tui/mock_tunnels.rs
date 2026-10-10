@@ -11,9 +11,6 @@ use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, BorderType, Cell, Paragraph, Row, Table, Wrap};
-use serde::Deserialize;
-use std::collections::BTreeMap;
-
 const FIXTURES: &str = include_str!("../../tests/fixtures/i17/states.json");
 const AXES: [&str; 4] = ["net", "region", "state", "app"];
 /// Evidence older than this is marked stale next to its age.
@@ -23,17 +20,7 @@ pub fn enabled() -> bool {
     std::env::var("CM_TUI_MOCK_TUNNELS").ok().as_deref() == Some("1")
 }
 
-#[derive(Clone, Debug, Deserialize)]
-pub struct Scenario {
-    pub name: String,
-    pub host: String,
-    pub apps: String,
-    pub condition: String,
-    pub axes: BTreeMap<String, String>,
-    pub age_s: BTreeMap<String, Option<u64>>,
-    pub failure: Option<String>,
-    pub sessions: u32,
-}
+pub use cm::status::tunnels::TunnelView as Scenario;
 
 pub fn scenarios() -> Vec<Scenario> {
     serde_json::from_str(FIXTURES).expect("tests/fixtures/i17/states.json")

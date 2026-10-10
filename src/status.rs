@@ -1,6 +1,8 @@
 //! Сводка состояния системы: общая для CLI, TUI и графического интерфейса.
 
 use crate::backend::Backend;
+
+pub mod tunnels;
 use crate::common::*;
 use crate::mirrors::load_mirror_state;
 use crate::{extras, vpn};

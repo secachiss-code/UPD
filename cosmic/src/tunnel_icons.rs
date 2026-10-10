@@ -40,6 +40,23 @@ impl TunnelBadge {
     }
 }
 
+/// Worst tunnel condition wins. An empty list leaves the update icon alone.
+pub fn badge_for(views: &[cm::status::tunnels::TunnelView]) -> Option<TunnelBadge> {
+    if views.iter().any(|view| view.condition == "blocked") {
+        return Some(TunnelBadge::Blocked);
+    }
+    if views.iter().any(|view| view.condition == "degraded") {
+        return Some(TunnelBadge::Partial);
+    }
+    if views
+        .iter()
+        .any(|view| view.host == "off" && view.sessions > 0)
+    {
+        return Some(TunnelBadge::HostOffAppActive);
+    }
+    None
+}
+
 /// Symbolic, so light and dark panel themes recolour it like the other badges.
 pub fn icon(badge: TunnelBadge, size: u16) -> Icon {
     let mut handle = widget::icon::from_svg_bytes(badge.svg());
