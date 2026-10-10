@@ -4,7 +4,7 @@ use std::path::Path;
 
 use crate::controller::client::{self, ClientError};
 use crate::controller::protocol::Op;
-use crate::profiles::ApplicationDefinition;
+use crate::profiles::{ApplicationAssignment, ApplicationDefinition};
 
 use super::desktop::desktop_entry;
 use super::spec::{self, SpecError};
@@ -18,7 +18,7 @@ pub fn dispatch(args: &[String]) -> i32 {
             print!(
                 "{}",
                 t!(
-                    "cm app check ФАЙЛ\ncm app desktop ID ИМЯ [--icon ЗНАЧОК]\ncm app run ЭКЗЕМПЛЯР -- ПРОГРАММА [АРГУМЕНТЫ]\n"
+                    "cm app check ФАЙЛ\ncm app desktop ID ИМЯ [--icon ЗНАЧОК]\ncm app run ID\ncm app run ЭКЗЕМПЛЯР -- ПРОГРАММА [АРГУМЕНТЫ]\n"
                 )
             );
             2
@@ -81,19 +81,30 @@ fn desktop(args: &[String]) -> i32 {
 }
 
 fn run(args: &[String]) -> i32 {
-    let Some(instance) = args.get(1).cloned() else {
+    let Some(first) = args.get(1).cloned() else {
         return 2;
     };
-    let Some(split) = args.iter().position(|arg| arg == "--") else {
-        return 2;
-    };
-    let Some(program) = args.get(split + 1).cloned() else {
-        return 2;
+    let (instance, program, rest) = match args.iter().position(|arg| arg == "--") {
+        Some(split) => {
+            let Some(program) = args.get(split + 1).cloned() else {
+                return 2;
+            };
+            (
+                first,
+                program,
+                args.get(split + 2..).unwrap_or(&[]).to_vec(),
+            )
+        }
+        // Ярлык передаёт только идентификатор: описание берётся из хранилища.
+        None if args.len() == 2 => match stored_launch(&first) {
+            Ok(launch) => launch,
+            Err(code) => return code,
+        },
+        None => return 2,
     };
     if !program.starts_with('/') {
         return 2;
     }
-    let rest = args.get(split + 2..).unwrap_or(&[]).to_vec();
     if spec::program_rejected(&program, &rest) {
         return 2;
     }
@@ -123,6 +134,7 @@ fn run(args: &[String]) -> i32 {
             generation,
             program,
             args: rest,
+            env: session_env(),
         },
     ) {
         Ok(reply) if reply.ok => {
@@ -138,6 +150,61 @@ fn run(args: &[String]) -> i32 {
         Err(ClientError::Unavailable) => 4,
         Err(_) => 4,
     }
+}
+
+/// Экземпляр туннеля, программа и аргументы приложения из хранилища.
+fn stored_launch(id: &str) -> Result<(String, String, Vec<String>), i32> {
+    let id = crate::profiles::Id::new(id).map_err(|_| 2)?;
+    let snapshot = crate::profiles::Store::open(crate::sources::cli::store_root())
+        .and_then(|store| store.read_snapshot())
+        .map_err(|_| 2)?;
+    let definition = snapshot.applications.get(&id).ok_or(2)?;
+    let instance = match &definition.assignment {
+        ApplicationAssignment::OwnTunnel { tunnel_instance_id } => tunnel_instance_id,
+        ApplicationAssignment::Group { group_id } => {
+            &snapshot
+                .application_groups
+                .get(group_id)
+                .ok_or(2)?
+                .tunnel_instance_id
+        }
+    };
+    let spec = spec::check(definition).map_err(|error| {
+        eprintln!("[{}]", error_token(&error));
+        2
+    })?;
+    let (program, args) = stored_command(&spec).ok_or(2)?;
+    Ok((instance.as_str().to_owned(), program, args))
+}
+
+/// Кадр контроллера несёт только программу и аргументы. Рабочий каталог и переменные
+/// описания ставит `env` уже внутри сети приложения и под uid пользователя.
+pub fn stored_command(spec: &spec::LaunchSpec) -> Option<(String, Vec<String>)> {
+    let program = spec.program.to_str()?.to_owned();
+    if spec.cwd.is_none() && spec.env.is_empty() {
+        return Some((program, spec.args.clone()));
+    }
+    let mut args = Vec::new();
+    if let Some(cwd) = &spec.cwd {
+        args.push(format!("--chdir={}", cwd.to_str()?));
+    }
+    for (key, value) in &spec.env {
+        args.push(format!("{key}={value}"));
+    }
+    args.push(program);
+    args.extend(spec.args.iter().cloned());
+    Some(("/usr/bin/env".to_owned(), args))
+}
+
+fn session_env() -> std::collections::BTreeMap<String, String> {
+    crate::controller::protocol::SESSION_ENV_KEYS
+        .iter()
+        .filter_map(|key| {
+            let value = std::env::var(key).ok()?;
+            (!value.is_empty() && value.len() <= crate::controller::protocol::MAX_ENV_VALUE_BYTES)
+                .then(|| ((*key).to_owned(), value))
+        })
+        .collect()
 }
 
 fn error_token(error: &SpecError) -> &'static str {
