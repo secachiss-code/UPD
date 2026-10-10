@@ -46,7 +46,7 @@ pub fn drop_pre_exec(
     keep_fds: &[RawFd],
     limits: ChildLimits,
 ) {
-    install(command, run_as, keep_fds, limits, false, None);
+    install(command, run_as, keep_fds, limits, false, None, Seal::Strict);
 }
 
 /// `setsid`, затем те же шаги, что у [`drop_pre_exec`]. Один `pre_exec`: std не гарантирует порядок нескольких.
@@ -56,7 +56,7 @@ pub fn worker_pre_exec(
     keep_fds: &[RawFd],
     limits: ChildLimits,
 ) {
-    install(command, run_as, keep_fds, limits, true, None);
+    install(command, run_as, keep_fds, limits, true, None, Seal::Strict);
 }
 
 pub fn spawn_as(
@@ -110,8 +110,21 @@ pub fn drop_into_netns_pre_exec(
         limits,
         false,
         Some(Netns { fd: netns, resolv }),
+        Seal::Session,
     );
     Ok(())
+}
+
+/// Что остаётся потомку после смены uid.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Seal {
+    /// Ядро и служебные процессы: пустой bounding set и запрет новых привилегий.
+    Strict,
+    /// Приложение пользователя: те же права, что у процесса его обычной сессии. Привилегий
+    /// у него нет (смена uid обнуляет наборы), но setuid-помощники системы — `fusermount`
+    /// для AppImage, `sudo` в терминале — работают как всегда. С запретом новых привилегий
+    /// такие приложения не запускались бы вовсе.
+    Session,
 }
 
 struct Netns {
@@ -172,6 +185,7 @@ fn install(
     limits: ChildLimits,
     new_session: bool,
     netns: Option<Netns>,
+    seal: Seal,
 ) {
     let keep = harden::sorted_keep(keep_fds);
     let groups: Vec<libc::gid_t> = run_as
@@ -191,6 +205,9 @@ fn install(
             if new_session && libc::setsid() == -1 {
                 return Err(std::io::Error::last_os_error());
             }
+            if seal == Seal::Strict {
+                harden::drop_bounding_set()?;
+            }
             if libc::setgroups(groups.len(), groups.as_ptr()) != 0 {
                 return Err(std::io::Error::last_os_error());
             }
@@ -203,7 +220,10 @@ fn install(
             if uid != 0 && libc::setresuid(0, 0, 0) == 0 {
                 libc::_exit(126);
             }
-            harden::apply_child(&keep, limits)
+            match seal {
+                Seal::Strict => harden::seal_child(&keep, limits),
+                Seal::Session => harden::seal_session(&keep),
+            }
         });
     }
 }

@@ -65,18 +65,17 @@ pub(crate) fn sorted_keep(keep_fds: &[RawFd]) -> Vec<RawFd> {
 }
 
 pub(crate) fn apply_child(keep: &[RawFd], limits: ChildLimits) -> io::Result<()> {
-    close_except(keep);
-    set_limit(libc::RLIMIT_NOFILE as u32, limits.nofile)?;
-    set_limit(libc::RLIMIT_CORE as u32, limits.core)?;
-    // SAFETY: prctl with integer arguments; no pointer into Rust memory.
-    if unsafe { libc::prctl(libc::PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) } != 0 {
-        return Err(io::Error::last_os_error());
-    }
-    // SAFETY: clears the ambient set of this child only.
-    unsafe { libc::prctl(libc::PR_CAP_AMBIENT_CLEAR_ALL, 0, 0, 0, 0) };
+    drop_bounding_set()?;
+    seal_child(keep, limits)
+}
+
+/// Пустой bounding set. Вызывается до смены uid: после неё у процесса уже нет
+/// `CAP_SETPCAP`, и набор остался бы полным. На `setgroups` и `setres*id` это не влияет:
+/// им нужен действующий набор, а не ограничивающий.
+pub(crate) fn drop_bounding_set() -> io::Result<()> {
     for cap in 0..=63 {
-        // SAFETY: drops one bounding-set capability in this child. EINVAL/EPERM are ignored:
-        // the number may not exist, and after setuid the caller may no longer hold CAP_SETPCAP.
+        // SAFETY: drops one bounding-set capability in this child. EINVAL means the number
+        // does not exist; EPERM means the caller never had CAP_SETPCAP (an unprivileged test).
         let rc = unsafe { libc::prctl(libc::PR_CAPBSET_DROP, cap, 0, 0, 0) };
         if rc != 0 {
             let err = io::Error::last_os_error();
@@ -86,6 +85,30 @@ pub(crate) fn apply_child(keep: &[RawFd], limits: ChildLimits) -> io::Result<()>
             }
         }
     }
+    Ok(())
+}
+
+/// Дескрипторы, пределы, запрет новых привилегий. Выполняется после смены uid.
+pub(crate) fn seal_child(keep: &[RawFd], limits: ChildLimits) -> io::Result<()> {
+    close_except(keep);
+    set_limit(libc::RLIMIT_NOFILE as u32, limits.nofile)?;
+    set_limit(libc::RLIMIT_CORE as u32, limits.core)?;
+    // SAFETY: prctl with integer arguments; no pointer into Rust memory.
+    if unsafe { libc::prctl(libc::PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) } != 0 {
+        return Err(io::Error::last_os_error());
+    }
+    // SAFETY: clears the ambient set of this child only.
+    unsafe { libc::prctl(libc::PR_CAP_AMBIENT_CLEAR_ALL, 0, 0, 0, 0) };
+    Ok(())
+}
+
+/// Приложение пользователя: чужие дескрипторы закрыты, дампы памяти выключены, ambient
+/// пуст. Предел файлов и возможность получить привилегии через setuid-программу — как в
+/// обычной сессии.
+pub(crate) fn seal_session(keep: &[RawFd]) -> io::Result<()> {
+    close_except(keep);
+    // SAFETY: clears the ambient set of this child only.
+    unsafe { libc::prctl(libc::PR_CAP_AMBIENT_CLEAR_ALL, 0, 0, 0, 0) };
     Ok(())
 }
 

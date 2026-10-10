@@ -7,11 +7,20 @@ use sha2::{Digest, Sha256};
 use super::protocol::{CONTROL_VERSION, ControlError, MAX_FRAME_BYTES, Request};
 use crate::core::instance::InstanceId;
 
-/// Читает один кадр до `\n`. Длиннее предела — `TooLarge`, хвост до перевода строки вычитывается.
+/// Сколько байт слишком длинного кадра вычитывается в поисках перевода строки. Дальше
+/// соединение не слушают: иначе поток без `\n` держал бы его бесконечно.
+const MAX_SKIP_BYTES: usize = 4 * MAX_FRAME_BYTES;
+
+/// Читает один кадр до `\n`. Длиннее предела — `TooLarge`; хвост до перевода строки
+/// вычитывается, но не дальше [`MAX_SKIP_BYTES`].
 pub fn read_frame(reader: &mut impl BufRead) -> Result<Option<Vec<u8>>, ControlError> {
     let mut buf = Vec::new();
     let mut oversized = false;
+    let mut skipped = 0usize;
     loop {
+        if skipped > MAX_SKIP_BYTES {
+            return Err(ControlError::TooLarge);
+        }
         let available = reader.fill_buf().map_err(io_frame)?;
         if available.is_empty() {
             if buf.is_empty() && !oversized {
@@ -42,6 +51,7 @@ pub fn read_frame(reader: &mut impl BufRead) -> Result<Option<Vec<u8>>, ControlE
         if oversized {
             let skip = available.len();
             reader.consume(skip);
+            skipped = skipped.saturating_add(skip);
             continue;
         }
         let room = MAX_FRAME_BYTES.saturating_add(1).saturating_sub(buf.len());
