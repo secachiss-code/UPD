@@ -49,14 +49,24 @@ pub fn parse_locale_list(text: &str) -> Vec<String> {
         .collect()
 }
 
+/// `de-DE.UTF-8`, `de_DE.UTF-8` and `de_DE.utf8` name one locale. The codeset is compared
+/// without case and hyphens; the language part only swaps `-` for `_`.
 pub fn normalize_locale(name: &str) -> String {
-    let mut text = name.replace('-', "_");
-    if let Some(suffix) = text
-        .strip_suffix(".UTF-8")
-        .or_else(|| text.strip_suffix(".utf-8"))
-        .or_else(|| text.strip_suffix(".UTF8"))
-    {
-        text = format!("{suffix}.utf8");
+    let (language, rest) = match name.split_once('.') {
+        Some((language, rest)) => (language, Some(rest)),
+        None => (name, None),
+    };
+    let language = language.replace('-', "_");
+    let Some(rest) = rest else {
+        return language;
+    };
+    let (codeset, modifier) = match rest.split_once('@') {
+        Some((codeset, modifier)) => (codeset, Some(modifier)),
+        None => (rest, None),
+    };
+    let codeset = codeset.replace('-', "").to_ascii_lowercase();
+    match modifier {
+        Some(modifier) => format!("{language}.{codeset}@{modifier}"),
+        None => format!("{language}.{codeset}"),
     }
-    text
 }
