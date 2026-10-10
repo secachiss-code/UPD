@@ -67,6 +67,12 @@ fn main() {
     if args.first().is_some_and(|arg| arg == "identity") {
         std::process::exit(cm::identity::cli::dispatch(&args[1..]));
     }
+    if args.first().is_some_and(|arg| arg == "controller") {
+        std::process::exit(cm::controller::server::dispatch(&args[1..]));
+    }
+    if args.first().is_some_and(|arg| arg == "app") {
+        std::process::exit(cm::app::cli::dispatch(&args[1..]));
+    }
     let pause = args.iter().any(|a| a == "--pause");
     let no_download = args.iter().any(|a| a == "--no-download");
     let all = args.iter().any(|a| a == "--all");
@@ -1439,6 +1445,21 @@ fn polkit_policy() -> String {
             helper::ACTION_MANAGE,
             "auth_admin_keep",
             msg("Install updates and manage mirrors and VPN", &[("ru", "Установка обновлений, управление зеркалами и VPN"), ("de", "Updates installieren sowie Spiegelserver und VPN verwalten"), ("it", "Installare aggiornamenti e gestire mirror e VPN"), ("zh", "安装更新并管理镜像和 VPN"), ("ar", "تثبيت التحديثات وإدارة المرايا والشبكة الافتراضية")]),
+        ),
+        (
+            cm::controller::actions::ACTION_WORKER,
+            "yes",
+            msg("Start, reload and stop your own core", &[("ru", "Запуск, перезагрузка и остановка своего ядра"), ("de", "Eigenes Kernprogramm starten, neu laden und stoppen"), ("it", "Avviare, ricaricare e fermare il proprio core"), ("zh", "启动、重新加载和停止自己的核心"), ("ar", "تشغيل النواة الخاصة وإعادة تحميلها وإيقافها")]),
+        ),
+        (
+            cm::controller::actions::ACTION_NET,
+            "auth_admin_keep",
+            msg("Change application routes and firewall", &[("ru", "Изменение маршрутов и межсетевого экрана приложений"), ("de", "Routen und Firewall der Anwendungen ändern"), ("it", "Modificare instradamenti e firewall delle applicazioni"), ("zh", "更改应用的路由和防火墙"), ("ar", "تغيير مسارات الشبكة وجدار الحماية للتطبيقات")]),
+        ),
+        (
+            cm::controller::actions::ACTION_APP,
+            "yes",
+            msg("Launch an application in its own network", &[("ru", "Запуск приложения в его собственной сети"), ("de", "Anwendung im eigenen Netz starten"), ("it", "Avviare un'applicazione nella propria rete"), ("zh", "在应用自己的网络中启动应用"), ("ar", "تشغيل تطبيق في شبكته الخاصة")]),
         ),
     ];
     let mut s = String::from("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<!DOCTYPE policyconfig PUBLIC \"-//freedesktop//DTD PolicyKit Policy Configuration 1.0//EN\"\n \"http://www.freedesktop.org/standards/PolicyKit/1/policyconfig.dtd\">\n<!-- Managed by cm -->\n<policyconfig>\n  <vendor>cm</vendor>\n  <icon_name>system-software-update</icon_name>\n");
