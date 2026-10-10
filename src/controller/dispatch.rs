@@ -10,6 +10,7 @@ use super::drop::run_as_for;
 use super::owner::owned;
 use super::peer::PeerIdentity;
 use super::protocol::{ControlError, Op, Reply};
+use crate::core::instance::{InstanceOwner, InstanceRoot};
 
 pub const MAX_CONCURRENT_OPS: usize = 4;
 
@@ -96,6 +97,16 @@ fn execute(request: &super::protocol::Request, peer: &PeerIdentity, deps: &Deps)
     let now = (deps.now)();
     let digest = codec::request_digest(request);
     let result = match &request.op {
+        Op::InstancePrepare { .. } => InstanceRoot::new(&owned.root)
+            .create_owned(
+                &owned.instance,
+                InstanceOwner {
+                    uid: peer.uid,
+                    gid: peer.gid,
+                },
+            )
+            .map(|_| Reply::ok(&request.id, None))
+            .map_err(|_| ControlError::Failed),
         Op::WorkerStart { generation, .. } => {
             let run_as = match run_as_for(peer.uid, peer.gid) {
                 Ok(run_as) => run_as,
@@ -132,6 +143,7 @@ fn execute(request: &super::protocol::Request, peer: &PeerIdentity, deps: &Deps)
             generation,
             program,
             args,
+            env,
             ..
         } => super::app_ops::launch(
             &owned,
@@ -139,6 +151,7 @@ fn execute(request: &super::protocol::Request, peer: &PeerIdentity, deps: &Deps)
             *generation,
             program,
             args,
+            env,
             peer,
             &deps.workers,
             &deps.nets,

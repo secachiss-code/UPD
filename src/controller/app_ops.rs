@@ -26,6 +26,7 @@ pub fn launch(
     generation: u64,
     program: &str,
     args: &[String],
+    session_env: &std::collections::BTreeMap<String, String>,
     peer: &PeerIdentity,
     workers: &Workers,
     nets: &NetCtx,
@@ -63,7 +64,7 @@ pub fn launch(
         return Err(ControlError::BadArgument);
     }
     let run_as = run_as_for(peer.uid, peer.gid)?;
-    let env = env_of(owned, peer.uid)?;
+    let env = env_of(owned, peer.uid, session_env)?;
     let netns_path = netns_root(base).join(format!("cm-{index}"));
     let file = OpenOptions::new()
         .read(true)
@@ -115,8 +116,10 @@ pub fn launch(
 pub fn env_of(
     owned: &Owned,
     uid: u32,
+    session_env: &std::collections::BTreeMap<String, String>,
 ) -> Result<std::collections::BTreeMap<String, String>, ControlError> {
-    let mut env = std::collections::BTreeMap::new();
+    // Имена уже проверил декодер; регион ниже перекрывает всё, что пришло от клиента.
+    let mut env = session_env.clone();
     env.insert("PATH".to_owned(), "/usr/bin:/bin".to_owned());
     if let Some(home) = home_dir(uid) {
         env.insert("HOME".to_owned(), home);
@@ -142,6 +145,7 @@ fn read_env_preset(owned: &Owned) -> Result<Option<(String, String)>, ControlErr
         .root
         .join("instances")
         .join(owned.instance.as_str())
+        .join("config")
         .join("env.json");
     if std::fs::symlink_metadata(&path).is_err() {
         return Ok(None);

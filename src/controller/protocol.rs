@@ -1,9 +1,25 @@
 //! Кадры контроллера. В кадре нет uid, пути и байтов конфига: личность берётся из сокета.
 
+use std::collections::BTreeMap;
+
 use serde::{Deserialize, Serialize};
 
 pub const CONTROL_VERSION: u32 = 1;
 pub const MAX_FRAME_BYTES: usize = 64 << 10;
+
+/// Что приложению нужно от графической сессии клиента. Приложение работает под uid самого
+/// клиента, поэтому эти значения не дают ему ничего сверх его прав. Остальное окружение
+/// (`PATH`, `HOME`, `XDG_RUNTIME_DIR`, `TZ`, `LANG`) задаёт контроллер.
+pub const SESSION_ENV_KEYS: &[&str] = &[
+    "DISPLAY",
+    "WAYLAND_DISPLAY",
+    "XAUTHORITY",
+    "DBUS_SESSION_BUS_ADDRESS",
+    "PULSE_SERVER",
+    "XDG_SESSION_TYPE",
+    "XDG_CURRENT_DESKTOP",
+];
+pub const MAX_ENV_VALUE_BYTES: usize = 4096;
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -16,6 +32,10 @@ pub struct Request {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
 pub enum Op {
+    /// Создать каталоги экземпляра, в том числе `config/` владельца для его конфигов.
+    InstancePrepare {
+        instance: String,
+    },
     WorkerStart {
         instance: String,
         generation: u64,
@@ -45,6 +65,9 @@ pub enum Op {
         generation: u64,
         program: String,
         args: Vec<String>,
+        /// Переменные сессии клиента. Принимаются только имена из [`SESSION_ENV_KEYS`].
+        #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+        env: BTreeMap<String, String>,
     },
     Reconcile,
 }
@@ -61,7 +84,8 @@ impl Op {
     pub fn class(&self) -> OpClass {
         match self {
             Self::WorkerStatus { .. } => OpClass::Status,
-            Self::WorkerStart { .. }
+            Self::InstancePrepare { .. }
+            | Self::WorkerStart { .. }
             | Self::WorkerReload { .. }
             | Self::WorkerStop { .. }
             | Self::Reconcile => OpClass::Worker,
@@ -72,7 +96,8 @@ impl Op {
 
     pub fn instance(&self) -> Option<&str> {
         match self {
-            Self::WorkerStart { instance, .. }
+            Self::InstancePrepare { instance }
+            | Self::WorkerStart { instance, .. }
             | Self::WorkerReload { instance, .. }
             | Self::WorkerStop { instance, .. }
             | Self::WorkerStatus { instance }

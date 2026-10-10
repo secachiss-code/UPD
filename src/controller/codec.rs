@@ -87,7 +87,12 @@ pub fn decode(frame: &[u8]) -> Result<Request, ControlError> {
         } if *next_generation <= *generation => {
             return Err(ControlError::BadArgument);
         }
-        super::protocol::Op::AppLaunch { program, args, .. } => check_launch(program, args)?,
+        super::protocol::Op::AppLaunch {
+            program, args, env, ..
+        } => {
+            check_launch(program, args)?;
+            check_session_env(env)?;
+        }
         _ => {}
     }
     Ok(request)
@@ -131,6 +136,19 @@ fn check_launch(program: &str, args: &[String]) -> Result<(), ControlError> {
         return Err(ControlError::BadArgument);
     }
     Ok(())
+}
+
+fn check_session_env(env: &std::collections::BTreeMap<String, String>) -> Result<(), ControlError> {
+    let ok = env.iter().all(|(key, value)| {
+        super::protocol::SESSION_ENV_KEYS.contains(&key.as_str())
+            && value.len() <= super::protocol::MAX_ENV_VALUE_BYTES
+            && !value.as_bytes().contains(&0)
+    });
+    if ok {
+        Ok(())
+    } else {
+        Err(ControlError::BadArgument)
+    }
 }
 
 fn has_dot_dot(path: &str) -> bool {
