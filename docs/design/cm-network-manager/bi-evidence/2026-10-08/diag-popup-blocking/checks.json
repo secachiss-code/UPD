@@ -1,0 +1,770 @@
+[
+  {
+    "check": "E20.chrome-local-de.create-rc",
+    "expected": 0,
+    "actual": 0,
+    "result": "PASS"
+  },
+  {
+    "check": "E20.chrome-local-de.first-launch.contexts-reached",
+    "expected": true,
+    "actual": true,
+    "result": "PASS"
+  },
+  {
+    "check": "E20.chrome-local-de.first-launch.first-request.accept-language",
+    "expected": "начинается с 'de-DE,de;q=0.9'",
+    "actual": "de-DE,de;q=0.9,en-US;q=0.8,en;q=0.7",
+    "result": "PASS"
+  },
+  {
+    "check": "E20.chrome-local-de.first-launch.first-request.user-agent",
+    "expected": "содержит 'Chrome/155', без CMLab",
+    "actual": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/155.0.0.0 Safari/537.36",
+    "result": "PASS"
+  },
+  {
+    "check": "E20.chrome-local-de.first-launch.window.user-agent",
+    "expected": "содержит 'Chrome/155', без CMLab",
+    "actual": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/155.0.0.0 Safari/537.36",
+    "result": "PASS"
+  },
+  {
+    "check": "E20.chrome-local-de.first-launch.window.timezone",
+    "expected": "Europe/Berlin",
+    "actual": "Europe/Berlin",
+    "result": "PASS"
+  },
+  {
+    "check": "E20.chrome-local-de.first-launch.window.intl-locale-language",
+    "expected": "de",
+    "actual": "de",
+    "result": "PASS"
+  },
+  {
+    "check": "E20.chrome-local-de.first-launch.window.languages",
+    "expected": [
+      "de-DE",
+      "de",
+      "en-US",
+      "en"
+    ],
+    "actual": [
+      "de-DE",
+      "de",
+      "en-US",
+      "en"
+    ],
+    "result": "PASS"
+  },
+  {
+    "check": "E20.chrome-local-de.first-launch.window.webdriver",
+    "expected": false,
+    "actual": false,
+    "result": "PASS"
+  },
+  {
+    "check": "E20.chrome-local-de.first-launch.window.offset-january",
+    "expected": -60,
+    "actual": -60,
+    "result": "PASS"
+  },
+  {
+    "check": "E20.chrome-local-de.first-launch.worker.user-agent",
+    "expected": "содержит 'Chrome/155', без CMLab",
+    "actual": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/155.0.0.0 Safari/537.36",
+    "result": "PASS"
+  },
+  {
+    "check": "E20.chrome-local-de.first-launch.worker.timezone",
+    "expected": "Europe/Berlin",
+    "actual": "Europe/Berlin",
+    "result": "PASS"
+  },
+  {
+    "check": "E20.chrome-local-de.first-launch.worker.intl-locale-language",
+    "expected": "de",
+    "actual": "de",
+    "result": "PASS"
+  },
+  {
+    "check": "E20.chrome-local-de.first-launch.worker.languages",
+    "expected": [
+      "de-DE",
+      "de",
+      "en-US",
+      "en"
+    ],
+    "actual": [
+      "de-DE",
+      "de",
+      "en-US",
+      "en"
+    ],
+    "result": "PASS"
+  },
+  {
+    "check": "E20.chrome-local-de.first-launch.worker.webdriver",
+    "expected": false,
+    "actual": false,
+    "result": "PASS"
+  },
+  {
+    "check": "E20.chrome-local-de.first-launch.worker.offset-january",
+    "expected": -60,
+    "actual": -60,
+    "result": "PASS"
+  },
+  {
+    "check": "E20.chrome-local-de.first-launch.tab.user-agent",
+    "expected": "содержит 'Chrome/155', без CMLab",
+    "actual": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/155.0.0.0 Safari/537.36",
+    "result": "PASS"
+  },
+  {
+    "check": "E20.chrome-local-de.first-launch.tab.timezone",
+    "expected": "Europe/Berlin",
+    "actual": "Europe/Berlin",
+    "result": "PASS"
+  },
+  {
+    "check": "E20.chrome-local-de.first-launch.tab.intl-locale-language",
+    "expected": "de",
+    "actual": "de",
+    "result": "PASS"
+  },
+  {
+    "check": "E20.chrome-local-de.first-launch.tab.languages",
+    "expected": [
+      "de-DE",
+      "de",
+      "en-US",
+      "en"
+    ],
+    "actual": [
+      "de-DE",
+      "de",
+      "en-US",
+      "en"
+    ],
+    "result": "PASS"
+  },
+  {
+    "check": "E20.chrome-local-de.first-launch.tab.webdriver",
+    "expected": false,
+    "actual": false,
+    "result": "PASS"
+  },
+  {
+    "check": "E20.chrome-local-de.first-launch.tab.offset-january",
+    "expected": -60,
+    "actual": -60,
+    "result": "PASS"
+  },
+  {
+    "check": "E20.chrome-local-de.cold-restart-same-launcher.contexts-reached",
+    "expected": true,
+    "actual": true,
+    "result": "PASS"
+  },
+  {
+    "check": "E20.chrome-local-de.cold-restart-same-launcher.first-request.accept-language",
+    "expected": "начинается с 'de-DE,de;q=0.9'",
+    "actual": "de-DE,de;q=0.9,en-US;q=0.8,en;q=0.7",
+    "result": "PASS"
+  },
+  {
+    "check": "E20.chrome-local-de.cold-restart-same-launcher.first-request.user-agent",
+    "expected": "содержит 'Chrome/155', без CMLab",
+    "actual": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/155.0.0.0 Safari/537.36",
+    "result": "PASS"
+  },
+  {
+    "check": "E20.chrome-local-de.cold-restart-same-launcher.window.user-agent",
+    "expected": "содержит 'Chrome/155', без CMLab",
+    "actual": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/155.0.0.0 Safari/537.36",
+    "result": "PASS"
+  },
+  {
+    "check": "E20.chrome-local-de.cold-restart-same-launcher.window.timezone",
+    "expected": "Europe/Berlin",
+    "actual": "Europe/Berlin",
+    "result": "PASS"
+  },
+  {
+    "check": "E20.chrome-local-de.cold-restart-same-launcher.window.intl-locale-language",
+    "expected": "de",
+    "actual": "de",
+    "result": "PASS"
+  },
+  {
+    "check": "E20.chrome-local-de.cold-restart-same-launcher.window.languages",
+    "expected": [
+      "de-DE",
+      "de",
+      "en-US",
+      "en"
+    ],
+    "actual": [
+      "de-DE",
+      "de",
+      "en-US",
+      "en"
+    ],
+    "result": "PASS"
+  },
+  {
+    "check": "E20.chrome-local-de.cold-restart-same-launcher.window.webdriver",
+    "expected": false,
+    "actual": false,
+    "result": "PASS"
+  },
+  {
+    "check": "E20.chrome-local-de.cold-restart-same-launcher.window.offset-january",
+    "expected": -60,
+    "actual": -60,
+    "result": "PASS"
+  },
+  {
+    "check": "E20.chrome-local-de.cold-restart-same-launcher.worker.user-agent",
+    "expected": "содержит 'Chrome/155', без CMLab",
+    "actual": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/155.0.0.0 Safari/537.36",
+    "result": "PASS"
+  },
+  {
+    "check": "E20.chrome-local-de.cold-restart-same-launcher.worker.timezone",
+    "expected": "Europe/Berlin",
+    "actual": "Europe/Berlin",
+    "result": "PASS"
+  },
+  {
+    "check": "E20.chrome-local-de.cold-restart-same-launcher.worker.intl-locale-language",
+    "expected": "de",
+    "actual": "de",
+    "result": "PASS"
+  },
+  {
+    "check": "E20.chrome-local-de.cold-restart-same-launcher.worker.languages",
+    "expected": [
+      "de-DE",
+      "de",
+      "en-US",
+      "en"
+    ],
+    "actual": [
+      "de-DE",
+      "de",
+      "en-US",
+      "en"
+    ],
+    "result": "PASS"
+  },
+  {
+    "check": "E20.chrome-local-de.cold-restart-same-launcher.worker.webdriver",
+    "expected": false,
+    "actual": false,
+    "result": "PASS"
+  },
+  {
+    "check": "E20.chrome-local-de.cold-restart-same-launcher.worker.offset-january",
+    "expected": -60,
+    "actual": -60,
+    "result": "PASS"
+  },
+  {
+    "check": "E20.chrome-local-de.cold-restart-same-launcher.tab.user-agent",
+    "expected": "содержит 'Chrome/155', без CMLab",
+    "actual": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/155.0.0.0 Safari/537.36",
+    "result": "PASS"
+  },
+  {
+    "check": "E20.chrome-local-de.cold-restart-same-launcher.tab.timezone",
+    "expected": "Europe/Berlin",
+    "actual": "Europe/Berlin",
+    "result": "PASS"
+  },
+  {
+    "check": "E20.chrome-local-de.cold-restart-same-launcher.tab.intl-locale-language",
+    "expected": "de",
+    "actual": "de",
+    "result": "PASS"
+  },
+  {
+    "check": "E20.chrome-local-de.cold-restart-same-launcher.tab.languages",
+    "expected": [
+      "de-DE",
+      "de",
+      "en-US",
+      "en"
+    ],
+    "actual": [
+      "de-DE",
+      "de",
+      "en-US",
+      "en"
+    ],
+    "result": "PASS"
+  },
+  {
+    "check": "E20.chrome-local-de.cold-restart-same-launcher.tab.webdriver",
+    "expected": false,
+    "actual": false,
+    "result": "PASS"
+  },
+  {
+    "check": "E20.chrome-local-de.cold-restart-same-launcher.tab.offset-january",
+    "expected": -60,
+    "actual": -60,
+    "result": "PASS"
+  },
+  {
+    "check": "E20.chrome-local-de.launch-after-bare.rc",
+    "expected": 3,
+    "actual": 3,
+    "result": "PASS"
+  },
+  {
+    "check": "E20.chrome-local-de.launch-after-bare.code",
+    "expected": "вывод содержит [BypassSuspected]",
+    "actual": "cm identity: the profile was opened outside CM: run cm identity confirm [BypassSuspected]\n",
+    "result": "PASS"
+  },
+  {
+    "check": "E20.brave-local-de.create-rc",
+    "expected": 0,
+    "actual": 0,
+    "result": "PASS"
+  },
+  {
+    "check": "E20.brave-local-de.first-launch.contexts-reached",
+    "expected": true,
+    "actual": true,
+    "result": "PASS"
+  },
+  {
+    "check": "E20.brave-local-de.first-launch.first-request.accept-language",
+    "expected": "начинается с 'de-DE,de;q=0.9'",
+    "actual": "de-DE,de;q=0.9",
+    "result": "PASS"
+  },
+  {
+    "check": "E20.brave-local-de.first-launch.first-request.user-agent",
+    "expected": "содержит 'Chrome/154', без CMLab",
+    "actual": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/154.0.0.0 Safari/537.36",
+    "result": "PASS"
+  },
+  {
+    "check": "E20.brave-local-de.first-launch.window.user-agent",
+    "expected": "содержит 'Chrome/154', без CMLab",
+    "actual": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/154.0.0.0 Safari/537.36",
+    "result": "PASS"
+  },
+  {
+    "check": "E20.brave-local-de.first-launch.window.timezone",
+    "expected": "Europe/Berlin",
+    "actual": "Europe/Berlin",
+    "result": "PASS"
+  },
+  {
+    "check": "E20.brave-local-de.first-launch.window.intl-locale-language",
+    "expected": "de",
+    "actual": "de",
+    "result": "PASS"
+  },
+  {
+    "check": "E20.brave-local-de.first-launch.window.languages",
+    "expected": [
+      "de-DE"
+    ],
+    "actual": [
+      "de-DE"
+    ],
+    "result": "PASS"
+  },
+  {
+    "check": "E20.brave-local-de.first-launch.window.webdriver",
+    "expected": false,
+    "actual": false,
+    "result": "PASS"
+  },
+  {
+    "check": "E20.brave-local-de.first-launch.window.offset-january",
+    "expected": -60,
+    "actual": -60,
+    "result": "PASS"
+  },
+  {
+    "check": "E20.brave-local-de.first-launch.worker.user-agent",
+    "expected": "содержит 'Chrome/154', без CMLab",
+    "actual": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/154.0.0.0 Safari/537.36",
+    "result": "PASS"
+  },
+  {
+    "check": "E20.brave-local-de.first-launch.worker.timezone",
+    "expected": "Europe/Berlin",
+    "actual": "Europe/Berlin",
+    "result": "PASS"
+  },
+  {
+    "check": "E20.brave-local-de.first-launch.worker.intl-locale-language",
+    "expected": "de",
+    "actual": "de",
+    "result": "PASS"
+  },
+  {
+    "check": "E20.brave-local-de.first-launch.worker.languages",
+    "expected": [
+      "de-DE"
+    ],
+    "actual": [
+      "de-DE"
+    ],
+    "result": "PASS"
+  },
+  {
+    "check": "E20.brave-local-de.first-launch.worker.webdriver",
+    "expected": false,
+    "actual": false,
+    "result": "PASS"
+  },
+  {
+    "check": "E20.brave-local-de.first-launch.worker.offset-january",
+    "expected": -60,
+    "actual": -60,
+    "result": "PASS"
+  },
+  {
+    "check": "E20.brave-local-de.first-launch.tab.user-agent",
+    "expected": "содержит 'Chrome/154', без CMLab",
+    "actual": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/154.0.0.0 Safari/537.36",
+    "result": "PASS"
+  },
+  {
+    "check": "E20.brave-local-de.first-launch.tab.timezone",
+    "expected": "Europe/Berlin",
+    "actual": "Europe/Berlin",
+    "result": "PASS"
+  },
+  {
+    "check": "E20.brave-local-de.first-launch.tab.intl-locale-language",
+    "expected": "de",
+    "actual": "de",
+    "result": "PASS"
+  },
+  {
+    "check": "E20.brave-local-de.first-launch.tab.languages",
+    "expected": [
+      "de-DE"
+    ],
+    "actual": [
+      "de-DE"
+    ],
+    "result": "PASS"
+  },
+  {
+    "check": "E20.brave-local-de.first-launch.tab.webdriver",
+    "expected": false,
+    "actual": false,
+    "result": "PASS"
+  },
+  {
+    "check": "E20.brave-local-de.first-launch.tab.offset-january",
+    "expected": -60,
+    "actual": -60,
+    "result": "PASS"
+  },
+  {
+    "check": "E20.brave-local-de.cold-restart-same-launcher.contexts-reached",
+    "expected": true,
+    "actual": true,
+    "result": "PASS"
+  },
+  {
+    "check": "E20.brave-local-de.cold-restart-same-launcher.first-request.accept-language",
+    "expected": "начинается с 'de-DE,de;q=0.9'",
+    "actual": "de-DE,de;q=0.6",
+    "result": "FAIL"
+  },
+  {
+    "check": "E20.brave-local-de.cold-restart-same-launcher.first-request.user-agent",
+    "expected": "содержит 'Chrome/154', без CMLab",
+    "actual": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/154.0.0.0 Safari/537.36",
+    "result": "PASS"
+  },
+  {
+    "check": "E20.brave-local-de.cold-restart-same-launcher.window.user-agent",
+    "expected": "содержит 'Chrome/154', без CMLab",
+    "actual": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/154.0.0.0 Safari/537.36",
+    "result": "PASS"
+  },
+  {
+    "check": "E20.brave-local-de.cold-restart-same-launcher.window.timezone",
+    "expected": "Europe/Berlin",
+    "actual": "Europe/Berlin",
+    "result": "PASS"
+  },
+  {
+    "check": "E20.brave-local-de.cold-restart-same-launcher.window.intl-locale-language",
+    "expected": "de",
+    "actual": "de",
+    "result": "PASS"
+  },
+  {
+    "check": "E20.brave-local-de.cold-restart-same-launcher.window.languages",
+    "expected": [
+      "de-DE"
+    ],
+    "actual": [
+      "de-DE"
+    ],
+    "result": "PASS"
+  },
+  {
+    "check": "E20.brave-local-de.cold-restart-same-launcher.window.webdriver",
+    "expected": false,
+    "actual": false,
+    "result": "PASS"
+  },
+  {
+    "check": "E20.brave-local-de.cold-restart-same-launcher.window.offset-january",
+    "expected": -60,
+    "actual": -60,
+    "result": "PASS"
+  },
+  {
+    "check": "E20.brave-local-de.cold-restart-same-launcher.worker.user-agent",
+    "expected": "содержит 'Chrome/154', без CMLab",
+    "actual": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/154.0.0.0 Safari/537.36",
+    "result": "PASS"
+  },
+  {
+    "check": "E20.brave-local-de.cold-restart-same-launcher.worker.timezone",
+    "expected": "Europe/Berlin",
+    "actual": "Europe/Berlin",
+    "result": "PASS"
+  },
+  {
+    "check": "E20.brave-local-de.cold-restart-same-launcher.worker.intl-locale-language",
+    "expected": "de",
+    "actual": "de",
+    "result": "PASS"
+  },
+  {
+    "check": "E20.brave-local-de.cold-restart-same-launcher.worker.languages",
+    "expected": [
+      "de-DE"
+    ],
+    "actual": [
+      "de-DE"
+    ],
+    "result": "PASS"
+  },
+  {
+    "check": "E20.brave-local-de.cold-restart-same-launcher.worker.webdriver",
+    "expected": false,
+    "actual": false,
+    "result": "PASS"
+  },
+  {
+    "check": "E20.brave-local-de.cold-restart-same-launcher.worker.offset-january",
+    "expected": -60,
+    "actual": -60,
+    "result": "PASS"
+  },
+  {
+    "check": "E20.brave-local-de.cold-restart-same-launcher.tab.user-agent",
+    "expected": "содержит 'Chrome/154', без CMLab",
+    "actual": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/154.0.0.0 Safari/537.36",
+    "result": "PASS"
+  },
+  {
+    "check": "E20.brave-local-de.cold-restart-same-launcher.tab.timezone",
+    "expected": "Europe/Berlin",
+    "actual": "Europe/Berlin",
+    "result": "PASS"
+  },
+  {
+    "check": "E20.brave-local-de.cold-restart-same-launcher.tab.intl-locale-language",
+    "expected": "de",
+    "actual": "de",
+    "result": "PASS"
+  },
+  {
+    "check": "E20.brave-local-de.cold-restart-same-launcher.tab.languages",
+    "expected": [
+      "de-DE"
+    ],
+    "actual": [
+      "de-DE"
+    ],
+    "result": "PASS"
+  },
+  {
+    "check": "E20.brave-local-de.cold-restart-same-launcher.tab.webdriver",
+    "expected": false,
+    "actual": false,
+    "result": "PASS"
+  },
+  {
+    "check": "E20.brave-local-de.cold-restart-same-launcher.tab.offset-january",
+    "expected": -60,
+    "actual": -60,
+    "result": "PASS"
+  },
+  {
+    "check": "E20.librewolf-crowd.create-rc",
+    "expected": 0,
+    "actual": 0,
+    "result": "PASS"
+  },
+  {
+    "check": "E20.librewolf-crowd.first-launch.contexts-reached",
+    "expected": true,
+    "actual": false,
+    "result": "FAIL"
+  },
+  {
+    "check": "E20.librewolf-crowd.first-launch.first-request.user-agent",
+    "expected": "содержит 'Firefox/157.0', без CMLab",
+    "actual": null,
+    "result": "FAIL"
+  },
+  {
+    "check": "E20.librewolf-crowd.first-launch.window",
+    "expected": "отчёт получен",
+    "actual": null,
+    "result": "FAIL"
+  },
+  {
+    "check": "E20.librewolf-crowd.first-launch.worker",
+    "expected": "отчёт получен",
+    "actual": null,
+    "result": "FAIL"
+  },
+  {
+    "check": "E20.librewolf-crowd.first-launch.tab",
+    "expected": "отчёт получен",
+    "actual": null,
+    "result": "FAIL"
+  },
+  {
+    "check": "E20.librewolf-crowd.cold-restart-same-launcher.contexts-reached",
+    "expected": true,
+    "actual": false,
+    "result": "FAIL"
+  },
+  {
+    "check": "E20.librewolf-crowd.cold-restart-same-launcher.first-request.user-agent",
+    "expected": "содержит 'Firefox/157.0', без CMLab",
+    "actual": null,
+    "result": "FAIL"
+  },
+  {
+    "check": "E20.librewolf-crowd.cold-restart-same-launcher.window",
+    "expected": "отчёт получен",
+    "actual": null,
+    "result": "FAIL"
+  },
+  {
+    "check": "E20.librewolf-crowd.cold-restart-same-launcher.worker",
+    "expected": "отчёт получен",
+    "actual": null,
+    "result": "FAIL"
+  },
+  {
+    "check": "E20.librewolf-crowd.cold-restart-same-launcher.tab",
+    "expected": "отчёт получен",
+    "actual": null,
+    "result": "FAIL"
+  },
+  {
+    "check": "E20.librewolf-local-de.create-rc",
+    "expected": 0,
+    "actual": 0,
+    "result": "PASS"
+  },
+  {
+    "check": "E20.librewolf-local-de.first-launch.contexts-reached",
+    "expected": true,
+    "actual": false,
+    "result": "FAIL"
+  },
+  {
+    "check": "E20.librewolf-local-de.first-launch.first-request.accept-language",
+    "expected": "начинается с 'de-DE'",
+    "actual": null,
+    "result": "FAIL"
+  },
+  {
+    "check": "E20.librewolf-local-de.first-launch.first-request.user-agent",
+    "expected": "содержит 'Firefox/157.0', без CMLab",
+    "actual": null,
+    "result": "FAIL"
+  },
+  {
+    "check": "E20.librewolf-local-de.first-launch.window",
+    "expected": "отчёт получен",
+    "actual": null,
+    "result": "FAIL"
+  },
+  {
+    "check": "E20.librewolf-local-de.first-launch.worker",
+    "expected": "отчёт получен",
+    "actual": null,
+    "result": "FAIL"
+  },
+  {
+    "check": "E20.librewolf-local-de.first-launch.tab",
+    "expected": "отчёт получен",
+    "actual": null,
+    "result": "FAIL"
+  },
+  {
+    "check": "E20.librewolf-local-de.cold-restart-same-launcher.contexts-reached",
+    "expected": true,
+    "actual": false,
+    "result": "FAIL"
+  },
+  {
+    "check": "E20.librewolf-local-de.cold-restart-same-launcher.first-request.accept-language",
+    "expected": "начинается с 'de-DE'",
+    "actual": null,
+    "result": "FAIL"
+  },
+  {
+    "check": "E20.librewolf-local-de.cold-restart-same-launcher.first-request.user-agent",
+    "expected": "содержит 'Firefox/157.0', без CMLab",
+    "actual": null,
+    "result": "FAIL"
+  },
+  {
+    "check": "E20.librewolf-local-de.cold-restart-same-launcher.window",
+    "expected": "отчёт получен",
+    "actual": null,
+    "result": "FAIL"
+  },
+  {
+    "check": "E20.librewolf-local-de.cold-restart-same-launcher.worker",
+    "expected": "отчёт получен",
+    "actual": null,
+    "result": "FAIL"
+  },
+  {
+    "check": "E20.librewolf-local-de.cold-restart-same-launcher.tab",
+    "expected": "отчёт получен",
+    "actual": null,
+    "result": "FAIL"
+  },
+  {
+    "check": "E20.librewolf-local-de.launch-after-bare.rc",
+    "expected": 3,
+    "actual": 3,
+    "result": "PASS"
+  },
+  {
+    "check": "E20.librewolf-local-de.launch-after-bare.code",
+    "expected": "вывод содержит [BypassSuspected]",
+    "actual": "cm identity: the profile was opened outside CM: run cm identity confirm [BypassSuspected]\n",
+    "result": "PASS"
+  }
+]

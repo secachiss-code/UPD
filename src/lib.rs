@@ -12,6 +12,7 @@ pub mod helper;
 pub mod mirrors;
 pub mod migration;
 pub mod profiles;
+pub mod identity;
 pub mod sources;
 pub mod status;
 pub mod summary;

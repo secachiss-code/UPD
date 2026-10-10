@@ -1,0 +1,82 @@
+{
+  "date": "2026-10-10",
+  "git_revision": "37986491158685e84c8fe4e79be066c6401a9968",
+  "dirty_tree": true,
+  "package": "BI: coordinator review of role 1 (code) and role 2 (tests), acceptance E20",
+  "status": "PASS",
+  "executor": "coordinator (Claude)",
+  "commands": [
+    "CARGO_TARGET_DIR=$HOME/.cache/cm-grok-target CM_TEST_MIHOMO=$HOME/.cache/cm-cores/mihomo/mihomo sh tests/check_audit.sh",
+    "CM_BIN=<target>/x86_64-unknown-linux-musl/debug/cm python3 docs/design/cm-network-manager/tools/bi_lab.py bi-evidence/2026-10-10/lab-1",
+    "CM_BIN=... python3 docs/design/cm-network-manager/tools/bi_lab.py bi-evidence/2026-10-10/lab-2"
+  ],
+  "lab": {
+    "runs": {
+      "lab-1": {
+        "PASS": 150
+      },
+      "lab-2": {
+        "PASS": 150
+      }
+    },
+    "reproducibility": "lab-1 and lab-2: 150 of 150 PASS each; the only differing value is Brave's Accept-Language q, which Brave randomises itself",
+    "meta": {
+      "browsers": {
+        "google-chrome-stable": {
+          "path": "/usr/bin/google-chrome-stable",
+          "version": "Google Chrome 155.0.8059.39"
+        },
+        "brave": {
+          "path": "/usr/bin/brave",
+          "version": "Brave Browser 154.1.96.61"
+        },
+        "librewolf": {
+          "path": "/usr/bin/librewolf",
+          "version": "LibreWolf 157.0-1"
+        }
+      },
+      "cm_sha256": "4f578905ab058ee22ebcc3b1cd09d102b850cad7a1ca0df8f5725111cfa13e4b",
+      "extra_args": [],
+      "counters": {
+        "checks": 150,
+        "pass": 150,
+        "fail": 0
+      },
+      "platform": "Linux-7.2.9-1-garuda-x86_64-with-glibc2.44",
+      "python": "3.14.7"
+    }
+  },
+  "previous": "../2026-10-08/summary.json (role 2 run before the fixes: E20 100 of 118, 5 defects)",
+  "defects_resolved": [
+    "E20 tab report missing in all four identities: specification gap, not a code defect. The lab page opens its tab by script; --lab now adds --disable-popup-blocking (Chromium) and dom.disable_open_during_load=false (Gecko). Tab checks: 40 of 40 PASS.",
+    "E20 Brave Accept-Language q: expectation was wrong for Brave; only the first language is checked."
+  ],
+  "review_fixes": [
+    "launch: a patch release of the same major no longer spends a generation and a history slot",
+    "launch: SIGINT, SIGTERM and SIGHUP are passed on to the browser session and the exit mark is still written",
+    "validate: --time-zone-for-testing, --profile-directory, --ProfileManager and bare -P are forbidden"
+  ],
+  "identity_verified_rows": [
+    "Chrome 155 local",
+    "Brave 154 local",
+    "LibreWolf 157 local",
+    "LibreWolf 157 crowd"
+  ],
+  "not_closed": [
+    "Headed (visible) mode was not measured: the lab runs headless.",
+    "Canvas, WebGL, fonts, audio, TLS, service and shared workers were not measured.",
+    "REGION is never Verified until the exit country is observed (I14.T01); NET is Unknown until a per-app tunnel exists (I08)."
+  ],
+  "files": {
+    "lab-1/checks.json": "9217042556b3e74610b1621d14b57a95a599afb1c4630cdd5b2c18a3d2366549",
+    "lab-1/meta.json": "608e382dfe057340f3221fe478ae6edaf83fc0cb9837fc42190dce3e1b197d0e",
+    "lab-1/observations.json": "3c4230d92c3a259130896989755ee4eb9971922b9f35d34dff7b6da9bdfa3676",
+    "lab-1/runs.json": "13d1469bd12e2fb150c675e55c7d08bd2c3c16b619df3988d4fedea8c7fae399",
+    "lab-2/checks.json": "79e84ad16385f423001dfd1dd7ddc0c6eed9a2d6848a18c30c1305091219cb12",
+    "lab-2/meta.json": "608e382dfe057340f3221fe478ae6edaf83fc0cb9837fc42190dce3e1b197d0e",
+    "lab-2/observations.json": "2e0114bcefdbcff29a8b9bd033daf588545707e45116991fa1c5059e48d1b749",
+    "lab-2/runs.json": "a4352d5a7a795f3bdfcbdfe953a2aa8b44e0527ce9dd562fd0c8978bde1ed6d6",
+    "tools/bi_lab.py": "f0fa86be880dd0e19a68fe8ab852dd668e5cf62ba70494a739493fdc1cef54d3",
+    "data/identity-verified.json": "8262b06126ce42ee0bdeda51a2e2676b665be7239845a1b1b2596180f827ebba"
+  }
+}

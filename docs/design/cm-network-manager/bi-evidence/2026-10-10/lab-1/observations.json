@@ -1,0 +1,412 @@
+[
+  {
+    "case": "chrome-local-de",
+    "step": "first-launch",
+    "observed": {
+      "first_request": {
+        "accept_language": "de-DE,de;q=0.9,en-US;q=0.8,en;q=0.7",
+        "user_agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/155.0.0.0 Safari/537.36"
+      },
+      "window": {
+        "ctx": "window",
+        "ua": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/155.0.0.0 Safari/537.36",
+        "lang": "de-DE",
+        "languages": [
+          "de-DE",
+          "de",
+          "en-US",
+          "en"
+        ],
+        "tz": "Europe/Berlin",
+        "intl_locale": "de",
+        "offset_jan": -60,
+        "webdriver": false
+      },
+      "worker": {
+        "ctx": "worker",
+        "ua": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/155.0.0.0 Safari/537.36",
+        "lang": "de-DE",
+        "languages": [
+          "de-DE",
+          "de",
+          "en-US",
+          "en"
+        ],
+        "tz": "Europe/Berlin",
+        "intl_locale": "de",
+        "offset_jan": -60,
+        "webdriver": false
+      },
+      "tab": {
+        "ctx": "tab",
+        "ua": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/155.0.0.0 Safari/537.36",
+        "lang": "de-DE",
+        "languages": [
+          "de-DE",
+          "de",
+          "en-US",
+          "en"
+        ],
+        "tz": "Europe/Berlin",
+        "intl_locale": "de",
+        "offset_jan": -60,
+        "webdriver": false
+      }
+    }
+  },
+  {
+    "case": "chrome-local-de",
+    "step": "cold-restart-same-launcher",
+    "observed": {
+      "first_request": {
+        "accept_language": "de-DE,de;q=0.9,en-US;q=0.8,en;q=0.7",
+        "user_agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/155.0.0.0 Safari/537.36"
+      },
+      "window": {
+        "ctx": "window",
+        "ua": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/155.0.0.0 Safari/537.36",
+        "lang": "de-DE",
+        "languages": [
+          "de-DE",
+          "de",
+          "en-US",
+          "en"
+        ],
+        "tz": "Europe/Berlin",
+        "intl_locale": "de",
+        "offset_jan": -60,
+        "webdriver": false
+      },
+      "worker": {
+        "ctx": "worker",
+        "ua": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/155.0.0.0 Safari/537.36",
+        "lang": "de-DE",
+        "languages": [
+          "de-DE",
+          "de",
+          "en-US",
+          "en"
+        ],
+        "tz": "Europe/Berlin",
+        "intl_locale": "de",
+        "offset_jan": -60,
+        "webdriver": false
+      },
+      "tab": {
+        "ctx": "tab",
+        "ua": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/155.0.0.0 Safari/537.36",
+        "lang": "de-DE",
+        "languages": [
+          "de-DE",
+          "de",
+          "en-US",
+          "en"
+        ],
+        "tz": "Europe/Berlin",
+        "intl_locale": "de",
+        "offset_jan": -60,
+        "webdriver": false
+      }
+    }
+  },
+  {
+    "case": "brave-local-de",
+    "step": "first-launch",
+    "observed": {
+      "first_request": {
+        "accept_language": "de-DE,de;q=0.9",
+        "user_agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/154.0.0.0 Safari/537.36"
+      },
+      "window": {
+        "ctx": "window",
+        "ua": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/154.0.0.0 Safari/537.36",
+        "lang": "de-DE",
+        "languages": [
+          "de-DE"
+        ],
+        "tz": "Europe/Berlin",
+        "intl_locale": "de",
+        "offset_jan": -60,
+        "webdriver": false
+      },
+      "worker": {
+        "ctx": "worker",
+        "ua": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/154.0.0.0 Safari/537.36",
+        "lang": "de-DE",
+        "languages": [
+          "de-DE"
+        ],
+        "tz": "Europe/Berlin",
+        "intl_locale": "de",
+        "offset_jan": -60,
+        "webdriver": false
+      },
+      "tab": {
+        "ctx": "tab",
+        "ua": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/154.0.0.0 Safari/537.36",
+        "lang": "de-DE",
+        "languages": [
+          "de-DE"
+        ],
+        "tz": "Europe/Berlin",
+        "intl_locale": "de",
+        "offset_jan": -60,
+        "webdriver": false
+      }
+    }
+  },
+  {
+    "case": "brave-local-de",
+    "step": "cold-restart-same-launcher",
+    "observed": {
+      "first_request": {
+        "accept_language": "de-DE,de;q=0.5",
+        "user_agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/154.0.0.0 Safari/537.36"
+      },
+      "window": {
+        "ctx": "window",
+        "ua": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/154.0.0.0 Safari/537.36",
+        "lang": "de-DE",
+        "languages": [
+          "de-DE"
+        ],
+        "tz": "Europe/Berlin",
+        "intl_locale": "de",
+        "offset_jan": -60,
+        "webdriver": false
+      },
+      "worker": {
+        "ctx": "worker",
+        "ua": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/154.0.0.0 Safari/537.36",
+        "lang": "de-DE",
+        "languages": [
+          "de-DE"
+        ],
+        "tz": "Europe/Berlin",
+        "intl_locale": "de",
+        "offset_jan": -60,
+        "webdriver": false
+      },
+      "tab": {
+        "ctx": "tab",
+        "ua": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/154.0.0.0 Safari/537.36",
+        "lang": "de-DE",
+        "languages": [
+          "de-DE"
+        ],
+        "tz": "Europe/Berlin",
+        "intl_locale": "de",
+        "offset_jan": -60,
+        "webdriver": false
+      }
+    }
+  },
+  {
+    "case": "librewolf-crowd",
+    "step": "first-launch",
+    "observed": {
+      "first_request": {
+        "accept_language": "en-US,en;q=0.9",
+        "user_agent": "Mozilla/5.0 (X11; Linux x86_64; rv:157.0) Gecko/20100101 Firefox/157.0"
+      },
+      "window": {
+        "ctx": "window",
+        "ua": "Mozilla/5.0 (X11; Linux x86_64; rv:157.0) Gecko/20100101 Firefox/157.0",
+        "lang": "en-US",
+        "languages": [
+          "en-US",
+          "en"
+        ],
+        "tz": "Atlantic/Reykjavik",
+        "intl_locale": "en-US",
+        "offset_jan": 0,
+        "webdriver": false
+      },
+      "worker": {
+        "ctx": "worker",
+        "ua": "Mozilla/5.0 (X11; Linux x86_64; rv:157.0) Gecko/20100101 Firefox/157.0",
+        "lang": "en-US",
+        "languages": [
+          "en-US",
+          "en"
+        ],
+        "tz": "Atlantic/Reykjavik",
+        "intl_locale": "en-US",
+        "offset_jan": 0,
+        "webdriver": false
+      },
+      "tab": {
+        "ctx": "tab",
+        "ua": "Mozilla/5.0 (X11; Linux x86_64; rv:157.0) Gecko/20100101 Firefox/157.0",
+        "lang": "en-US",
+        "languages": [
+          "en-US",
+          "en"
+        ],
+        "tz": "Atlantic/Reykjavik",
+        "intl_locale": "en-US",
+        "offset_jan": 0,
+        "webdriver": false
+      }
+    }
+  },
+  {
+    "case": "librewolf-crowd",
+    "step": "cold-restart-same-launcher",
+    "observed": {
+      "first_request": {
+        "accept_language": "en-US,en;q=0.9",
+        "user_agent": "Mozilla/5.0 (X11; Linux x86_64; rv:157.0) Gecko/20100101 Firefox/157.0"
+      },
+      "window": {
+        "ctx": "window",
+        "ua": "Mozilla/5.0 (X11; Linux x86_64; rv:157.0) Gecko/20100101 Firefox/157.0",
+        "lang": "en-US",
+        "languages": [
+          "en-US",
+          "en"
+        ],
+        "tz": "Atlantic/Reykjavik",
+        "intl_locale": "en-US",
+        "offset_jan": 0,
+        "webdriver": false
+      },
+      "worker": {
+        "ctx": "worker",
+        "ua": "Mozilla/5.0 (X11; Linux x86_64; rv:157.0) Gecko/20100101 Firefox/157.0",
+        "lang": "en-US",
+        "languages": [
+          "en-US",
+          "en"
+        ],
+        "tz": "Atlantic/Reykjavik",
+        "intl_locale": "en-US",
+        "offset_jan": 0,
+        "webdriver": false
+      },
+      "tab": {
+        "ctx": "tab",
+        "ua": "Mozilla/5.0 (X11; Linux x86_64; rv:157.0) Gecko/20100101 Firefox/157.0",
+        "lang": "en-US",
+        "languages": [
+          "en-US",
+          "en"
+        ],
+        "tz": "Atlantic/Reykjavik",
+        "intl_locale": "en-US",
+        "offset_jan": 0,
+        "webdriver": false
+      }
+    }
+  },
+  {
+    "case": "librewolf-local-de",
+    "step": "first-launch",
+    "observed": {
+      "first_request": {
+        "accept_language": "de-DE,de;q=0.9,en-US;q=0.8,en;q=0.7",
+        "user_agent": "Mozilla/5.0 (X11; Linux x86_64; rv:157.0) Gecko/20100101 Firefox/157.0"
+      },
+      "window": {
+        "ctx": "window",
+        "ua": "Mozilla/5.0 (X11; Linux x86_64; rv:157.0) Gecko/20100101 Firefox/157.0",
+        "lang": "de-DE",
+        "languages": [
+          "de-DE",
+          "de",
+          "en-US",
+          "en"
+        ],
+        "tz": "Europe/Berlin",
+        "intl_locale": "de-DE",
+        "offset_jan": -60,
+        "webdriver": false
+      },
+      "worker": {
+        "ctx": "worker",
+        "ua": "Mozilla/5.0 (X11; Linux x86_64; rv:157.0) Gecko/20100101 Firefox/157.0",
+        "lang": "de-DE",
+        "languages": [
+          "de-DE",
+          "de",
+          "en-US",
+          "en"
+        ],
+        "tz": "Europe/Berlin",
+        "intl_locale": "de-DE",
+        "offset_jan": -60,
+        "webdriver": false
+      },
+      "tab": {
+        "ctx": "tab",
+        "ua": "Mozilla/5.0 (X11; Linux x86_64; rv:157.0) Gecko/20100101 Firefox/157.0",
+        "lang": "de-DE",
+        "languages": [
+          "de-DE",
+          "de",
+          "en-US",
+          "en"
+        ],
+        "tz": "Europe/Berlin",
+        "intl_locale": "de-DE",
+        "offset_jan": -60,
+        "webdriver": false
+      }
+    }
+  },
+  {
+    "case": "librewolf-local-de",
+    "step": "cold-restart-same-launcher",
+    "observed": {
+      "first_request": {
+        "accept_language": "de-DE,de;q=0.9,en-US;q=0.8,en;q=0.7",
+        "user_agent": "Mozilla/5.0 (X11; Linux x86_64; rv:157.0) Gecko/20100101 Firefox/157.0"
+      },
+      "window": {
+        "ctx": "window",
+        "ua": "Mozilla/5.0 (X11; Linux x86_64; rv:157.0) Gecko/20100101 Firefox/157.0",
+        "lang": "de-DE",
+        "languages": [
+          "de-DE",
+          "de",
+          "en-US",
+          "en"
+        ],
+        "tz": "Europe/Berlin",
+        "intl_locale": "de-DE",
+        "offset_jan": -60,
+        "webdriver": false
+      },
+      "worker": {
+        "ctx": "worker",
+        "ua": "Mozilla/5.0 (X11; Linux x86_64; rv:157.0) Gecko/20100101 Firefox/157.0",
+        "lang": "de-DE",
+        "languages": [
+          "de-DE",
+          "de",
+          "en-US",
+          "en"
+        ],
+        "tz": "Europe/Berlin",
+        "intl_locale": "de-DE",
+        "offset_jan": -60,
+        "webdriver": false
+      },
+      "tab": {
+        "ctx": "tab",
+        "ua": "Mozilla/5.0 (X11; Linux x86_64; rv:157.0) Gecko/20100101 Firefox/157.0",
+        "lang": "de-DE",
+        "languages": [
+          "de-DE",
+          "de",
+          "en-US",
+          "en"
+        ],
+        "tz": "Europe/Berlin",
+        "intl_locale": "de-DE",
+        "offset_jan": -60,
+        "webdriver": false
+      }
+    }
+  }
+]

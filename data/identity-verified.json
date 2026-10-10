@@ -1,0 +1,30 @@
+[
+  {
+    "brand": "Chrome",
+    "major": 155,
+    "strategy": "local",
+    "evidence": "docs/design/cm-network-manager/bi-evidence/2026-10-10",
+    "note": ""
+  },
+  {
+    "brand": "Brave",
+    "major": 154,
+    "strategy": "local",
+    "evidence": "docs/design/cm-network-manager/bi-evidence/2026-10-10",
+    "note": "farbling: navigator.languages сокращается до одного языка"
+  },
+  {
+    "brand": "LibreWolf",
+    "major": 157,
+    "strategy": "local",
+    "evidence": "docs/design/cm-network-manager/bi-evidence/2026-10-10",
+    "note": ""
+  },
+  {
+    "brand": "LibreWolf",
+    "major": 157,
+    "strategy": "crowd",
+    "evidence": "docs/design/cm-network-manager/bi-evidence/2026-10-10",
+    "note": "RFP: часовой пояс Atlantic/Reykjavik, языки en-US"
+  }
+]

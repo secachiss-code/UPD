@@ -1,0 +1,953 @@
+[
+  {
+    "case": "chrome-local-de",
+    "step": "first-launch",
+    "cm_rc": 0,
+    "stdout": "browser exit code: 0\n",
+    "stderr": "",
+    "contexts_reached": false,
+    "killed_pids": [
+      454455,
+      454462,
+      454464,
+      454469,
+      454470,
+      454490,
+      454493,
+      454513,
+      454533,
+      454543,
+      454561,
+      454588
+    ],
+    "events": [
+      {
+        "kind": "request",
+        "path": "/",
+        "headers": {
+          "sec-ch-ua": "\"Google Chrome\";v=\"155\", \"Chromium\";v=\"155\", \"Not(A:Brand\";v=\"24\"",
+          "sec-ch-ua-mobile": "?0",
+          "sec-ch-ua-platform": "\"Linux\"",
+          "user-agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/155.0.0.0 Safari/537.36",
+          "accept-language": "de-DE,de;q=0.9,en-US;q=0.8,en;q=0.7"
+        }
+      },
+      {
+        "kind": "report",
+        "headers": {
+          "sec-ch-ua-platform": "\"Linux\"",
+          "user-agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/155.0.0.0 Safari/537.36",
+          "sec-ch-ua": "\"Google Chrome\";v=\"155\", \"Chromium\";v=\"155\", \"Not(A:Brand\";v=\"24\"",
+          "sec-ch-ua-mobile": "?0",
+          "accept-language": "de-DE,de;q=0.9,en-US;q=0.8,en;q=0.7"
+        },
+        "values": {
+          "ctx": "window",
+          "ua": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/155.0.0.0 Safari/537.36",
+          "lang": "de-DE",
+          "languages": [
+            "de-DE",
+            "de",
+            "en-US",
+            "en"
+          ],
+          "tz": "Europe/Berlin",
+          "intl_locale": "de",
+          "offset_jan": -60,
+          "webdriver": false
+        }
+      },
+      {
+        "kind": "request",
+        "path": "/favicon.ico",
+        "headers": {
+          "sec-ch-ua-platform": "\"Linux\"",
+          "user-agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/155.0.0.0 Safari/537.36",
+          "sec-ch-ua": "\"Google Chrome\";v=\"155\", \"Chromium\";v=\"155\", \"Not(A:Brand\";v=\"24\"",
+          "sec-ch-ua-mobile": "?0",
+          "accept-language": "de-DE,de;q=0.9,en-US;q=0.8,en;q=0.7"
+        }
+      },
+      {
+        "kind": "request",
+        "path": "/worker.js",
+        "headers": {
+          "user-agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/155.0.0.0 Safari/537.36",
+          "accept-language": "de-DE,de;q=0.9,en-US;q=0.8,en;q=0.7"
+        }
+      },
+      {
+        "kind": "report",
+        "headers": {
+          "user-agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/155.0.0.0 Safari/537.36",
+          "accept-language": "de-DE,de;q=0.9,en-US;q=0.8,en;q=0.7"
+        },
+        "values": {
+          "ctx": "worker",
+          "ua": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/155.0.0.0 Safari/537.36",
+          "lang": "de-DE",
+          "languages": [
+            "de-DE",
+            "de",
+            "en-US",
+            "en"
+          ],
+          "tz": "Europe/Berlin",
+          "intl_locale": "de",
+          "offset_jan": -60,
+          "webdriver": false
+        }
+      }
+    ]
+  },
+  {
+    "case": "chrome-local-de",
+    "step": "cold-restart-same-launcher",
+    "cm_rc": 0,
+    "stdout": "browser exit code: 0\n",
+    "stderr": "",
+    "contexts_reached": false,
+    "killed_pids": [
+      454680,
+      454687,
+      454689,
+      454694,
+      454695,
+      454714,
+      454716,
+      454737,
+      454756,
+      454765,
+      454766
+    ],
+    "events": [
+      {
+        "kind": "request",
+        "path": "/",
+        "headers": {
+          "sec-ch-ua": "\"Google Chrome\";v=\"155\", \"Chromium\";v=\"155\", \"Not(A:Brand\";v=\"24\"",
+          "sec-ch-ua-mobile": "?0",
+          "sec-ch-ua-platform": "\"Linux\"",
+          "user-agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/155.0.0.0 Safari/537.36",
+          "accept-language": "de-DE,de;q=0.9,en-US;q=0.8,en;q=0.7"
+        }
+      },
+      {
+        "kind": "report",
+        "headers": {
+          "sec-ch-ua-platform": "\"Linux\"",
+          "user-agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/155.0.0.0 Safari/537.36",
+          "sec-ch-ua": "\"Google Chrome\";v=\"155\", \"Chromium\";v=\"155\", \"Not(A:Brand\";v=\"24\"",
+          "sec-ch-ua-mobile": "?0",
+          "accept-language": "de-DE,de;q=0.9,en-US;q=0.8,en;q=0.7"
+        },
+        "values": {
+          "ctx": "window",
+          "ua": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/155.0.0.0 Safari/537.36",
+          "lang": "de-DE",
+          "languages": [
+            "de-DE",
+            "de",
+            "en-US",
+            "en"
+          ],
+          "tz": "Europe/Berlin",
+          "intl_locale": "de",
+          "offset_jan": -60,
+          "webdriver": false
+        }
+      },
+      {
+        "kind": "request",
+        "path": "/worker.js",
+        "headers": {
+          "user-agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/155.0.0.0 Safari/537.36",
+          "accept-language": "de-DE,de;q=0.9,en-US;q=0.8,en;q=0.7"
+        }
+      },
+      {
+        "kind": "request",
+        "path": "/favicon.ico",
+        "headers": {
+          "sec-ch-ua-platform": "\"Linux\"",
+          "user-agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/155.0.0.0 Safari/537.36",
+          "sec-ch-ua": "\"Google Chrome\";v=\"155\", \"Chromium\";v=\"155\", \"Not(A:Brand\";v=\"24\"",
+          "sec-ch-ua-mobile": "?0",
+          "accept-language": "de-DE,de;q=0.9,en-US;q=0.8,en;q=0.7"
+        }
+      },
+      {
+        "kind": "report",
+        "headers": {
+          "user-agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/155.0.0.0 Safari/537.36",
+          "accept-language": "de-DE,de;q=0.9,en-US;q=0.8,en;q=0.7"
+        },
+        "values": {
+          "ctx": "worker",
+          "ua": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/155.0.0.0 Safari/537.36",
+          "lang": "de-DE",
+          "languages": [
+            "de-DE",
+            "de",
+            "en-US",
+            "en"
+          ],
+          "tz": "Europe/Berlin",
+          "intl_locale": "de",
+          "offset_jan": -60,
+          "webdriver": false
+        }
+      }
+    ]
+  },
+  {
+    "case": "chrome-local-de",
+    "step": "bare-launch-outside-cm",
+    "contexts_reached": false,
+    "killed_pids": [
+      454864,
+      454871,
+      454873,
+      454878,
+      454879,
+      454897,
+      454898,
+      454920,
+      454936,
+      454945,
+      454947
+    ],
+    "events": [
+      {
+        "kind": "request",
+        "path": "/",
+        "headers": {
+          "sec-ch-ua": "\"Google Chrome\";v=\"155\", \"Chromium\";v=\"155\", \"Not(A:Brand\";v=\"24\"",
+          "sec-ch-ua-mobile": "?0",
+          "sec-ch-ua-platform": "\"Linux\"",
+          "user-agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/155.0.0.0 Safari/537.36",
+          "accept-language": "en-US,en;q=0.9"
+        }
+      },
+      {
+        "kind": "report",
+        "headers": {
+          "sec-ch-ua-platform": "\"Linux\"",
+          "user-agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/155.0.0.0 Safari/537.36",
+          "sec-ch-ua": "\"Google Chrome\";v=\"155\", \"Chromium\";v=\"155\", \"Not(A:Brand\";v=\"24\"",
+          "sec-ch-ua-mobile": "?0",
+          "accept-language": "en-US,en;q=0.9"
+        },
+        "values": {
+          "ctx": "window",
+          "ua": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/155.0.0.0 Safari/537.36",
+          "lang": "en-US",
+          "languages": [
+            "en-US",
+            "en"
+          ],
+          "tz": "Europe/Moscow",
+          "intl_locale": "en-US",
+          "offset_jan": -180,
+          "webdriver": false
+        }
+      },
+      {
+        "kind": "request",
+        "path": "/worker.js",
+        "headers": {
+          "user-agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/155.0.0.0 Safari/537.36",
+          "accept-language": "en-US,en;q=0.9"
+        }
+      },
+      {
+        "kind": "request",
+        "path": "/favicon.ico",
+        "headers": {
+          "sec-ch-ua-platform": "\"Linux\"",
+          "user-agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/155.0.0.0 Safari/537.36",
+          "sec-ch-ua": "\"Google Chrome\";v=\"155\", \"Chromium\";v=\"155\", \"Not(A:Brand\";v=\"24\"",
+          "sec-ch-ua-mobile": "?0",
+          "accept-language": "en-US,en;q=0.9"
+        }
+      },
+      {
+        "kind": "report",
+        "headers": {
+          "user-agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/155.0.0.0 Safari/537.36",
+          "accept-language": "en-US,en;q=0.9"
+        },
+        "values": {
+          "ctx": "worker",
+          "ua": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/155.0.0.0 Safari/537.36",
+          "lang": "en-US",
+          "languages": [
+            "en-US",
+            "en"
+          ],
+          "tz": "Europe/Moscow",
+          "intl_locale": "en-US",
+          "offset_jan": -180,
+          "webdriver": false
+        }
+      }
+    ]
+  },
+  {
+    "case": "chrome-local-de",
+    "step": "launch-after-bare",
+    "cm_rc": 3,
+    "stdout": "",
+    "stderr": "cm identity: the profile was opened outside CM: run cm identity confirm [BypassSuspected]\n",
+    "events": []
+  },
+  {
+    "case": "brave-local-de",
+    "step": "first-launch",
+    "cm_rc": 0,
+    "stdout": "browser exit code: 0\n",
+    "stderr": "",
+    "contexts_reached": false,
+    "killed_pids": [
+      455102,
+      455104,
+      455106,
+      455111,
+      455112,
+      455132,
+      455133,
+      455155,
+      455175,
+      455176
+    ],
+    "events": [
+      {
+        "kind": "request",
+        "path": "/",
+        "headers": {
+          "sec-ch-ua": "\"Chromium\";v=\"154\", \"Brave\";v=\"154\", \"Not A(Brand\";v=\"99\"",
+          "sec-ch-ua-mobile": "?0",
+          "sec-ch-ua-platform": "\"Linux\"",
+          "user-agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/154.0.0.0 Safari/537.36",
+          "accept-language": "de-DE,de;q=0.7"
+        }
+      },
+      {
+        "kind": "report",
+        "headers": {
+          "sec-ch-ua-platform": "\"Linux\"",
+          "user-agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/154.0.0.0 Safari/537.36",
+          "sec-ch-ua": "\"Chromium\";v=\"154\", \"Brave\";v=\"154\", \"Not A(Brand\";v=\"99\"",
+          "sec-ch-ua-mobile": "?0",
+          "accept-language": "de-DE,de;q=0.7"
+        },
+        "values": {
+          "ctx": "window",
+          "ua": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/154.0.0.0 Safari/537.36",
+          "lang": "de-DE",
+          "languages": [
+            "de-DE"
+          ],
+          "tz": "Europe/Berlin",
+          "intl_locale": "de",
+          "offset_jan": -60,
+          "webdriver": false
+        }
+      },
+      {
+        "kind": "request",
+        "path": "/favicon.ico",
+        "headers": {
+          "sec-ch-ua-platform": "\"Linux\"",
+          "user-agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/154.0.0.0 Safari/537.36",
+          "sec-ch-ua": "\"Chromium\";v=\"154\", \"Brave\";v=\"154\", \"Not A(Brand\";v=\"99\"",
+          "sec-ch-ua-mobile": "?0",
+          "accept-language": "de-DE,de;q=0.7"
+        }
+      },
+      {
+        "kind": "request",
+        "path": "/worker.js",
+        "headers": {
+          "user-agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/154.0.0.0 Safari/537.36",
+          "accept-language": "de-DE,de;q=0.7"
+        }
+      },
+      {
+        "kind": "report",
+        "headers": {
+          "user-agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/154.0.0.0 Safari/537.36",
+          "accept-language": "de-DE,de;q=0.7"
+        },
+        "values": {
+          "ctx": "worker",
+          "ua": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/154.0.0.0 Safari/537.36",
+          "lang": "de-DE",
+          "languages": [
+            "de-DE"
+          ],
+          "tz": "Europe/Berlin",
+          "intl_locale": "de",
+          "offset_jan": -60,
+          "webdriver": false
+        }
+      }
+    ]
+  },
+  {
+    "case": "brave-local-de",
+    "step": "cold-restart-same-launcher",
+    "cm_rc": 0,
+    "stdout": "browser exit code: 0\n",
+    "stderr": "",
+    "contexts_reached": false,
+    "killed_pids": [
+      455391,
+      455393,
+      455395,
+      455400,
+      455401,
+      455418,
+      455419,
+      455442,
+      455458,
+      455460,
+      455472
+    ],
+    "events": [
+      {
+        "kind": "request",
+        "path": "/",
+        "headers": {
+          "sec-ch-ua": "\"Chromium\";v=\"154\", \"Brave\";v=\"154\", \"Not A(Brand\";v=\"99\"",
+          "sec-ch-ua-mobile": "?0",
+          "sec-ch-ua-platform": "\"Linux\"",
+          "user-agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/154.0.0.0 Safari/537.36",
+          "accept-language": "de-DE,de;q=0.7"
+        }
+      },
+      {
+        "kind": "report",
+        "headers": {
+          "sec-ch-ua-platform": "\"Linux\"",
+          "user-agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/154.0.0.0 Safari/537.36",
+          "sec-ch-ua": "\"Chromium\";v=\"154\", \"Brave\";v=\"154\", \"Not A(Brand\";v=\"99\"",
+          "sec-ch-ua-mobile": "?0",
+          "accept-language": "de-DE,de;q=0.7"
+        },
+        "values": {
+          "ctx": "window",
+          "ua": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/154.0.0.0 Safari/537.36",
+          "lang": "de-DE",
+          "languages": [
+            "de-DE"
+          ],
+          "tz": "Europe/Berlin",
+          "intl_locale": "de",
+          "offset_jan": -60,
+          "webdriver": false
+        }
+      },
+      {
+        "kind": "report",
+        "headers": {
+          "sec-ch-ua-platform": "\"Linux\"",
+          "user-agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/154.0.0.0 Safari/537.36",
+          "sec-ch-ua": "\"Chromium\";v=\"154\", \"Brave\";v=\"154\", \"Not A(Brand\";v=\"99\"",
+          "sec-ch-ua-mobile": "?0",
+          "accept-language": "de-DE,de;q=0.7"
+        },
+        "values": {
+          "ctx": "window",
+          "ua": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/154.0.0.0 Safari/537.36",
+          "lang": "de-DE",
+          "languages": [
+            "de-DE"
+          ],
+          "tz": "Europe/Berlin",
+          "intl_locale": "de",
+          "offset_jan": -60,
+          "webdriver": false
+        }
+      },
+      {
+        "kind": "request",
+        "path": "/favicon.ico",
+        "headers": {
+          "sec-ch-ua-platform": "\"Linux\"",
+          "user-agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/154.0.0.0 Safari/537.36",
+          "sec-ch-ua": "\"Chromium\";v=\"154\", \"Brave\";v=\"154\", \"Not A(Brand\";v=\"99\"",
+          "sec-ch-ua-mobile": "?0",
+          "accept-language": "de-DE,de;q=0.7"
+        }
+      },
+      {
+        "kind": "request",
+        "path": "/favicon.ico",
+        "headers": {
+          "sec-ch-ua-platform": "\"Linux\"",
+          "user-agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/154.0.0.0 Safari/537.36",
+          "sec-ch-ua": "\"Chromium\";v=\"154\", \"Brave\";v=\"154\", \"Not A(Brand\";v=\"99\"",
+          "sec-ch-ua-mobile": "?0",
+          "accept-language": "de-DE,de;q=0.7"
+        }
+      },
+      {
+        "kind": "request",
+        "path": "/worker.js",
+        "headers": {
+          "user-agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/154.0.0.0 Safari/537.36",
+          "accept-language": "de-DE,de;q=0.7"
+        }
+      },
+      {
+        "kind": "request",
+        "path": "/worker.js",
+        "headers": {
+          "user-agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/154.0.0.0 Safari/537.36",
+          "accept-language": "de-DE,de;q=0.7"
+        }
+      },
+      {
+        "kind": "report",
+        "headers": {
+          "user-agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/154.0.0.0 Safari/537.36",
+          "accept-language": "de-DE,de;q=0.7"
+        },
+        "values": {
+          "ctx": "worker",
+          "ua": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/154.0.0.0 Safari/537.36",
+          "lang": "de-DE",
+          "languages": [
+            "de-DE"
+          ],
+          "tz": "Europe/Berlin",
+          "intl_locale": "de",
+          "offset_jan": -60,
+          "webdriver": false
+        }
+      },
+      {
+        "kind": "report",
+        "headers": {
+          "user-agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/154.0.0.0 Safari/537.36",
+          "accept-language": "de-DE,de;q=0.7"
+        },
+        "values": {
+          "ctx": "worker",
+          "ua": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/154.0.0.0 Safari/537.36",
+          "lang": "de-DE",
+          "languages": [
+            "de-DE"
+          ],
+          "tz": "Europe/Berlin",
+          "intl_locale": "de",
+          "offset_jan": -60,
+          "webdriver": false
+        }
+      }
+    ]
+  },
+  {
+    "case": "librewolf-crowd",
+    "step": "first-launch",
+    "cm_rc": 0,
+    "stdout": "browser exit code: 143\n",
+    "stderr": "",
+    "contexts_reached": false,
+    "killed_pids": [
+      455728
+    ],
+    "events": [
+      {
+        "kind": "request",
+        "path": "/",
+        "headers": {
+          "user-agent": "Mozilla/5.0 (X11; Linux x86_64; rv:157.0) Gecko/20100101 Firefox/157.0",
+          "accept-language": "en-US,en;q=0.9"
+        }
+      },
+      {
+        "kind": "report",
+        "headers": {
+          "user-agent": "Mozilla/5.0 (X11; Linux x86_64; rv:157.0) Gecko/20100101 Firefox/157.0",
+          "accept-language": "en-US,en;q=0.9"
+        },
+        "values": {
+          "ctx": "window",
+          "ua": "Mozilla/5.0 (X11; Linux x86_64; rv:157.0) Gecko/20100101 Firefox/157.0",
+          "lang": "en-US",
+          "languages": [
+            "en-US",
+            "en"
+          ],
+          "tz": "Atlantic/Reykjavik",
+          "intl_locale": "en-US",
+          "offset_jan": 0,
+          "webdriver": false
+        }
+      },
+      {
+        "kind": "request",
+        "path": "/favicon.ico",
+        "headers": {
+          "user-agent": "Mozilla/5.0 (X11; Linux x86_64; rv:157.0) Gecko/20100101 Firefox/157.0",
+          "accept-language": "en-US,en;q=0.9"
+        }
+      },
+      {
+        "kind": "request",
+        "path": "/worker.js",
+        "headers": {
+          "user-agent": "Mozilla/5.0 (X11; Linux x86_64; rv:157.0) Gecko/20100101 Firefox/157.0",
+          "accept-language": "en-US,en;q=0.9"
+        }
+      },
+      {
+        "kind": "report",
+        "headers": {
+          "user-agent": "Mozilla/5.0 (X11; Linux x86_64; rv:157.0) Gecko/20100101 Firefox/157.0",
+          "accept-language": "en-US,en;q=0.9"
+        },
+        "values": {
+          "ctx": "worker",
+          "ua": "Mozilla/5.0 (X11; Linux x86_64; rv:157.0) Gecko/20100101 Firefox/157.0",
+          "lang": "en-US",
+          "languages": [
+            "en-US",
+            "en"
+          ],
+          "tz": "Atlantic/Reykjavik",
+          "intl_locale": "en-US",
+          "offset_jan": 0,
+          "webdriver": false
+        }
+      }
+    ]
+  },
+  {
+    "case": "librewolf-crowd",
+    "step": "cold-restart-same-launcher",
+    "cm_rc": 0,
+    "stdout": "browser exit code: 143\n",
+    "stderr": "",
+    "contexts_reached": false,
+    "killed_pids": [
+      456109
+    ],
+    "events": [
+      {
+        "kind": "request",
+        "path": "/",
+        "headers": {
+          "user-agent": "Mozilla/5.0 (X11; Linux x86_64; rv:157.0) Gecko/20100101 Firefox/157.0",
+          "accept-language": "en-US,en;q=0.9"
+        }
+      },
+      {
+        "kind": "report",
+        "headers": {
+          "user-agent": "Mozilla/5.0 (X11; Linux x86_64; rv:157.0) Gecko/20100101 Firefox/157.0",
+          "accept-language": "en-US,en;q=0.9"
+        },
+        "values": {
+          "ctx": "window",
+          "ua": "Mozilla/5.0 (X11; Linux x86_64; rv:157.0) Gecko/20100101 Firefox/157.0",
+          "lang": "en-US",
+          "languages": [
+            "en-US",
+            "en"
+          ],
+          "tz": "Atlantic/Reykjavik",
+          "intl_locale": "en-US",
+          "offset_jan": 0,
+          "webdriver": false
+        }
+      },
+      {
+        "kind": "request",
+        "path": "/favicon.ico",
+        "headers": {
+          "user-agent": "Mozilla/5.0 (X11; Linux x86_64; rv:157.0) Gecko/20100101 Firefox/157.0",
+          "accept-language": "en-US,en;q=0.9"
+        }
+      },
+      {
+        "kind": "request",
+        "path": "/worker.js",
+        "headers": {
+          "user-agent": "Mozilla/5.0 (X11; Linux x86_64; rv:157.0) Gecko/20100101 Firefox/157.0",
+          "accept-language": "en-US,en;q=0.9"
+        }
+      },
+      {
+        "kind": "report",
+        "headers": {
+          "user-agent": "Mozilla/5.0 (X11; Linux x86_64; rv:157.0) Gecko/20100101 Firefox/157.0",
+          "accept-language": "en-US,en;q=0.9"
+        },
+        "values": {
+          "ctx": "worker",
+          "ua": "Mozilla/5.0 (X11; Linux x86_64; rv:157.0) Gecko/20100101 Firefox/157.0",
+          "lang": "en-US",
+          "languages": [
+            "en-US",
+            "en"
+          ],
+          "tz": "Atlantic/Reykjavik",
+          "intl_locale": "en-US",
+          "offset_jan": 0,
+          "webdriver": false
+        }
+      }
+    ]
+  },
+  {
+    "case": "librewolf-local-de",
+    "step": "first-launch",
+    "cm_rc": 0,
+    "stdout": "browser exit code: 143\n",
+    "stderr": "",
+    "contexts_reached": false,
+    "killed_pids": [
+      456489
+    ],
+    "events": [
+      {
+        "kind": "request",
+        "path": "/",
+        "headers": {
+          "user-agent": "Mozilla/5.0 (X11; Linux x86_64; rv:157.0) Gecko/20100101 Firefox/157.0",
+          "accept-language": "de-DE,de;q=0.9,en-US;q=0.8,en;q=0.7"
+        }
+      },
+      {
+        "kind": "report",
+        "headers": {
+          "user-agent": "Mozilla/5.0 (X11; Linux x86_64; rv:157.0) Gecko/20100101 Firefox/157.0",
+          "accept-language": "de-DE,de;q=0.9,en-US;q=0.8,en;q=0.7"
+        },
+        "values": {
+          "ctx": "window",
+          "ua": "Mozilla/5.0 (X11; Linux x86_64; rv:157.0) Gecko/20100101 Firefox/157.0",
+          "lang": "de-DE",
+          "languages": [
+            "de-DE",
+            "de",
+            "en-US",
+            "en"
+          ],
+          "tz": "Europe/Berlin",
+          "intl_locale": "de-DE",
+          "offset_jan": -60,
+          "webdriver": false
+        }
+      },
+      {
+        "kind": "request",
+        "path": "/favicon.ico",
+        "headers": {
+          "user-agent": "Mozilla/5.0 (X11; Linux x86_64; rv:157.0) Gecko/20100101 Firefox/157.0",
+          "accept-language": "de-DE,de;q=0.9,en-US;q=0.8,en;q=0.7"
+        }
+      },
+      {
+        "kind": "request",
+        "path": "/worker.js",
+        "headers": {
+          "user-agent": "Mozilla/5.0 (X11; Linux x86_64; rv:157.0) Gecko/20100101 Firefox/157.0",
+          "accept-language": "de-DE,de;q=0.9,en-US;q=0.8,en;q=0.7"
+        }
+      },
+      {
+        "kind": "report",
+        "headers": {
+          "user-agent": "Mozilla/5.0 (X11; Linux x86_64; rv:157.0) Gecko/20100101 Firefox/157.0",
+          "accept-language": "de-DE,de;q=0.9,en-US;q=0.8,en;q=0.7"
+        },
+        "values": {
+          "ctx": "worker",
+          "ua": "Mozilla/5.0 (X11; Linux x86_64; rv:157.0) Gecko/20100101 Firefox/157.0",
+          "lang": "de-DE",
+          "languages": [
+            "de-DE",
+            "de",
+            "en-US",
+            "en"
+          ],
+          "tz": "Europe/Berlin",
+          "intl_locale": "de-DE",
+          "offset_jan": -60,
+          "webdriver": false
+        }
+      }
+    ]
+  },
+  {
+    "case": "librewolf-local-de",
+    "step": "cold-restart-same-launcher",
+    "cm_rc": 0,
+    "stdout": "browser exit code: 143\n",
+    "stderr": "",
+    "contexts_reached": false,
+    "killed_pids": [
+      456859
+    ],
+    "events": [
+      {
+        "kind": "request",
+        "path": "/",
+        "headers": {
+          "user-agent": "Mozilla/5.0 (X11; Linux x86_64; rv:157.0) Gecko/20100101 Firefox/157.0",
+          "accept-language": "de-DE,de;q=0.9,en-US;q=0.8,en;q=0.7"
+        }
+      },
+      {
+        "kind": "report",
+        "headers": {
+          "user-agent": "Mozilla/5.0 (X11; Linux x86_64; rv:157.0) Gecko/20100101 Firefox/157.0",
+          "accept-language": "de-DE,de;q=0.9,en-US;q=0.8,en;q=0.7"
+        },
+        "values": {
+          "ctx": "window",
+          "ua": "Mozilla/5.0 (X11; Linux x86_64; rv:157.0) Gecko/20100101 Firefox/157.0",
+          "lang": "de-DE",
+          "languages": [
+            "de-DE",
+            "de",
+            "en-US",
+            "en"
+          ],
+          "tz": "Europe/Berlin",
+          "intl_locale": "de-DE",
+          "offset_jan": -60,
+          "webdriver": false
+        }
+      },
+      {
+        "kind": "request",
+        "path": "/favicon.ico",
+        "headers": {
+          "user-agent": "Mozilla/5.0 (X11; Linux x86_64; rv:157.0) Gecko/20100101 Firefox/157.0",
+          "accept-language": "de-DE,de;q=0.9,en-US;q=0.8,en;q=0.7"
+        }
+      },
+      {
+        "kind": "request",
+        "path": "/worker.js",
+        "headers": {
+          "user-agent": "Mozilla/5.0 (X11; Linux x86_64; rv:157.0) Gecko/20100101 Firefox/157.0",
+          "accept-language": "de-DE,de;q=0.9,en-US;q=0.8,en;q=0.7"
+        }
+      },
+      {
+        "kind": "report",
+        "headers": {
+          "user-agent": "Mozilla/5.0 (X11; Linux x86_64; rv:157.0) Gecko/20100101 Firefox/157.0",
+          "accept-language": "de-DE,de;q=0.9,en-US;q=0.8,en;q=0.7"
+        },
+        "values": {
+          "ctx": "worker",
+          "ua": "Mozilla/5.0 (X11; Linux x86_64; rv:157.0) Gecko/20100101 Firefox/157.0",
+          "lang": "de-DE",
+          "languages": [
+            "de-DE",
+            "de",
+            "en-US",
+            "en"
+          ],
+          "tz": "Europe/Berlin",
+          "intl_locale": "de-DE",
+          "offset_jan": -60,
+          "webdriver": false
+        }
+      }
+    ]
+  },
+  {
+    "case": "librewolf-local-de",
+    "step": "bare-launch-outside-cm",
+    "contexts_reached": false,
+    "killed_pids": [
+      457226
+    ],
+    "events": [
+      {
+        "kind": "request",
+        "path": "/",
+        "headers": {
+          "user-agent": "Mozilla/5.0 (X11; Linux x86_64; rv:157.0) Gecko/20100101 Firefox/157.0",
+          "accept-language": "de-DE,de;q=0.9,en-US;q=0.8,en;q=0.7"
+        }
+      },
+      {
+        "kind": "report",
+        "headers": {
+          "user-agent": "Mozilla/5.0 (X11; Linux x86_64; rv:157.0) Gecko/20100101 Firefox/157.0",
+          "accept-language": "de-DE,de;q=0.9,en-US;q=0.8,en;q=0.7"
+        },
+        "values": {
+          "ctx": "window",
+          "ua": "Mozilla/5.0 (X11; Linux x86_64; rv:157.0) Gecko/20100101 Firefox/157.0",
+          "lang": "de-DE",
+          "languages": [
+            "de-DE",
+            "de",
+            "en-US",
+            "en"
+          ],
+          "tz": "Europe/Moscow",
+          "intl_locale": "de",
+          "offset_jan": -180,
+          "webdriver": false
+        }
+      },
+      {
+        "kind": "request",
+        "path": "/favicon.ico",
+        "headers": {
+          "user-agent": "Mozilla/5.0 (X11; Linux x86_64; rv:157.0) Gecko/20100101 Firefox/157.0",
+          "accept-language": "de-DE,de;q=0.9,en-US;q=0.8,en;q=0.7"
+        }
+      },
+      {
+        "kind": "request",
+        "path": "/worker.js",
+        "headers": {
+          "user-agent": "Mozilla/5.0 (X11; Linux x86_64; rv:157.0) Gecko/20100101 Firefox/157.0",
+          "accept-language": "de-DE,de;q=0.9,en-US;q=0.8,en;q=0.7"
+        }
+      },
+      {
+        "kind": "report",
+        "headers": {
+          "user-agent": "Mozilla/5.0 (X11; Linux x86_64; rv:157.0) Gecko/20100101 Firefox/157.0",
+          "accept-language": "de-DE,de;q=0.9,en-US;q=0.8,en;q=0.7"
+        },
+        "values": {
+          "ctx": "worker",
+          "ua": "Mozilla/5.0 (X11; Linux x86_64; rv:157.0) Gecko/20100101 Firefox/157.0",
+          "lang": "de-DE",
+          "languages": [
+            "de-DE",
+            "de",
+            "en-US",
+            "en"
+          ],
+          "tz": "Europe/Moscow",
+          "intl_locale": "de",
+          "offset_jan": -180,
+          "webdriver": false
+        }
+      }
+    ]
+  },
+  {
+    "case": "librewolf-local-de",
+    "step": "launch-after-bare",
+    "cm_rc": 3,
+    "stdout": "",
+    "stderr": "cm identity: the profile was opened outside CM: run cm identity confirm [BypassSuspected]\n",
+    "events": []
+  }
+]

@@ -1,0 +1,224 @@
+{
+  "date": "2026-10-08",
+  "git_revision": "37986491158685e84c8fe4e79be066c6401a9968",
+  "dirty_tree": true,
+  "package": "BI role 2: TESTS-BI.md",
+  "level": [
+    "L1",
+    "L2",
+    "L3"
+  ],
+  "status": "FAIL",
+  "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)",
+  "executor": "coordinator (Claude)",
+  "commands": [
+    "cargo build --locked --offline --bin cm",
+    "cargo clippy --locked --offline --all-targets -- -D warnings -D clippy::undocumented_unsafe_blocks",
+    "rustfmt --edition 2024 --check tests/audit_bi_*.rs tests/bi_support/mod.rs",
+    "cargo test --locked --offline --test audit_bi_{presets,engine,model,store,validate,plan,guard,axes,launch,cli}",
+    "unshare -rn -- <target>/.../deps/audit_bi_<name>-<hash>   (same 10 binaries as userns root)",
+    "CM_BIN=<target>/x86_64-unknown-linux-musl/debug/cm python3 docs/design/cm-network-manager/tools/bi_lab.py bi-evidence/2026-10-08/lab-1",
+    "CM_BIN=... python3 docs/design/cm-network-manager/tools/bi_lab.py bi-evidence/2026-10-08/lab-2",
+    "CM_BIN=... CM_BI_LAB_EXTRA=--disable-popup-blocking python3 docs/design/cm-network-manager/tools/bi_lab.py bi-evidence/2026-10-08/diag-popup-blocking",
+    "CARGO_TARGET_DIR=$HOME/.cache/cm-grok-target CM_TEST_MIHOMO=$HOME/.cache/cm-cores/mihomo/mihomo sh tests/check_audit.sh"
+  ],
+  "counters": {
+    "l1_l2_checks": 427,
+    "l1_l2_pass": 427,
+    "l1_l2_fail": 0,
+    "red_cargo_tests": 0,
+    "l3_checks_per_run": 118,
+    "l3_pass_per_run": 100,
+    "l3_fail_per_run": 18,
+    "gate": "sh tests/check_audit.sh exit 0"
+  },
+  "edges": {
+    "E01": {
+      "file": "tests/audit_bi_presets.rs",
+      "status": "PASS",
+      "checks": 178
+    },
+    "E02": {
+      "file": "tests/audit_bi_presets.rs",
+      "status": "PASS",
+      "checks": 17
+    },
+    "E03": {
+      "file": "tests/audit_bi_presets.rs",
+      "status": "PASS",
+      "checks": 9
+    },
+    "E04": {
+      "file": "tests/audit_bi_engine.rs",
+      "status": "PASS",
+      "checks": 15
+    },
+    "E04b": {
+      "file": "tests/audit_bi_engine.rs",
+      "status": "PASS",
+      "checks": 7
+    },
+    "E05": {
+      "file": "tests/audit_bi_engine.rs",
+      "status": "PASS",
+      "checks": 8
+    },
+    "E06": {
+      "file": "tests/audit_bi_model.rs",
+      "status": "PASS",
+      "checks": 18
+    },
+    "E07": {
+      "file": "tests/audit_bi_store.rs",
+      "status": "PASS",
+      "checks": 16
+    },
+    "E08": {
+      "file": "tests/audit_bi_validate.rs",
+      "status": "PASS",
+      "checks": 26
+    },
+    "E09": {
+      "file": "tests/audit_bi_plan.rs",
+      "status": "PASS",
+      "checks": 9
+    },
+    "E10": {
+      "file": "tests/audit_bi_plan.rs",
+      "status": "PASS",
+      "checks": 10
+    },
+    "E11": {
+      "file": "tests/audit_bi_guard.rs",
+      "status": "PASS",
+      "checks": 10
+    },
+    "E12": {
+      "file": "tests/audit_bi_guard.rs",
+      "status": "PASS",
+      "checks": 13
+    },
+    "E13b": {
+      "file": "tests/audit_bi_guard.rs",
+      "status": "PASS",
+      "checks": 2
+    },
+    "E14": {
+      "file": "tests/audit_bi_guard.rs",
+      "status": "PASS",
+      "checks": 8
+    },
+    "E13": {
+      "file": "tests/audit_bi_axes.rs",
+      "status": "PASS",
+      "checks": 2
+    },
+    "E17b": {
+      "file": "tests/audit_bi_axes.rs",
+      "status": "PASS",
+      "checks": 3
+    },
+    "E18": {
+      "file": "tests/audit_bi_axes.rs",
+      "status": "PASS",
+      "checks": 15
+    },
+    "E15": {
+      "file": "tests/audit_bi_launch.rs",
+      "status": "PASS",
+      "checks": 9
+    },
+    "E16": {
+      "file": "tests/audit_bi_launch.rs",
+      "status": "PASS",
+      "checks": 5
+    },
+    "E17": {
+      "file": "tests/audit_bi_launch.rs",
+      "status": "PASS",
+      "checks": 7,
+      "note": "user run: RunAsRoot NOT_APPLICABLE (euid 1000); userns-root run (unshare -rn): RunAsRoot checked and PASS"
+    },
+    "E19": {
+      "file": "tests/audit_bi_cli.rs",
+      "status": "PASS",
+      "checks": 40
+    },
+    "E20": {
+      "level": "L3",
+      "file": "docs/design/cm-network-manager/tools/bi_lab.py",
+      "status": "FAIL",
+      "checks": 118,
+      "pass": 100,
+      "fail": 18,
+      "runs": [
+        "bi-evidence/2026-10-08/lab-1",
+        "bi-evidence/2026-10-08/lab-2"
+      ],
+      "note": "bare launch BypassSuspected PASS for Chrome 155 and LibreWolf 157 local; window/worker/UA/tz/languages/webdriver PASS; tab report missing in all 4 identities; Brave Accept-Language q"
+    }
+  },
+  "defects": [
+    "E20: Chrome 155 local DE, tab (window.open -> /tab): ожидалось отчёт вкладки (tz Europe/Berlin, languages [de-DE, de, en-US, en], webdriver false), получено отчёта нет; запроса /tab не было; diag-popup-blocking: с --disable-popup-blocking вкладка появляется и её проверки PASS",
+    "E20: Brave 154 local DE, tab (window.open -> /tab): ожидалось отчёт вкладки, получено отчёта нет; запроса /tab не было",
+    "E20: Brave 154 local DE, первый запрос Accept-Language: ожидалось начинается с 'de-DE,de;q=0.9', получено 'de-DE,de;q=0.6' (lab-1) и 'de-DE,de;q=0.7' (lab-2); решение нужно: продукт не управляет q, возможно ожидание E20 неверно",
+    "E20: LibreWolf 157 crowd, tab (window.open -> /tab): ожидалось отчёт вкладки, получено отчёта нет; запроса /tab не было; план --lab не задаёт dom.disable_open_during_load=false (в I15R-протоколе задавался)",
+    "E20: LibreWolf 157 local DE, tab (window.open -> /tab): ожидалось отчёт вкладки, получено отчёта нет; запроса /tab не было; та же причина, что у crowd"
+  ],
+  "lab": {
+    "isolation": "unshare -rn (lo only); CM_IDENTITY_ROOT, CM_STATE_DIR, HOME and XDG per case in a temp dir, removed after; CM_CONF points to a nonexistent file; each browser's processes killed after each step; user profiles not touched",
+    "browsers": {
+      "chrome": "Google Chrome 155.0.8059.39",
+      "brave": "Brave Browser 154.1.96.61",
+      "librewolf": "LibreWolf 157.0-1"
+    },
+    "reproducibility": "lab-1 vs lab-2: checks.json and observations.json differ only in Brave Accept-Language q (0.6 vs 0.7); counters identical (118/100/18)",
+    "identity_verified_rows_added": [],
+    "identity_verified_reason": "no pair passed the full E20 list (tab report missing in all four identities); existing rows unchanged"
+  },
+  "not_closed": [
+    "E20 tab checks are red (see defects); tab values of the new tab were not measured with the product --lab plan",
+    "LibreWolf 157 crowd is in E20 but E05 pins it as Unverified: no registry row",
+    "bare launch (BypassSuspected step) on the host timezone Europe/Moscow: the bare run leaks host tz by design",
+    "Canvas, WebGL, fonts, audio, TLS, service and shared workers were not measured"
+  ],
+  "raw": {
+    "lab-1": {
+      "checks": {
+        "checks": 118,
+        "pass": 100,
+        "fail": 18
+      }
+    },
+    "lab-2": {
+      "checks": {
+        "checks": 118,
+        "pass": 100,
+        "fail": 18
+      }
+    },
+    "diag-popup-blocking": {
+      "checks": {
+        "checks": 114,
+        "pass": 91,
+        "fail": 23
+      },
+      "note": "diagnostic only, not acceptance: CM_BI_LAB_EXTRA=--disable-popup-blocking; Chrome 155 and Brave 154 tab checks pass; LibreWolf fails because Firefox rejects the Chrome flag"
+    }
+  },
+  "files": {
+    "lab-1/runs.json": "c1cc49866854a6caac7761e3db7d9580592a2f783c7daf98415e0f7905cedc21",
+    "lab-1/observations.json": "5116381892b5587a144226e244860623deea578d07fe92f4c68e211eae3955a4",
+    "lab-1/checks.json": "f744f9e5b164d7d60c21de522ddd2f1417cfb4fd78779988cdade828b829d91f",
+    "lab-1/meta.json": "120413628f3ebf10241d6ffd21bb16fd66d26c2026161a7d21f4a76a3255a5f6",
+    "lab-2/runs.json": "ad3b68322d6489d3b7912e93ab2d56dfa859b090f6e0b52adf7b49cac29644e6",
+    "lab-2/observations.json": "0118f4df04547ea4e218990344092d8fc45733522f997a2ed6615b166c84f281",
+    "lab-2/checks.json": "64cc95961f698be87ccb68db0f55a8a1bef37a2bf80c646904a88552dfe1e421",
+    "lab-2/meta.json": "120413628f3ebf10241d6ffd21bb16fd66d26c2026161a7d21f4a76a3255a5f6",
+    "diag-popup-blocking/runs.json": "56e2fd5f1cc68524c81e45dfd0906d0ee9aca4fc206decf67e5ad0e86074b259",
+    "diag-popup-blocking/observations.json": "c2da23dcc5355751a287b557c46b24536e1e100621a148861f61cf280445cf65",
+    "diag-popup-blocking/checks.json": "c84064f972fed53fe9a38904dddef30e16904bbe6a5becc1584149446b39567d",
+    "diag-popup-blocking/meta.json": "624d5dcc4ab742489b95ea5e0664250385b5f6f66e236852e5bcfd929d5e2ceb",
+    "tools/bi_lab.py": "a59139c3a2b9147f6497708ade81ceb09e8914bda4b595da03d25dd603d037bb"
+  }
+}

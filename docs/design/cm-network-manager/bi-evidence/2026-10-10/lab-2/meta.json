@@ -1,0 +1,25 @@
+{
+  "browsers": {
+    "google-chrome-stable": {
+      "path": "/usr/bin/google-chrome-stable",
+      "version": "Google Chrome 155.0.8059.39"
+    },
+    "brave": {
+      "path": "/usr/bin/brave",
+      "version": "Brave Browser 154.1.96.61"
+    },
+    "librewolf": {
+      "path": "/usr/bin/librewolf",
+      "version": "LibreWolf 157.0-1"
+    }
+  },
+  "cm_sha256": "4f578905ab058ee22ebcc3b1cd09d102b850cad7a1ca0df8f5725111cfa13e4b",
+  "extra_args": [],
+  "counters": {
+    "checks": 150,
+    "pass": 150,
+    "fail": 0
+  },
+  "platform": "Linux-7.2.9-1-garuda-x86_64-with-glibc2.44",
+  "python": "3.14.7"
+}

@@ -63,6 +63,10 @@ fn main() {
     if args.first().is_some_and(|arg| arg == "source") {
         std::process::exit(cm::sources::cli::dispatch(&args[1..]));
     }
+    // Identity belongs to the user: flags stay in argv and the process does not escalate.
+    if args.first().is_some_and(|arg| arg == "identity") {
+        std::process::exit(cm::identity::cli::dispatch(&args[1..]));
+    }
     let pause = args.iter().any(|a| a == "--pause");
     let no_download = args.iter().any(|a| a == "--no-download");
     let all = args.iter().any(|a| a == "--all");
@@ -76,7 +80,11 @@ fn main() {
     let pos: Vec<String> = args.iter().skip(1).cloned().collect();
 
     match cmd.as_str() {
-        "-h" | "help" => return print!("{}\n{}\n{}", t!(USAGE), t!(MIGRATION_NOTICE), t!(MIGRATION_USAGE)),
+        "-h" | "help" => {
+            print!("{}\n{}\n{}", t!(USAGE), t!(MIGRATION_NOTICE), t!(MIGRATION_USAGE));
+            print!("{}", t!("  cm identity …  личности браузера (стратегии local и crowd)\n"));
+            return;
+        }
         "version" => return println!("cm {VERSION}"),
         _ => {}
     }
