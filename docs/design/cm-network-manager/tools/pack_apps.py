@@ -77,13 +77,13 @@ vertex("I11.A3", "A", "Запускать приложение в его netns �
 `AppLaunch { instance, generation, program, args }`:
 1. у экземпляра есть сеть (I08.N6) и файл `resolv.conf` этой сети → иначе `NotRunning`;
 2. состояние туннеля допускает запуск: worker запущен и отвечает (`Workers::status` → `running` и `api_ready`) → иначе `NotRunning`; `generation` кадра равно поколению worker-а (его клиент читает из `WorkerStatus`) → иначе `GenerationMismatch`. Запуск в сеть без работающего ядра запрещён: приложение стартовало бы в `Blocked`. Запись о worker-е остаётся и после гибели процесса, поэтому одного `running` мало;
-3. `LaunchSpec` из `program` и `args` кадра (правила I11.A1 для пути и аргументов; env из кадра не принимается);
+3. `LaunchSpec` из `program` и `args` кадра (правила I11.A1 для пути и аргументов). Поле `env` кадра принимает только имена из `controller::protocol::SESSION_ENV_KEYS` (`DISPLAY`, `WAYLAND_DISPLAY`, `XAUTHORITY`, `DBUS_SESSION_BUS_ADDRESS`, `PULSE_SERVER`, `XDG_SESSION_TYPE`, `XDG_CURRENT_DESKTOP`), значение до 4096 байт без NUL; другое имя → `BadArgument` (отсекает декодер);
 4. `run_as_for(peer.uid, peer.gid)`;
 5. запуск: дочерний процесс входит в netns и только потом сбрасывает привилегии.
 
 В `src/controller/drop.rs` — `pub fn drop_into_netns_pre_exec(command, netns_fd: RawFd, resolv: Option<&Path>, run_as, keep_fds, limits) -> Result<(), ControlError>`: первым шагом `setns(netns_fd, CLONE_NEWNET)`; при заданном `resolv` — `unshare(CLONE_NEWNS)`, корень в `MS_REC|MS_SLAVE` и bind этого файла поверх `/etc/resolv.conf` (одного `setns` мало: приложение читало бы DNS хоста); затем шаги `drop_pre_exec`. Отказ любого шага — приложение не запускается. Дескриптор netns открывается в родителе: `/run/netns/cm-<index>` (`O_RDONLY | O_CLOEXEC`) и закрывается сразу после `spawn`; в `test_mode` корень — `<base>/netns`. Рабочий каталог приложения — `HOME`, а если его нет — `/`.
 
-Окружение: allowlist из окружения **клиента** недоступен контроллеру, поэтому `AppLaunch` получает env так: `PATH=/usr/bin:/bin`, `HOME` — домашний каталог uid из `getpwuid_r`, `XDG_RUNTIME_DIR=/run/user/<uid>`, плюс `TZ` и `LANG` из пресета экземпляра, если он записан (файл `<root>/instances/<instance>/env.json` владельца: `{"timezone": …, "locale": …}`, проверки владельца и прав — как у `read_owned_config`).
+Окружение: приложение работает под uid самого клиента, поэтому переменные его графической сессии (`env` кадра, см. п. 3) не дают ему ничего сверх его прав — без них окно не откроется. Остальное задаёт контроллер и перекрывает присланное: `PATH=/usr/bin:/bin`, `HOME` — домашний каталог uid из `getpwuid_r`, `XDG_RUNTIME_DIR=/run/user/<uid>`, плюс `TZ` и `LANG` из пресета экземпляра, если он записан (файл `<root>/instances/<instance>/config/env.json` владельца: `{"timezone": …, "locale": …}`, проверки владельца и прав — как у `read_owned_config`).
 
 Ответ — новый вариант `ReplyData::Launched { pid: u32 }`. Контроллер не ждёт завершения приложения, но забирает статус выхода в фоне (нет зомби).
 
@@ -118,7 +118,8 @@ vertex("I11.A5", "A", "Дать команду `cm app`.", "M", "L1", ["I11.A3",
 
 - `cm app check FILE` — читает `ApplicationDefinition` из JSON-файла, печатает итог `spec::check` (программа, число аргументов, имена переменных без значений). Код 0 или 2.
 - `cm app desktop ID NAME [--icon ICON]` — печатает ярлык в stdout. Код 0 или 2.
-- `cm app run INSTANCE -- PROGRAM [ARGS…]` — отправляет контроллеру `AppLaunch` (сокет `CM_CONTROLLER_SOCKET`, по умолчанию `/run/cm/controller.sock`), `generation` берёт из ответа `WorkerStatus` этого экземпляра; печатает `pid`. Коды: 0; 2 — использование или `SpecError`; 3 — отказ контроллера (в выводе — его код в квадратных скобках); 4 — контроллер недоступен.
+- `cm app run ID` — форма для ярлыка: описание приложения `ID` берётся из хранилища (`sources::cli::store_root()`), экземпляр — туннель назначения (свой или туннель группы), программа и аргументы — из `spec::check`. Рабочий каталог и переменные описания кадр не несёт: при их наличии запускается `/usr/bin/env --chdir=<cwd> K=V… PROGRAM ARGS…` (`app::cli::stored_command`). Нет приложения, группы или хранилища → код 2.
+- `cm app run INSTANCE -- PROGRAM [ARGS…]` — в `env` кадра кладёт переменные своей сессии из `SESSION_ENV_KEYS`; отправляет контроллеру `AppLaunch` (сокет `CM_CONTROLLER_SOCKET`, по умолчанию `/run/cm/controller.sock`), `generation` берёт из ответа `WorkerStatus` этого экземпляра; печатает `pid`. Коды: 0; 2 — использование или `SpecError`; 3 — отказ контроллера (в выводе — его код в квадратных скобках); 4 — контроллер недоступен.
 - `cm app` без аргументов — справка, код 2.
 
 Клиент контроллера: `pub fn call(socket: &Path, op: Op) -> Result<Reply, ClientError>` в `src/controller/client.rs` — один кадр, один ответ, тайм-аут 30 с; `id` — 16 случайных hex-символов из `/dev/urandom`.
@@ -354,7 +355,10 @@ edge("M03", "I11.A3", "I11.A5",
          "env.json — симлинк, файл с записью для группы или длиннее 4096 байт → invalid_config; timezone `../x` → invalid_config",
          "после net_apply и worker_start: app_launch → ok, data {type launched, pid N}",
          "файл приложения: интерфейсы только lo и cmv0n с адресом 10.213.0.2/30 (нет интерфейсов хоста)",
-         "env приложения: PATH, HOME, XDG_RUNTIME_DIR и TZ/LANG из env.json; нет переменных контроллера",
+         "env приложения: PATH, HOME, XDG_RUNTIME_DIR и TZ/LANG из config/env.json; нет переменных контроллера",
+         "кадр с env {WAYLAND_DISPLAY: wayland-7} → приложение видит WAYLAND_DISPLAY=wayland-7; кадр с env {LD_PRELOAD: /x.so} или {PATH: /x} → bad_argument",
+         "клиент и контроллер под разными uid: ядро и приложение работают под uid клиента (Uid в /proc/<pid>/status), CapEff 0",
+         "stored_command: без cwd и env → (program, args); с cwd /w и env {A=1} → (\"/usr/bin/env\", [\"--chdir=/w\", \"A=1\", program, args…])",
          "приложение с NUL или относительным program в кадре → bad_argument (отсекает декодер)",
          "после завершения приложения у контроллера нет зомби-потомков",
          "с подчинённым uid (`--map-users`): `id -u` приложения == uid клиента, CapEff 0",

@@ -52,13 +52,15 @@ pub struct Request { pub v: u32, pub id: String, pub op: Op }
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
 pub enum Op {
+    InstancePrepare { instance: String },               // каталоги экземпляра, см. I06.I2
     WorkerStart { instance: String, generation: u64 },
     WorkerReload { instance: String, generation: u64, next_generation: u64 },
     WorkerStop { instance: String, generation: u64 },
     WorkerStatus { instance: String },
     NetApply { instance: String, generation: u64 },     // содержание — I07
     NetRevert { instance: String, generation: u64 },    // содержание — I07
-    AppLaunch { instance: String, generation: u64, program: String, args: Vec<String> }, // I11
+    AppLaunch { instance: String, generation: u64, program: String, args: Vec<String>,
+                env: BTreeMap<String, String> },        // I11; env — только SESSION_ENV_KEYS, по умолчанию пусто
     Reconcile,
 }
 
@@ -238,6 +240,20 @@ pub fn read_owned_config(owned: &Owned, generation: u64) -> Result<CoreConfig, C
 ```
 - `root = <base>/u<uid>`; `unit = "cm-core-u<uid>-<instance>.service"`. `uid` — только аргумент функции, который вызывающий берёт из `PeerIdentity`.
 - `instance` не проходит `InstanceId::new` → `BadInstance`.
+- **Владельцы каталогов** (контроллер — root, ядро — uid клиента). Раскладку создаёт `InstanceRoot::create_owned(id, InstanceOwner { uid, gid })`; её же вызывает операция `InstancePrepare` (класс `Worker`, ответ `ok` без данных), чтобы клиент мог положить первый конфиг:
+
+  | Путь | Владелец, права | Кто пишет |
+  |---|---|---|
+  | `<root>`, `<root>/instances`, `<root>/instances/<id>`, `…/<id>/core`, `…/<id>/core/check` | контроллер, 0711 | только контроллер |
+  | `<root>/journal.jsonl`, `<root>/generations.json`, `…/<id>/core.pid` | контроллер, 0600 | только контроллер |
+  | `…/<id>/core/config.json` и файлы проверки | uid клиента, 0600, в каталоге контроллера | контроллер (`process::write_for`) |
+  | `…/<id>/config` | uid клиента, 0700 | клиент: `gen-<g>.json`, `env.json`; контроллер только читает (`read_owned_file`) |
+  | `…/<id>/cache` | uid клиента, 0700 | ядро: его каталог `-d` |
+  | `…/<id>/run` | uid клиента, 0700 | ядро: сокет API |
+
+  Правило: контроллер не пишет в каталог, где запись может создать или подменить клиент. Каталоги создаются и передаются через дескриптор (`O_DIRECTORY|O_NOFOLLOW`, `fchown`).
+- Проверку конфига (`mihomo -t`, `xray run -test`) ядро выполняет под uid клиента (`validate_as`), а не под uid контроллера. Перезагрузка в этом режиме передаёт ядру текст конфига (`payload`), а не путь: ядро принимает путь только внутри своего каталога `-d`.
+- Сокет API и каталог `run` принадлежат uid клиента: адаптер проверяет их по этому uid, а не по своему euid.
 - `read_owned_config`: файл открывается с `O_NOFOLLOW|O_CLOEXEC`; затем `fstat` по открытому дескриптору. Отказ `InvalidConfig`, если это не обычный файл, владелец ≠ `owned.uid`, права содержат запись для группы или остальных (`mode & 0o022 != 0`), размер > `core::adapter::MAX_CONFIG_BYTES`, либо файла нет. Каталог `config` — симлинк → тоже `InvalidConfig`.
 
 `src/core/unit.rs`: новая `pub fn render_user_core_unit(owned_root: &Path, uid: u32, id: &InstanceId, privileges: NetPrivileges) -> String` — тот же текст, что `render_core_unit`, но:
@@ -252,6 +268,10 @@ pub fn read_owned_config(owned: &Owned, generation: u64) -> Result<CoreConfig, C
   - owned("/b", 1000, "browser") → root "/b/u1000", unit "cm-core-u1000-browser.service"
   - config_path(7) == "/b/u1000/instances/browser/config/gen-7.json"; journal_path == "/b/u1000/journal.jsonl"
   - owned(base, 1000, "../x") → Err(BadInstance)
+  - create_owned(browser, {uid, gid}) под euid == uid: <root>, instances, instances/browser, core, core/check — права 0711; config, cache, run — 0700; повторный вызов не меняет результат
+  - create_owned: config — заранее созданный симлинк → Err(UnsafePath), цель симлинка не тронута
+  - контроллер и клиент под разными uid (L2, `unshare -U --map-root-user --map-auto`): после instance_prepare каталоги контроллера принадлежат uid 0, config/cache/run — uid клиента; клиент не может создать запись в instances/browser и в core; core/config.json — файл uid клиента 0600; journal.jsonl и core.pid — uid 0, 0600
+  - после `kill -9` ядра: worker_status → running false, generation прежний, оси down; worker_stop с этим поколением → ok; затем worker_start → ok
   - read_owned_config: обычный файл 0600 владельца → Ok с теми же байтами
   - файл — симлинк на существующий файл → InvalidConfig; каталог config — симлинк → InvalidConfig
   - права 0666 → InvalidConfig; размер MAX_CONFIG_BYTES + 1 → InvalidConfig; файла нет → InvalidConfig
@@ -464,7 +484,7 @@ pub struct MihomoFactory { pub binary: PathBuf, pub lease_dir: PathBuf }
 
 **stop:** `check_running`; шаги `adapter_stop` (compensate — ничего: остановку не откатываем) и `clear_generation`; экземпляр убирается из карты.
 
-**status:** без журнала и без проверки поколения; для не запущенного — `Status { running: false, generation: None, api: "down", route: "down", remote: "unknown" }`. Значения осей — snake_case имён вариантов `ApiState`/`RouteState`/`RemoteState`.
+**status:** без журнала и без проверки поколения; для не запущенного — `Status { running: false, generation: None, api: "down", route: "down", remote: "unknown" }`. `running` — жив ли процесс ядра (`CoreAdapter::alive`): после гибели ядра ответ `running: false` с прежним `generation` и осями `down`; запись снимает `worker_stop` с этим поколением, после него возможен новый `worker_start`. Значения осей — snake_case имён вариантов `ApiState`/`RouteState`/`RemoteState`.
 
 **reconcile:** `txn::reconcile` по журналу владельца; для шага `adapter_start` компенсация — остановить экземпляр, если он есть в карте; `Reconciled { compensated }`.
 

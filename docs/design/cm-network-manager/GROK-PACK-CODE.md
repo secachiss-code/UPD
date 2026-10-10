@@ -54,13 +54,15 @@ pub struct Request { pub v: u32, pub id: String, pub op: Op }
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
 pub enum Op {
+    InstancePrepare { instance: String },               // каталоги экземпляра, см. I06.I2
     WorkerStart { instance: String, generation: u64 },
     WorkerReload { instance: String, generation: u64, next_generation: u64 },
     WorkerStop { instance: String, generation: u64 },
     WorkerStatus { instance: String },
     NetApply { instance: String, generation: u64 },     // содержание — I07
     NetRevert { instance: String, generation: u64 },    // содержание — I07
-    AppLaunch { instance: String, generation: u64, program: String, args: Vec<String> }, // I11
+    AppLaunch { instance: String, generation: u64, program: String, args: Vec<String>,
+                env: BTreeMap<String, String> },        // I11; env — только SESSION_ENV_KEYS, по умолчанию пусто
     Reconcile,
 }
 
@@ -240,6 +242,20 @@ pub fn read_owned_config(owned: &Owned, generation: u64) -> Result<CoreConfig, C
 ```
 - `root = <base>/u<uid>`; `unit = "cm-core-u<uid>-<instance>.service"`. `uid` — только аргумент функции, который вызывающий берёт из `PeerIdentity`.
 - `instance` не проходит `InstanceId::new` → `BadInstance`.
+- **Владельцы каталогов** (контроллер — root, ядро — uid клиента). Раскладку создаёт `InstanceRoot::create_owned(id, InstanceOwner { uid, gid })`; её же вызывает операция `InstancePrepare` (класс `Worker`, ответ `ok` без данных), чтобы клиент мог положить первый конфиг:
+
+  | Путь | Владелец, права | Кто пишет |
+  |---|---|---|
+  | `<root>`, `<root>/instances`, `<root>/instances/<id>`, `…/<id>/core`, `…/<id>/core/check` | контроллер, 0711 | только контроллер |
+  | `<root>/journal.jsonl`, `<root>/generations.json`, `…/<id>/core.pid` | контроллер, 0600 | только контроллер |
+  | `…/<id>/core/config.json` и файлы проверки | uid клиента, 0600, в каталоге контроллера | контроллер (`process::write_for`) |
+  | `…/<id>/config` | uid клиента, 0700 | клиент: `gen-<g>.json`, `env.json`; контроллер только читает (`read_owned_file`) |
+  | `…/<id>/cache` | uid клиента, 0700 | ядро: его каталог `-d` |
+  | `…/<id>/run` | uid клиента, 0700 | ядро: сокет API |
+
+  Правило: контроллер не пишет в каталог, где запись может создать или подменить клиент. Каталоги создаются и передаются через дескриптор (`O_DIRECTORY|O_NOFOLLOW`, `fchown`).
+- Проверку конфига (`mihomo -t`, `xray run -test`) ядро выполняет под uid клиента (`validate_as`), а не под uid контроллера. Перезагрузка в этом режиме передаёт ядру текст конфига (`payload`), а не путь: ядро принимает путь только внутри своего каталога `-d`.
+- Сокет API и каталог `run` принадлежат uid клиента: адаптер проверяет их по этому uid, а не по своему euid.
 - `read_owned_config`: файл открывается с `O_NOFOLLOW|O_CLOEXEC`; затем `fstat` по открытому дескриптору. Отказ `InvalidConfig`, если это не обычный файл, владелец ≠ `owned.uid`, права содержат запись для группы или остальных (`mode & 0o022 != 0`), размер > `core::adapter::MAX_CONFIG_BYTES`, либо файла нет. Каталог `config` — симлинк → тоже `InvalidConfig`.
 
 `src/core/unit.rs`: новая `pub fn render_user_core_unit(owned_root: &Path, uid: u32, id: &InstanceId, privileges: NetPrivileges) -> String` — тот же текст, что `render_core_unit`, но:
@@ -254,6 +270,10 @@ pub fn read_owned_config(owned: &Owned, generation: u64) -> Result<CoreConfig, C
   - owned("/b", 1000, "browser") → root "/b/u1000", unit "cm-core-u1000-browser.service"
   - config_path(7) == "/b/u1000/instances/browser/config/gen-7.json"; journal_path == "/b/u1000/journal.jsonl"
   - owned(base, 1000, "../x") → Err(BadInstance)
+  - create_owned(browser, {uid, gid}) под euid == uid: <root>, instances, instances/browser, core, core/check — права 0711; config, cache, run — 0700; повторный вызов не меняет результат
+  - create_owned: config — заранее созданный симлинк → Err(UnsafePath), цель симлинка не тронута
+  - контроллер и клиент под разными uid (L2, `unshare -U --map-root-user --map-auto`): после instance_prepare каталоги контроллера принадлежат uid 0, config/cache/run — uid клиента; клиент не может создать запись в instances/browser и в core; core/config.json — файл uid клиента 0600; journal.jsonl и core.pid — uid 0, 0600
+  - после `kill -9` ядра: worker_status → running false, generation прежний, оси down; worker_stop с этим поколением → ok; затем worker_start → ok
   - read_owned_config: обычный файл 0600 владельца → Ok с теми же байтами
   - файл — симлинк на существующий файл → InvalidConfig; каталог config — симлинк → InvalidConfig
   - права 0666 → InvalidConfig; размер MAX_CONFIG_BYTES + 1 → InvalidConfig; файла нет → InvalidConfig
@@ -471,7 +491,7 @@ pub struct MihomoFactory { pub binary: PathBuf, pub lease_dir: PathBuf }
 
 **stop:** `check_running`; шаги `adapter_stop` (compensate — ничего: остановку не откатываем) и `clear_generation`; экземпляр убирается из карты.
 
-**status:** без журнала и без проверки поколения; для не запущенного — `Status { running: false, generation: None, api: "down", route: "down", remote: "unknown" }`. Значения осей — snake_case имён вариантов `ApiState`/`RouteState`/`RemoteState`.
+**status:** без журнала и без проверки поколения; для не запущенного — `Status { running: false, generation: None, api: "down", route: "down", remote: "unknown" }`. `running` — жив ли процесс ядра (`CoreAdapter::alive`): после гибели ядра ответ `running: false` с прежним `generation` и осями `down`; запись снимает `worker_stop` с этим поколением, после него возможен новый `worker_start`. Значения осей — snake_case имён вариантов `ApiState`/`RouteState`/`RemoteState`.
 
 **reconcile:** `txn::reconcile` по журналу владельца; для шага `adapter_start` компенсация — остановить экземпляр, если он есть в карте; `Reconciled { compensated }`.
 
@@ -767,6 +787,7 @@ pub fn generate_config(nodes: &[serde_json::Value], leased_port: u16) -> Result<
 - `type` не из таблицы (в том числе `tuic`, `hysteria2`, `wireguard`, `http`, `socks5`) → `Unsupported(<type>)` — без тихой замены;
 - нет обязательного поля, порт вне 1..=65535, uuid не в формате 8-4-4-4-12 → `InvalidNode`;
 - поля узла, меняющие маршрут мимо CM (`dialer-proxy`, `interface-name`, `routing-mark`) → `Unsupported("dialer")`.
+- незнакомое поле узла или вложенных `ws-opts`, `grpc-opts`, `reality-opts` → `Unsupported("field")`: молча пропущенный `plugin` или `smux` дал бы узел, который принят, но соединяется не так, как в подписке. Пропускаются без отказа только подсказки про UDP и сокет: `udp`, `tfo`, `mptcp`, `ip-version`, `packet-encoding`, `xudp`. `alpn` (непустой список строк) переносится в `tlsSettings.alpn`; без TLS → `Unsupported("field")`.
 
 Ошибки не содержат значений узла (адресов, паролей, uuid).
 
@@ -777,6 +798,7 @@ pub fn generate_config(nodes: &[serde_json::Value], leased_port: u16) -> Result<
   - vless с reality-opts {public-key K, short-id S} → security reality, realitySettings {serverName, publicKey K, shortId S, fingerprint chrome}
   - trojan {password x, sni example.invalid} → security tls всегда, tlsSettings.serverName example.invalid
   - vmess без alterId и cipher → alterId 0, security auto
+  - ss с полем plugin → Err(Unsupported("field")); vless с полем smux → Err(Unsupported("field")); ws-opts с max-early-data → Err(Unsupported("field")); узел с udp: true и tfo: true → Ok, полей в результате нет; trojan с alpn [h2] → tlsSettings.alpn == ["h2"]
   - type tuic, hysteria2, wireguard, http, socks5 → Err(Unsupported(<type>)); network h2 → Err(Unsupported("network")); dialer-proxy → Err(Unsupported("dialer"))
   - порт 0 или 70000, uuid "x", нет server → Err(InvalidNode); текст ошибки не содержит адреса, пароля, uuid
   - generate_config(&[], 20000) → Empty; generate_config(nodes, 0) → InvalidPort
@@ -1168,13 +1190,13 @@ pub fn plan(spec: &LaunchSpec, netns: &str, run_as: RunAs, preset: &EnvironmentP
 `AppLaunch { instance, generation, program, args }`:
 1. у экземпляра есть сеть (I08.N6) и файл `resolv.conf` этой сети → иначе `NotRunning`;
 2. состояние туннеля допускает запуск: worker запущен и отвечает (`Workers::status` → `running` и `api_ready`) → иначе `NotRunning`; `generation` кадра равно поколению worker-а (его клиент читает из `WorkerStatus`) → иначе `GenerationMismatch`. Запуск в сеть без работающего ядра запрещён: приложение стартовало бы в `Blocked`. Запись о worker-е остаётся и после гибели процесса, поэтому одного `running` мало;
-3. `LaunchSpec` из `program` и `args` кадра (правила I11.A1 для пути и аргументов; env из кадра не принимается);
+3. `LaunchSpec` из `program` и `args` кадра (правила I11.A1 для пути и аргументов). Поле `env` кадра принимает только имена из `controller::protocol::SESSION_ENV_KEYS` (`DISPLAY`, `WAYLAND_DISPLAY`, `XAUTHORITY`, `DBUS_SESSION_BUS_ADDRESS`, `PULSE_SERVER`, `XDG_SESSION_TYPE`, `XDG_CURRENT_DESKTOP`), значение до 4096 байт без NUL; другое имя → `BadArgument` (отсекает декодер);
 4. `run_as_for(peer.uid, peer.gid)`;
 5. запуск: дочерний процесс входит в netns и только потом сбрасывает привилегии.
 
 В `src/controller/drop.rs` — `pub fn drop_into_netns_pre_exec(command, netns_fd: RawFd, resolv: Option<&Path>, run_as, keep_fds, limits) -> Result<(), ControlError>`: первым шагом `setns(netns_fd, CLONE_NEWNET)`; при заданном `resolv` — `unshare(CLONE_NEWNS)`, корень в `MS_REC|MS_SLAVE` и bind этого файла поверх `/etc/resolv.conf` (одного `setns` мало: приложение читало бы DNS хоста); затем шаги `drop_pre_exec`. Отказ любого шага — приложение не запускается. Дескриптор netns открывается в родителе: `/run/netns/cm-<index>` (`O_RDONLY | O_CLOEXEC`) и закрывается сразу после `spawn`; в `test_mode` корень — `<base>/netns`. Рабочий каталог приложения — `HOME`, а если его нет — `/`.
 
-Окружение: allowlist из окружения **клиента** недоступен контроллеру, поэтому `AppLaunch` получает env так: `PATH=/usr/bin:/bin`, `HOME` — домашний каталог uid из `getpwuid_r`, `XDG_RUNTIME_DIR=/run/user/<uid>`, плюс `TZ` и `LANG` из пресета экземпляра, если он записан (файл `<root>/instances/<instance>/env.json` владельца: `{"timezone": …, "locale": …}`, проверки владельца и прав — как у `read_owned_config`).
+Окружение: приложение работает под uid самого клиента, поэтому переменные его графической сессии (`env` кадра, см. п. 3) не дают ему ничего сверх его прав — без них окно не откроется. Остальное задаёт контроллер и перекрывает присланное: `PATH=/usr/bin:/bin`, `HOME` — домашний каталог uid из `getpwuid_r`, `XDG_RUNTIME_DIR=/run/user/<uid>`, плюс `TZ` и `LANG` из пресета экземпляра, если он записан (файл `<root>/instances/<instance>/config/env.json` владельца: `{"timezone": …, "locale": …}`, проверки владельца и прав — как у `read_owned_config`).
 
 Ответ — новый вариант `ReplyData::Launched { pid: u32 }`. Контроллер не ждёт завершения приложения, но забирает статус выхода в фоне (нет зомби).
 
@@ -1190,7 +1212,10 @@ pub fn plan(spec: &LaunchSpec, netns: &str, run_as: RunAs, preset: &EnvironmentP
   - env.json — симлинк, файл с записью для группы или длиннее 4096 байт → invalid_config; timezone `../x` → invalid_config
   - после net_apply и worker_start: app_launch → ok, data {type launched, pid N}
   - файл приложения: интерфейсы только lo и cmv0n с адресом 10.213.0.2/30 (нет интерфейсов хоста)
-  - env приложения: PATH, HOME, XDG_RUNTIME_DIR и TZ/LANG из env.json; нет переменных контроллера
+  - env приложения: PATH, HOME, XDG_RUNTIME_DIR и TZ/LANG из config/env.json; нет переменных контроллера
+  - кадр с env {WAYLAND_DISPLAY: wayland-7} → приложение видит WAYLAND_DISPLAY=wayland-7; кадр с env {LD_PRELOAD: /x.so} или {PATH: /x} → bad_argument
+  - клиент и контроллер под разными uid: ядро и приложение работают под uid клиента (Uid в /proc/<pid>/status), CapEff 0
+  - stored_command: без cwd и env → (program, args); с cwd /w и env {A=1} → ("/usr/bin/env", ["--chdir=/w", "A=1", program, args…])
   - приложение с NUL или относительным program в кадре → bad_argument (отсекает декодер)
   - после завершения приложения у контроллера нет зомби-потомков
   - с подчинённым uid (`--map-users`): `id -u` приложения == uid клиента, CapEff 0
@@ -1238,7 +1263,8 @@ X-CM-Application=<id>
 
 - `cm app check FILE` — читает `ApplicationDefinition` из JSON-файла, печатает итог `spec::check` (программа, число аргументов, имена переменных без значений). Код 0 или 2.
 - `cm app desktop ID NAME [--icon ICON]` — печатает ярлык в stdout. Код 0 или 2.
-- `cm app run INSTANCE -- PROGRAM [ARGS…]` — отправляет контроллеру `AppLaunch` (сокет `CM_CONTROLLER_SOCKET`, по умолчанию `/run/cm/controller.sock`), `generation` берёт из ответа `WorkerStatus` этого экземпляра; печатает `pid`. Коды: 0; 2 — использование или `SpecError`; 3 — отказ контроллера (в выводе — его код в квадратных скобках); 4 — контроллер недоступен.
+- `cm app run ID` — форма для ярлыка: описание приложения `ID` берётся из хранилища (`sources::cli::store_root()`), экземпляр — туннель назначения (свой или туннель группы), программа и аргументы — из `spec::check`. Рабочий каталог и переменные описания кадр не несёт: при их наличии запускается `/usr/bin/env --chdir=<cwd> K=V… PROGRAM ARGS…` (`app::cli::stored_command`). Нет приложения, группы или хранилища → код 2.
+- `cm app run INSTANCE -- PROGRAM [ARGS…]` — в `env` кадра кладёт переменные своей сессии из `SESSION_ENV_KEYS`; отправляет контроллеру `AppLaunch` (сокет `CM_CONTROLLER_SOCKET`, по умолчанию `/run/cm/controller.sock`), `generation` берёт из ответа `WorkerStatus` этого экземпляра; печатает `pid`. Коды: 0; 2 — использование или `SpecError`; 3 — отказ контроллера (в выводе — его код в квадратных скобках); 4 — контроллер недоступен.
 - `cm app` без аргументов — справка, код 2.
 
 Клиент контроллера: `pub fn call(socket: &Path, op: Op) -> Result<Reply, ClientError>` в `src/controller/client.rs` — один кадр, один ответ, тайм-аут 30 с; `id` — 16 случайных hex-символов из `/dev/urandom`.

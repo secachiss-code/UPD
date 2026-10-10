@@ -134,6 +134,10 @@
   - [ ] owned("/b", 1000, "browser") → root "/b/u1000", unit "cm-core-u1000-browser.service"
   - [ ] config_path(7) == "/b/u1000/instances/browser/config/gen-7.json"; journal_path == "/b/u1000/journal.jsonl"
   - [ ] owned(base, 1000, "../x") → Err(BadInstance)
+  - [ ] create_owned(browser, {uid, gid}) под euid == uid: <root>, instances, instances/browser, core, core/check — права 0711; config, cache, run — 0700; повторный вызов не меняет результат
+  - [ ] create_owned: config — заранее созданный симлинк → Err(UnsafePath), цель симлинка не тронута
+  - [ ] контроллер и клиент под разными uid (L2, `unshare -U --map-root-user --map-auto`): после instance_prepare каталоги контроллера принадлежат uid 0, config/cache/run — uid клиента; клиент не может создать запись в instances/browser и в core; core/config.json — файл uid клиента 0600; journal.jsonl и core.pid — uid 0, 0600
+  - [ ] после `kill -9` ядра: worker_status → running false, generation прежний, оси down; worker_stop с этим поколением → ok; затем worker_start → ok
   - [ ] read_owned_config: обычный файл 0600 владельца → Ok с теми же байтами
   - [ ] файл — симлинк на существующий файл → InvalidConfig; каталог config — симлинк → InvalidConfig
   - [ ] права 0666 → InvalidConfig; размер MAX_CONFIG_BYTES + 1 → InvalidConfig; файла нет → InvalidConfig
@@ -320,6 +324,7 @@
   - [ ] vless с reality-opts {public-key K, short-id S} → security reality, realitySettings {serverName, publicKey K, shortId S, fingerprint chrome}
   - [ ] trojan {password x, sni example.invalid} → security tls всегда, tlsSettings.serverName example.invalid
   - [ ] vmess без alterId и cipher → alterId 0, security auto
+  - [ ] ss с полем plugin → Err(Unsupported("field")); vless с полем smux → Err(Unsupported("field")); ws-opts с max-early-data → Err(Unsupported("field")); узел с udp: true и tfo: true → Ok, полей в результате нет; trojan с alpn [h2] → tlsSettings.alpn == ["h2"]
   - [ ] type tuic, hysteria2, wireguard, http, socks5 → Err(Unsupported(<type>)); network h2 → Err(Unsupported("network")); dialer-proxy → Err(Unsupported("dialer"))
   - [ ] порт 0 или 70000, uuid "x", нет server → Err(InvalidNode); текст ошибки не содержит адреса, пароля, uuid
   - [ ] generate_config(&[], 20000) → Empty; generate_config(nodes, 0) → InvalidPort
@@ -493,7 +498,10 @@
   - [ ] env.json — симлинк, файл с записью для группы или длиннее 4096 байт → invalid_config; timezone `../x` → invalid_config
   - [ ] после net_apply и worker_start: app_launch → ok, data {type launched, pid N}
   - [ ] файл приложения: интерфейсы только lo и cmv0n с адресом 10.213.0.2/30 (нет интерфейсов хоста)
-  - [ ] env приложения: PATH, HOME, XDG_RUNTIME_DIR и TZ/LANG из env.json; нет переменных контроллера
+  - [ ] env приложения: PATH, HOME, XDG_RUNTIME_DIR и TZ/LANG из config/env.json; нет переменных контроллера
+  - [ ] кадр с env {WAYLAND_DISPLAY: wayland-7} → приложение видит WAYLAND_DISPLAY=wayland-7; кадр с env {LD_PRELOAD: /x.so} или {PATH: /x} → bad_argument
+  - [ ] клиент и контроллер под разными uid: ядро и приложение работают под uid клиента (Uid в /proc/<pid>/status), CapEff 0
+  - [ ] stored_command: без cwd и env → (program, args); с cwd /w и env {A=1} → ("/usr/bin/env", ["--chdir=/w", "A=1", program, args…])
   - [ ] приложение с NUL или относительным program в кадре → bad_argument (отсекает декодер)
   - [ ] после завершения приложения у контроллера нет зомби-потомков
   - [ ] с подчинённым uid (`--map-users`): `id -u` приложения == uid клиента, CapEff 0

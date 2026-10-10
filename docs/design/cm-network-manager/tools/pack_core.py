@@ -164,6 +164,7 @@ pub fn generate_config(nodes: &[serde_json::Value], leased_port: u16) -> Result<
 - `type` не из таблицы (в том числе `tuic`, `hysteria2`, `wireguard`, `http`, `socks5`) → `Unsupported(<type>)` — без тихой замены;
 - нет обязательного поля, порт вне 1..=65535, uuid не в формате 8-4-4-4-12 → `InvalidNode`;
 - поля узла, меняющие маршрут мимо CM (`dialer-proxy`, `interface-name`, `routing-mark`) → `Unsupported("dialer")`.
+- незнакомое поле узла или вложенных `ws-opts`, `grpc-opts`, `reality-opts` → `Unsupported("field")`: молча пропущенный `plugin` или `smux` дал бы узел, который принят, но соединяется не так, как в подписке. Пропускаются без отказа только подсказки про UDP и сокет: `udp`, `tfo`, `mptcp`, `ip-version`, `packet-encoding`, `xudp`. `alpn` (непустой список строк) переносится в `tlsSettings.alpn`; без TLS → `Unsupported("field")`.
 
 Ошибки не содержат значений узла (адресов, паролей, uuid).""",
        external=["I05.T01.b"], covers=["I05.T03.a"])
@@ -442,6 +443,7 @@ edge("K05", "I05.X1", "I05.X2",
          "vless с reality-opts {public-key K, short-id S} → security reality, realitySettings {serverName, publicKey K, shortId S, fingerprint chrome}",
          "trojan {password x, sni example.invalid} → security tls всегда, tlsSettings.serverName example.invalid",
          "vmess без alterId и cipher → alterId 0, security auto",
+         "ss с полем plugin → Err(Unsupported(\"field\")); vless с полем smux → Err(Unsupported(\"field\")); ws-opts с max-early-data → Err(Unsupported(\"field\")); узел с udp: true и tfo: true → Ok, полей в результате нет; trojan с alpn [h2] → tlsSettings.alpn == [\"h2\"]",
          "type tuic, hysteria2, wireguard, http, socks5 → Err(Unsupported(<type>)); network h2 → Err(Unsupported(\"network\")); dialer-proxy → Err(Unsupported(\"dialer\"))",
          "порт 0 или 70000, uuid \"x\", нет server → Err(InvalidNode); текст ошибки не содержит адреса, пароля, uuid",
          "generate_config(&[], 20000) → Empty; generate_config(nodes, 0) → InvalidPort",

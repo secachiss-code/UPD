@@ -187,6 +187,10 @@ flowchart LR
   - owned("/b", 1000, "browser") → root "/b/u1000", unit "cm-core-u1000-browser.service"
   - config_path(7) == "/b/u1000/instances/browser/config/gen-7.json"; journal_path == "/b/u1000/journal.jsonl"
   - owned(base, 1000, "../x") → Err(BadInstance)
+  - create_owned(browser, {uid, gid}) под euid == uid: <root>, instances, instances/browser, core, core/check — права 0711; config, cache, run — 0700; повторный вызов не меняет результат
+  - create_owned: config — заранее созданный симлинк → Err(UnsafePath), цель симлинка не тронута
+  - контроллер и клиент под разными uid (L2, `unshare -U --map-root-user --map-auto`): после instance_prepare каталоги контроллера принадлежат uid 0, config/cache/run — uid клиента; клиент не может создать запись в instances/browser и в core; core/config.json — файл uid клиента 0600; journal.jsonl и core.pid — uid 0, 0600
+  - после `kill -9` ядра: worker_status → running false, generation прежний, оси down; worker_stop с этим поколением → ok; затем worker_start → ok
   - read_owned_config: обычный файл 0600 владельца → Ok с теми же байтами
   - файл — симлинк на существующий файл → InvalidConfig; каталог config — симлинк → InvalidConfig
   - права 0666 → InvalidConfig; размер MAX_CONFIG_BYTES + 1 → InvalidConfig; файла нет → InvalidConfig
