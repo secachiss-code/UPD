@@ -150,6 +150,11 @@ pub trait CoreAdapter {
         None
     }
 
+    /// Whether the core process still exists. An adapter without a process of its own says yes.
+    fn alive(&mut self) -> bool {
+        true
+    }
+
     /// Application TUN for this worker. Cores without a TUN mode ignore it.
     fn set_tunnel_net(&mut self, _tunnel: crate::net::TunnelNet) {}
 }

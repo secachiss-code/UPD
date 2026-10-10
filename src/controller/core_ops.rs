@@ -320,11 +320,17 @@ impl Workers {
         let Some(Slot::Ready(running)) = slots.get_mut(&key(owned)) else {
             return Reply::ok(txn, Some(down_status()));
         };
-        let readiness = running.adapter.health().unwrap_or(CoreReadiness::DOWN);
+        // Запись остаётся и после гибели процесса: её снимает `worker_stop` с этим поколением.
+        let alive = running.adapter.alive();
+        let readiness = if alive {
+            running.adapter.health().unwrap_or(CoreReadiness::DOWN)
+        } else {
+            CoreReadiness::DOWN
+        };
         Reply::ok(
             txn,
             Some(ReplyData::Status {
-                running: true,
+                running: alive,
                 generation: Some(running.generation),
                 api: api_name(readiness.api).to_owned(),
                 route: route_name(readiness.route).to_owned(),

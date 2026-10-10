@@ -14,7 +14,7 @@ use crate::core::adapter::{
     ApiState, CoreAdapter, CoreCapabilities, CoreConfig, CoreError, CoreReadiness, CoreStatistics,
     RemoteState, RouteState,
 };
-use crate::core::instance::{InstanceId, InstanceRoot};
+use crate::core::instance::{InstanceDirs, InstanceId, InstanceOwner, InstanceRoot};
 use crate::core::leases::{Lease, LeaseError, LeaseRegistry, ResourceKind};
 use crate::core::process;
 
@@ -130,19 +130,38 @@ impl XrayWorker {
         }
     }
 
+    fn owner(&self) -> Option<InstanceOwner> {
+        self.run_as.as_ref().map(|run_as| InstanceOwner {
+            uid: run_as.uid,
+            gid: run_as.gid,
+        })
+    }
+
+    fn create_dirs(&self) -> Result<InstanceDirs, CoreError> {
+        match self.owner() {
+            Some(owner) => self.root.create_owned(&self.id, owner),
+            None => self.root.create(&self.id),
+        }
+        .map_err(|_| CoreError::Failed)
+    }
+
+    /// Проверку выполняет само ядро, и с владельцем — под его uid, а не под uid менеджера.
     fn test_file(&self, bytes: &[u8]) -> Result<(), CoreError> {
-        let dirs = self.root.create(&self.id).map_err(|_| CoreError::Failed)?;
-        let path = dirs.cache.join("xray-test.json");
-        process::write_private(&path, bytes)?;
-        let mut child = Command::new(&self.binary)
+        let dirs = self.create_dirs()?;
+        let path = dirs.check.join("xray-test.json");
+        process::write_for(&path, bytes, self.owner())?;
+        let mut command = Command::new(&self.binary);
+        command
             .args(["run", "-test", "-c"])
             .arg(&path)
             .env_clear()
             .stdin(Stdio::null())
             .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .spawn()
-            .map_err(|_| CoreError::Failed)?;
+            .stderr(Stdio::null());
+        if let Some(run_as) = self.run_as.clone() {
+            drop::drop_pre_exec(&mut command, run_as, &[], ChildLimits::default());
+        }
+        let mut child = command.spawn().map_err(|_| CoreError::Failed)?;
         let deadline = Instant::now() + TEST_WAIT;
         let result = loop {
             match child.try_wait() {
@@ -233,15 +252,15 @@ impl CoreAdapter for XrayWorker {
                 return Err(error);
             }
         };
-        let dirs = match self.root.create(&self.id) {
+        let dirs = match self.create_dirs() {
             Ok(dirs) => dirs,
             Err(_) => {
                 self.release_port()?;
                 return Err(CoreError::Failed);
             }
         };
-        let config_path = dirs.config.join("config.json");
-        if process::write_private(&config_path, &bytes).is_err() {
+        let config_path = dirs.rendered.join("config.json");
+        if process::write_for(&config_path, &bytes, self.owner()).is_err() {
             self.release_port()?;
             return Err(CoreError::Failed);
         }
@@ -323,6 +342,10 @@ impl CoreAdapter for XrayWorker {
 
     fn core_pid(&self) -> Option<u32> {
         self.child.as_ref().map(|child| child.id())
+    }
+
+    fn alive(&mut self) -> bool {
+        self.group_alive()
     }
 }
 

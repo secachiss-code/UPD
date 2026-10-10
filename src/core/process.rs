@@ -9,8 +9,12 @@ use std::process::Child;
 use std::time::{Duration, Instant};
 
 use super::adapter::CoreError;
+use super::instance::InstanceOwner;
 
-pub fn write_private(path: &Path, bytes: &[u8]) -> Result<(), CoreError> {
+/// Приватный файл, который читает ядро под другим uid. Каталог обязан принадлежать
+/// менеджеру: иначе владелец подменил бы запись до открытия.
+pub fn write_for(path: &Path, bytes: &[u8], owner: Option<InstanceOwner>) -> Result<(), CoreError> {
+    use std::os::fd::AsRawFd;
     let mut file = OpenOptions::new()
         .write(true)
         .create(true)
@@ -19,6 +23,12 @@ pub fn write_private(path: &Path, bytes: &[u8]) -> Result<(), CoreError> {
         .custom_flags(libc::O_NOFOLLOW | libc::O_CLOEXEC)
         .open(path)
         .map_err(|_| CoreError::Failed)?;
+    if let Some(owner) = owner {
+        // SAFETY: fchown on a descriptor this function owns; no pointer is passed.
+        if unsafe { libc::fchown(file.as_raw_fd(), owner.uid, owner.gid) } != 0 {
+            return Err(CoreError::Failed);
+        }
+    }
     file.write_all(bytes).map_err(|_| CoreError::Failed)?;
     file.sync_all().map_err(|_| CoreError::Failed)?;
     Ok(())

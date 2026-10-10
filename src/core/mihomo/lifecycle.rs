@@ -16,14 +16,15 @@ use serde_json::Value;
 use super::api;
 use super::config::{self, attach_instance_controller};
 use super::stats;
-use super::validate::validate_file;
+use super::validate::validate_as;
 use crate::core::adapter::{
     ApiState, CoreAdapter, CoreCapabilities, CoreConfig, CoreError, CoreReadiness, CoreStatistics,
     RemoteState, RouteState,
 };
-use crate::core::instance::{InstanceId, InstanceRoot};
+use crate::core::instance::{InstanceId, InstanceOwner, InstanceRoot};
 use crate::core::leases::{Lease, LeaseError, LeaseRegistry, ResourceKind};
 use crate::core::mihomo;
+use crate::core::process;
 
 const API_WAIT: Duration = Duration::from_secs(5);
 
@@ -43,6 +44,7 @@ pub struct MihomoWorker {
     readiness: CoreReadiness,
     run_as: Option<crate::controller::drop::RunAs>,
     tunnel: Option<crate::net::TunnelNet>,
+    state_dir: Option<PathBuf>,
 }
 
 impl MihomoWorker {
@@ -67,6 +69,7 @@ impl MihomoWorker {
             readiness: CoreReadiness::DOWN,
             run_as: None,
             tunnel: None,
+            state_dir: None,
         }
     }
 
@@ -77,6 +80,29 @@ impl MihomoWorker {
 
     pub fn set_tunnel_net(&mut self, tunnel: crate::net::TunnelNet) {
         self.tunnel = Some(tunnel);
+    }
+
+    fn owner(&self) -> Option<InstanceOwner> {
+        self.run_as.as_ref().map(|run_as| InstanceOwner {
+            uid: run_as.uid,
+            gid: run_as.gid,
+        })
+    }
+
+    /// The API socket and its directory belong to the user the core runs as.
+    fn api_uid(&self) -> u32 {
+        self.run_as
+            .as_ref()
+            .map(|run_as| run_as.uid)
+            .unwrap_or_else(crate::common::sys::euid)
+    }
+
+    fn create_dirs(&self) -> Result<crate::core::instance::InstanceDirs, CoreError> {
+        match self.owner() {
+            Some(owner) => self.root.create_owned(&self.id, owner),
+            None => self.root.create(&self.id),
+        }
+        .map_err(|_| CoreError::Failed)
     }
 
     pub fn socket_path(&self) -> Option<&Path> {
@@ -221,7 +247,7 @@ impl MihomoWorker {
     fn wait_api(&self) -> Result<(), CoreError> {
         let socket = self.socket_path.as_ref().ok_or(CoreError::Failed)?;
         let deadline = Instant::now() + API_WAIT;
-        let uid = crate::common::sys::euid();
+        let uid = self.api_uid();
         loop {
             if api::request(
                 socket,
@@ -293,7 +319,7 @@ impl MihomoWorker {
         );
         match api::request(
             socket,
-            crate::common::sys::euid(),
+            self.api_uid(),
             "GET",
             &path,
             None,
@@ -339,7 +365,7 @@ impl CoreAdapter for MihomoWorker {
         let document: Value =
             serde_json::from_slice(config.as_bytes()).map_err(|_| CoreError::InvalidConfig)?;
         config::reject_geo_document(&document).map_err(|_| CoreError::InvalidConfig)?;
-        let dirs = self.root.create(&self.id).map_err(|_| CoreError::Failed)?;
+        let dirs = self.create_dirs()?;
         let tun = self.tunnel.clone();
         if tun.is_none() {
             self.port = Some(self.allocate(ResourceKind::Port)?);
@@ -357,11 +383,19 @@ impl CoreAdapter for MihomoWorker {
             Ok(bytes) => bytes,
             Err(_) => return self.abort_start(CoreError::InvalidConfig),
         };
-        let config_path = dirs.config.join("config.json");
-        if write_private(&config_path, &bytes).is_err() {
+        let config_path = dirs.rendered.join("config.json");
+        if process::write_for(&config_path, &bytes, self.owner()).is_err() {
             return self.abort_start(CoreError::Failed);
         }
-        if validate_file(&self.binary, &dirs.cache, &bytes).is_err() {
+        if validate_as(
+            &self.binary,
+            &dirs.check,
+            &dirs.state,
+            &bytes,
+            self.run_as.as_ref(),
+        )
+        .is_err()
+        {
             let removed = remove_path(&config_path);
             let released = self.release_leases();
             if removed.is_err() || released.is_err() {
@@ -369,7 +403,8 @@ impl CoreAdapter for MihomoWorker {
             }
             return Err(CoreError::InvalidConfig);
         }
-        if self.spawn(&dirs.root, &config_path).is_err() {
+        self.state_dir = Some(dirs.state.clone());
+        if self.spawn(&dirs.state, &config_path).is_err() {
             let removed = remove_path(&config_path);
             let released = self.release_leases();
             if removed.is_err() || released.is_err() {
@@ -454,23 +489,29 @@ impl CoreAdapter for MihomoWorker {
         let parent = config_path.parent().ok_or(CoreError::Failed)?;
         let sandbox = parent.join("reload-check");
         fs::create_dir_all(&sandbox).map_err(|_| CoreError::Failed)?;
-        if validate_file(&self.binary, &sandbox, &bytes).is_err() {
+        // With an owner the core checks the candidate from its own home; the sandbox stays ours.
+        let home = match (&self.run_as, &self.state_dir) {
+            (Some(_), Some(state)) => state.clone(),
+            _ => sandbox.clone(),
+        };
+        if validate_as(&self.binary, &sandbox, &home, &bytes, self.run_as.as_ref()).is_err() {
             return Err(CoreError::InvalidConfig);
         }
         let previous = fs::read(&config_path).map_err(|_| CoreError::Failed)?;
-        if write_private(&config_path, &bytes).is_err() {
+        if process::write_for(&config_path, &bytes, self.owner()).is_err() {
             return Err(CoreError::Failed);
         }
         let put = api::request(
             &socket_path,
-            crate::common::sys::euid(),
+            self.api_uid(),
             "PUT",
             "/configs?force=true",
-            Some(serde_json::json!({ "path": config_path })),
+            Some(reload_body(&config_path, &bytes, self.run_as.is_some())),
             Duration::from_secs(8),
         );
         if put.is_err() {
-            write_private(&config_path, &previous).map_err(|_| CoreError::Failed)?;
+            process::write_for(&config_path, &previous, self.owner())
+                .map_err(|_| CoreError::Failed)?;
             return Err(CoreError::InvalidConfig);
         }
         // PUT /configs rebinds listeners; the route is ready once the port or TUN answers again.
@@ -493,7 +534,7 @@ impl CoreAdapter for MihomoWorker {
         let socket = self.socket_path.as_ref().ok_or(CoreError::ApiUnavailable)?;
         if api::request(
             socket,
-            crate::common::sys::euid(),
+            self.api_uid(),
             "GET",
             "/version",
             None,
@@ -518,11 +559,15 @@ impl CoreAdapter for MihomoWorker {
             return Err(CoreError::NotRunning);
         }
         let socket = self.socket_path.as_ref().ok_or(CoreError::ApiUnavailable)?;
-        stats::read_statistics(socket, crate::common::sys::euid())
+        stats::read_statistics(socket, self.api_uid())
     }
 
     fn core_pid(&self) -> Option<u32> {
         self.process_id()
+    }
+
+    fn alive(&mut self) -> bool {
+        self.group_alive()
     }
 
     fn set_tunnel_net(&mut self, tunnel: crate::net::TunnelNet) {
@@ -575,6 +620,16 @@ fn render_start(
 /// The TUN is created up by CM before the core starts, so `IFF_UP` alone proves nothing.
 /// `IFF_RUNNING` appears only while a process holds the device open. The flags come from an
 /// ioctl, not from sysfs: sysfs shows the namespace it was mounted in, not the current one.
+/// The core accepts a config path only inside its home directory. With an owner the home is
+/// the owner's `cache/` and the config lives in the manager's directory, so the text is sent.
+fn reload_body(config_path: &Path, bytes: &[u8], owned: bool) -> Value {
+    if owned {
+        serde_json::json!({ "path": "", "payload": String::from_utf8_lossy(bytes) })
+    } else {
+        serde_json::json!({ "path": config_path })
+    }
+}
+
 fn tun_is_up(name: &str) -> bool {
     use std::os::fd::{AsRawFd, FromRawFd, OwnedFd};
     if name.is_empty() || name.len() >= libc::IFNAMSIZ {
@@ -605,10 +660,6 @@ fn tun_is_up(name: &str) -> bool {
 
 fn remove_path(path: &Path) -> Result<(), CoreError> {
     crate::core::process::remove_file(path)
-}
-
-fn write_private(path: &Path, bytes: &[u8]) -> Result<(), ()> {
-    crate::core::process::write_private(path, bytes).map_err(|_| ())
 }
 
 fn signal_group(pgid: i32, signal: i32) -> bool {

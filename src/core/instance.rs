@@ -6,6 +6,8 @@ use std::path::{Path, PathBuf};
 
 pub const SYSTEM_ROOT: &str = "/var/lib/cm";
 const DIR_MODE: u32 = 0o700;
+/// Traversable, not listable: the owner reaches its own directories through the manager's.
+const SHARED_MODE: u32 = 0o711;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct InstanceId(String);
@@ -35,6 +37,19 @@ pub struct InstanceDirs {
     pub config: PathBuf,
     pub cache: PathBuf,
     pub run: PathBuf,
+    /// Where the manager writes the config the core is started with.
+    pub rendered: PathBuf,
+    /// Where the manager writes a candidate config for the core's own check.
+    pub check: PathBuf,
+    /// The core's home directory (`-d`).
+    pub state: PathBuf,
+}
+
+/// The user a core runs as when the manager itself is privileged.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct InstanceOwner {
+    pub uid: u32,
+    pub gid: u32,
 }
 
 #[derive(Clone, Debug)]
@@ -62,6 +77,34 @@ impl InstanceRoot {
         Ok(dirs)
     }
 
+    /// Layout for a core that runs as `owner` under a privileged manager.
+    ///
+    /// The manager keeps every directory it writes into: the tree down to the instance and
+    /// `core/` stay with the manager (mode 0711), so the owner can pass through but cannot
+    /// plant or swap an entry there. The owner gets `config/` (its inbox: the manager only
+    /// reads it, with checks), `cache/` (the core's home) and `run/` (the API socket).
+    pub fn create_owned(
+        &self,
+        id: &InstanceId,
+        owner: InstanceOwner,
+    ) -> Result<InstanceDirs, InstanceError> {
+        let mut dirs = self.dirs(id);
+        mkdir_mode(self.path.as_path(), SHARED_MODE, None)?;
+        mkdir_mode(&self.path.join("instances"), SHARED_MODE, None)?;
+        mkdir_mode(&dirs.root, SHARED_MODE, None)?;
+        mkdir_mode(&dirs.config, DIR_MODE, Some(owner))?;
+        mkdir_mode(&dirs.cache, DIR_MODE, Some(owner))?;
+        mkdir_mode(&dirs.run, DIR_MODE, Some(owner))?;
+        let core = dirs.root.join("core");
+        mkdir_mode(&core, SHARED_MODE, None)?;
+        let check = core.join("check");
+        mkdir_mode(&check, SHARED_MODE, None)?;
+        dirs.rendered = core;
+        dirs.check = check;
+        dirs.state = dirs.cache.clone();
+        Ok(dirs)
+    }
+
     pub fn remove(&self, id: &InstanceId) -> Result<(), InstanceError> {
         let root = self.dirs(id).root;
         let meta = match fs::symlink_metadata(&root) {
@@ -81,9 +124,36 @@ impl InstanceRoot {
             config: root.join("config"),
             cache: root.join("cache"),
             run: root.join("run"),
+            rendered: root.join("config"),
+            check: root.join("cache"),
+            state: root.clone(),
             root,
         }
     }
+}
+
+/// Create or adopt a directory through a descriptor, so a symlink is never followed.
+fn mkdir_mode(path: &Path, mode: u32, owner: Option<InstanceOwner>) -> Result<(), InstanceError> {
+    use std::os::fd::AsRawFd;
+    use std::os::unix::fs::OpenOptionsExt;
+    match fs::create_dir(path) {
+        Ok(()) => {}
+        Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {}
+        Err(error) => return Err(InstanceError::Io(error.kind())),
+    }
+    let dir = fs::OpenOptions::new()
+        .read(true)
+        .custom_flags(libc::O_DIRECTORY | libc::O_NOFOLLOW | libc::O_CLOEXEC)
+        .open(path)
+        .map_err(|_| InstanceError::UnsafePath)?;
+    if let Some(owner) = owner {
+        // SAFETY: fchown on a descriptor this function owns; no pointer is passed.
+        if unsafe { libc::fchown(dir.as_raw_fd(), owner.uid, owner.gid) } != 0 {
+            return Err(InstanceError::Io(std::io::Error::last_os_error().kind()));
+        }
+    }
+    dir.set_permissions(fs::Permissions::from_mode(mode))
+        .map_err(|error| InstanceError::Io(error.kind()))
 }
 
 fn mkdir_private(path: &Path) -> Result<(), InstanceError> {
