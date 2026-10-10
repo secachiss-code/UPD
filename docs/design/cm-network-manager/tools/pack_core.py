@@ -182,7 +182,7 @@ vertex("I05.X2", "X", "Вести жизненный цикл Xray через Co
 - `stop()`: как у `MihomoWorker` — SIGTERM группе, через 2 с SIGKILL, освобождение аренд.
 - `set_run_as(RunAs)` — как у `MihomoWorker` (I06.I3).
 
-Общий с `MihomoWorker` код (ожидание порта, остановка группы, запись приватного файла) вынести в `src/core/process.rs` и использовать в обоих; копий не оставлять. В `lifecycle.rs` mihomo — только замена тел этих функций на вызовы.""",
+Общий с `MihomoWorker` код (ожидание порта, остановка группы, запись приватного файла) вынести в `src/core/process.rs` и использовать в обоих; копий не оставлять. Остановка своего потомка — `process::terminate_child(&mut Child)`: ожидание прекращается по `try_wait`, иначе завершившийся лидер (зомби) держит группу «живой» все две секунды. В `lifecycle.rs` mihomo — только замена тел этих функций на вызовы.""",
        external=["I06.I3"], covers=["I05.T03.b"])
 
 # ───────────────────────────── N: сеть приложения ─────────────────────────────
@@ -310,7 +310,7 @@ vertex("I08.N5", "N", "Включить TUN и перехват DNS в конф�
 ```
 - `listeners` в TUN-режиме не добавляются; `external-controller-unix` по-прежнему ставит только `attach_instance_controller`.
 
-`MihomoWorker`: новый метод `pub fn set_tunnel_net(&mut self, t: TunnelNet)`. Если задан, `start` и `reload` используют `attach_tun` вместо `attach_worker_listeners`, порт не арендуется, а готовность маршрута — «интерфейс `t.tun` существует и поднят» вместо ожидания порта.
+`MihomoWorker`: новый метод `pub fn set_tunnel_net(&mut self, t: TunnelNet)`. Если задан, `start` и `reload` используют `attach_tun` вместо `attach_worker_listeners`, порт не арендуется, а готовность маршрута — «у интерфейса `t.tun` стоят флаги `IFF_UP` и `IFF_RUNNING`» вместо ожидания порта. Флаги читаются через `ioctl(SIOCGIFFLAGS)`, а не из `/sys/class/net`: TUN поднят самим CM ещё до запуска ядра, а `IFF_RUNNING` появляется, только когда ядро открыло устройство; sysfs к тому же показывает то сетевое пространство, в котором смонтирован.
 
 `pub fn resolv_conf(t: &TunnelNet) -> String` в `src/net/dns.rs` → `"nameserver <t.dns_addr>\\noptions edns0\\n"`; файл кладётся в `/etc/netns/<t.netns>/resolv.conf` командой из I08.N6.""",
        covers=["I10.T01.a", "I10.T02.a"])
@@ -352,8 +352,8 @@ pub fn audit(desired: &[TunnelNet], observed: &Observed) -> Vec<Drift>
 pub fn repair_commands(drift: &Drift, desired: &[TunnelNet]) -> Vec<Cmd>
 ```
 - Нераспознанный JSON → `Drift` не выдаётся, функция разбора возвращает `Err(NetError::Drift)`.
-- `audit`: для каждого желаемого туннеля проверяются blackhole (dst `default`, kind `blackhole`, таблица `t.table`), маршрут в TUN, правило (`priority`, `iif`), интерфейсы, netns. Интерфейс `cmv<N>h` или правило с приоритетом 1000..1063 без желаемого туннеля → `OrphanVeth` / `OrphanRule`.
-- `repair_commands`: `MissingBlackhole` → команда 14 из I08.N2; `MissingRule` → команда 16; `OrphanVeth(name)` → `ip link del <name>`; `OrphanRule(p)` → `ip rule del priority <p>`. Для `MissingVeth`, `MissingTun`, `MissingNetns` — пустой список: сеть пересоздаётся целиком через `NetRevert` и `NetApply`, а не чинится по частям.
+- `audit`: для каждого желаемого туннеля проверяются blackhole (dst `default`, kind `blackhole`, таблица `t.table`), маршрут в TUN, правило (`priority`, `iif`), интерфейсы, netns. Интерфейс `cmv<N>h` без желаемого туннеля → `OrphanVeth`. Правило с приоритетом `1000+N` и `iif cmv<N>h` без желаемого туннеля → `OrphanRule`; чужое правило с тем же приоритетом (другой `iif` или без него) сиротой не считается.
+- `repair_commands`: `MissingBlackhole` → команда 14 из I08.N2; `MissingRule` → команда 16; `OrphanVeth(name)` → `ip link del <name>`; `OrphanRule(p)` → `ip rule del iif cmv<p-1000>h priority <p>`. Для `MissingVeth`, `MissingTun`, `MissingNetns` — пустой список: сеть пересоздаётся целиком через `NetRevert` и `NetApply`, а не чинится по частям.
 - Порядок результата `audit` — по index, внутри — в порядке перечисления вариантов.""",
        covers=["I09.T03.a"])
 
@@ -544,7 +544,7 @@ edge("K15", "I09.N7", "PACK.Z",
          "убрано правило iif → [MissingRule(0)]; repair → [ip rule add iif cmv0h lookup 100 priority 1000]",
          "нет cmtun0 в links → [MissingTunRoute(0), MissingTun(0)] в этом порядке; repair для MissingTun → []",
          "лишний интерфейс cmv7h без желаемого туннеля → [OrphanVeth(\"cmv7h\")]; repair → [ip link del cmv7h]",
-         "правило priority 1042 без туннеля → [OrphanRule(1042)]; правило priority 32766 (main) не считается сиротой",
+         "правило priority 1042 с iif cmv42h без туннеля → [OrphanRule(1042)], repair → `ip rule del iif cmv42h priority 1042`; правило priority 1042 без iif или с iif eth0 сиротой не считается; правило priority 32766 (main) не считается сиротой",
          "parse_rules(\"not json\") → Err(Drift)",
      ])
 edge("K16", "I09.N8", "PACK.Z",

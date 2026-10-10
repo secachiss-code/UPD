@@ -7,7 +7,7 @@
 Написать за один проход проверки всех рёбер пакета:
 - рёбра C01–C16 — контроллер (те же, что в [TESTS-I06.md](TESTS-I06.md));
 - K01–K16 — ядра и сеть; M01–M16 — приложения, регион, качество, интерфейс; X01–X06 — связи между направлениями;
-- Z02 — сквозной сценарий в `unshare -rnm` с настоящим ядром.
+- Z02 — сквозной сценарий в `unshare -U --map-root-user --map-auto -n -m` с настоящим ядром.
 Значения в рёбрах — ожидаемые результаты.
 
 ## Правила
@@ -21,7 +21,7 @@
 7. **Evidence:** `docs/design/cm-network-manager/i06-evidence/<дата>/summary.json` и `pack-evidence/<дата>/summary.json` — rev, rustc, команды, счётчики, PASS/FAIL по каждому ребру. SKIPPED и NOT_APPLICABLE не записываются как PASS.
 8. Fuzz `cargo-fuzz` на час требует сети для установки и в этой итерации не выполняется: его заменяет детерминированная мутация из C02. В отчёте это записывается как открытый пункт, а не как PASS.
 9. Полный gate перед сдачей; красные тесты дефектов перечисляются в отчёте поимённо.
-10. Сценарии с `ip netns` требуют записи в `/run/netns`: запускать в `unshare -rnm` и монтировать tmpfs на `/run` внутри. `curl` — только с `-q` и `--noproxy '*'`.
+10. Сценарии с `ip netns` требуют записи в `/run/netns`: запускать в `unshare -U --map-root-user --map-auto -n -m` и монтировать tmpfs на `/run` внутри. Где контроллер запускает ядро или приложение, `unshare -r` не годится: в нём запрещён `setgroups`, и сброс привилегий отвечает `failed`. `/sys` внутри остаётся от хоста — интерфейсы своего пространства смотреть через `ip`, а не через `/sys/class/net`. `curl` — только с `-q` и `--noproxy '*'`.
 11. Проверки с Xray — при `CM_TEST_XRAY=$HOME/.cache/cm-cores/xray/xray`; без переменной печатают SKIPPED и не засчитываются.
 
 ## Файлы
@@ -246,7 +246,7 @@
 ### C16 · I06.S1 → I06.T05.a (L2)
 
 - **Контракт:** Сервис на сокете выполняет полный сценарий worker и выдерживает отрицательные проверки.
-- **Как проверить:** `tests/audit_i06_server.rs`: бинарник `cm controller serve` в `unshare -rn` с `CM_STATE_DIR`, `CM_HELPER_ALLOW=1`, `CM_CORE_BIN=$CM_TEST_MIHOMO`; клиент — unix-сокет из теста.
+- **Как проверить:** `tests/audit_i06_server.rs`: бинарник `cm controller serve` в `unshare -U --map-root-user --map-auto -n -m` (в `unshare -r` запрещён `setgroups`, и `worker_start` отвечает `failed`) с `CM_STATE_DIR`, `CM_HELPER_ALLOW=1`, `CM_CORE_BIN=$CM_TEST_MIHOMO`; клиент — unix-сокет из теста.
 - **Ожидаемые значения:**
   - [ ] worker_start(gen 1) с конфигом из `audit_i04_lifecycle` → ok started; worker_status → running true, api "api_ready"; worker_stop → ok; после stop нет процессов ядра и аренд
   - [ ] тот же id повторно → тот же ответ, второй процесс ядра не появился
@@ -432,7 +432,7 @@
   - [ ] убрано правило iif → [MissingRule(0)]; repair → [ip rule add iif cmv0h lookup 100 priority 1000]
   - [ ] нет cmtun0 в links → [MissingTunRoute(0), MissingTun(0)] в этом порядке; repair для MissingTun → []
   - [ ] лишний интерфейс cmv7h без желаемого туннеля → [OrphanVeth("cmv7h")]; repair → [ip link del cmv7h]
-  - [ ] правило priority 1042 без туннеля → [OrphanRule(1042)]; правило priority 32766 (main) не считается сиротой
+  - [ ] правило priority 1042 с iif cmv42h без туннеля → [OrphanRule(1042)], repair → `ip rule del iif cmv42h priority 1042`; правило priority 1042 без iif или с iif eth0 сиротой не считается; правило priority 32766 (main) не считается сиротой
   - [ ] parse_rules("not json") → Err(Drift)
 
 ### K16 · I09.N8 → PACK.Z (L1)
@@ -483,9 +483,14 @@
 ### M03 · I11.A3 → I11.A5 (L2)
 
 - **Контракт:** Приложение запускается внутри сети своего туннеля, под uid вызывающего, и только при работающем ядре.
-- **Как проверить:** `tests/audit_pack_app_ops.rs`: `unshare -rnm` (tmpfs на /run для `ip netns`), контроллер с `SystemExec` и `CM_TEST_MIHOMO`; приложение — `/bin/sh -c`, пишущее свои `ip -br addr`, `id -u` и `env` в файл.
+- **Как проверить:** `tests/audit_pack_app_ops.rs`: `unshare -U --map-root-user --map-auto -n -m` (tmpfs на /run для `ip netns`; с `unshare -r` вызов `setgroups` запрещён и `worker_start` отвечает `failed`), в `<base>/netns` — ссылка `cm-0` на `/run/netns/cm-0`, контроллер с `SystemExec` и `CM_TEST_MIHOMO`; приложение — `/bin/sh -c`, пишущее свои `ip -br addr`, `id -u` и `env` в файл.
 - **Ожидаемые значения:**
   - [ ] app_launch без сети → not_running; с сетью, но без worker → not_running
+  - [ ] после `kill -9` процесса ядра: app_launch → not_running (запись о worker-е есть, api не отвечает)
+  - [ ] generation кадра ≠ поколению worker-а → generation_mismatch; после worker_reload на поколение 2 запуск с generation 2 → ok
+  - [ ] файл приложения: `/etc/resolv.conf` == "nameserver 198.18.0.2\noptions edns0\n"; `/etc/resolv.conf` вне приложения не изменился
+  - [ ] после 5 запусков число открытых дескрипторов контроллера (`/proc/<pid>/fd`) не выросло
+  - [ ] env.json — симлинк, файл с записью для группы или длиннее 4096 байт → invalid_config; timezone `../x` → invalid_config
   - [ ] после net_apply и worker_start: app_launch → ok, data {type launched, pid N}
   - [ ] файл приложения: интерфейсы только lo и cmv0n с адресом 10.213.0.2/30 (нет интерфейсов хоста)
   - [ ] env приложения: PATH, HOME, XDG_RUNTIME_DIR и TZ/LANG из env.json; нет переменных контроллера
@@ -696,7 +701,7 @@
 ### Z02 · I11.A3 → PACK.Z (L2)
 
 - **Контракт:** Сквозной сценарий: приложение в своём netns выходит наружу только через TUN своего worker-а; при гибели worker-а трафик блокируется, а не идёт напрямую.
-- **Как проверить:** `tests/audit_pack_e2e.rs`: `unshare -rnm`, `cm controller serve` с `SystemExec` и `CM_TEST_MIHOMO`; «интернет» — третий netns с HTTP-сервером, как в `tools/packet_flow_lab.sh` (лаборатория координатора, результаты ниже — ожидаемые).
+- **Как проверить:** `tests/audit_pack_e2e.rs`: `unshare -U --map-root-user --map-auto -n -m`, `cm controller serve` с `SystemExec` и `CM_TEST_MIHOMO`; «интернет» — третий netns с HTTP-сервером, как в `tools/packet_flow_lab.sh` (лаборатория координатора, результаты ниже — ожидаемые).
 - **Ожидаемые значения:**
   - [ ] net_apply → worker_start (mode direct) → app_launch `curl -q -s --noproxy '*' -m 5 http://198.51.100.2:8080/` → HTTP 200
   - [ ] счётчик `iifname "cmv0h" oifname "cmtun0"` > 0; счётчики `"cmv*" counter drop` == 0; `/connections` worker-а показывает downloadTotal > 0

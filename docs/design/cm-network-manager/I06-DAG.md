@@ -299,7 +299,7 @@ flowchart LR
 ### C16 · I06.S1 → I06.T05.a (L2)
 
 - **Контракт:** Сервис на сокете выполняет полный сценарий worker и выдерживает отрицательные проверки.
-- **Как проверить:** `tests/audit_i06_server.rs`: бинарник `cm controller serve` в `unshare -rn` с `CM_STATE_DIR`, `CM_HELPER_ALLOW=1`, `CM_CORE_BIN=$CM_TEST_MIHOMO`; клиент — unix-сокет из теста.
+- **Как проверить:** `tests/audit_i06_server.rs`: бинарник `cm controller serve` в `unshare -U --map-root-user --map-auto -n -m` (в `unshare -r` запрещён `setgroups`, и `worker_start` отвечает `failed`) с `CM_STATE_DIR`, `CM_HELPER_ALLOW=1`, `CM_CORE_BIN=$CM_TEST_MIHOMO`; клиент — unix-сокет из теста.
 - **Значения:**
   - worker_start(gen 1) с конфигом из `audit_i04_lifecycle` → ok started; worker_status → running true, api "api_ready"; worker_stop → ok; после stop нет процессов ядра и аренд
   - тот же id повторно → тот же ответ, второй процесс ядра не появился

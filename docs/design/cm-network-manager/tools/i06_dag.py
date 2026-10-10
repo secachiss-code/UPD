@@ -589,7 +589,7 @@ edge("C15", "I06.W2", "I06.S1",
      ])
 edge("C16", "I06.S1", FINAL,
      "Сервис на сокете выполняет полный сценарий worker и выдерживает отрицательные проверки.",
-     "`tests/audit_i06_server.rs`: бинарник `cm controller serve` в `unshare -rn` с `CM_STATE_DIR`, `CM_HELPER_ALLOW=1`, `CM_CORE_BIN=$CM_TEST_MIHOMO`; клиент — unix-сокет из теста.",
+     "`tests/audit_i06_server.rs`: бинарник `cm controller serve` в `unshare -U --map-root-user --map-auto -n -m` (в `unshare -r` запрещён `setgroups`, и `worker_start` отвечает `failed`) с `CM_STATE_DIR`, `CM_HELPER_ALLOW=1`, `CM_CORE_BIN=$CM_TEST_MIHOMO`; клиент — unix-сокет из теста.",
      [
          "worker_start(gen 1) с конфигом из `audit_i04_lifecycle` → ok started; worker_status → running true, api \"api_ready\"; worker_stop → ok; после stop нет процессов ядра и аренд",
          "тот же id повторно → тот же ответ, второй процесс ядра не появился",

@@ -86,7 +86,7 @@ edge("Z01", "I06.T05.a", FINAL,
      ["все рёбра C01–C16 — PASS; обходов нет"], level="L2")
 edge("Z02", "I11.A3", FINAL,
      "Сквозной сценарий: приложение в своём netns выходит наружу только через TUN своего worker-а; при гибели worker-а трафик блокируется, а не идёт напрямую.",
-     "`tests/audit_pack_e2e.rs`: `unshare -rnm`, `cm controller serve` с `SystemExec` и `CM_TEST_MIHOMO`; «интернет» — третий netns с HTTP-сервером, как в `tools/packet_flow_lab.sh` (лаборатория координатора, результаты ниже — ожидаемые).",
+     "`tests/audit_pack_e2e.rs`: `unshare -U --map-root-user --map-auto -n -m`, `cm controller serve` с `SystemExec` и `CM_TEST_MIHOMO`; «интернет» — третий netns с HTTP-сервером, как в `tools/packet_flow_lab.sh` (лаборатория координатора, результаты ниже — ожидаемые).",
      ["net_apply → worker_start (mode direct) → app_launch `curl -q -s --noproxy '*' -m 5 http://198.51.100.2:8080/` → HTTP 200",
       "счётчик `iifname \"cmv0h\" oifname \"cmtun0\"` > 0; счётчики `\"cmv*\" counter drop` == 0; `/connections` worker-а показывает downloadTotal > 0",
       "kill -9 процесса ядра → тот же запрос: тайм-аут (curl rc 28), HTTP-кода нет; на интерфейсе «интернета» нет пакетов с адреса 10.213.0.2",
@@ -148,13 +148,13 @@ CFG = dict(
         "Написать за один проход проверки всех рёбер пакета:",
         "- рёбра C01–C16 — контроллер (те же, что в [TESTS-I06.md](TESTS-I06.md));",
         "- K01–K16 — ядра и сеть; M01–M16 — приложения, регион, качество, интерфейс; X01–X06 — связи между направлениями;",
-        "- Z02 — сквозной сценарий в `unshare -rnm` с настоящим ядром.",
+        "- Z02 — сквозной сценарий в `unshare -U --map-root-user --map-auto -n -m` с настоящим ядром.",
         "Значения в рёбрах — ожидаемые результаты.",
     ],
     rules_tests=i06_dag.CFG["rules_tests"]
     .replace("Тесты лежат в `tests/audit_i06_*.rs`.", "Тесты лежат в `tests/audit_i06_*.rs` и `tests/audit_pack_*.rs`, фикстуры — в `tests/fixtures/pack/`.")
     .replace("`docs/design/cm-network-manager/i06-evidence/<дата>/summary.json`", "`docs/design/cm-network-manager/i06-evidence/<дата>/summary.json` и `pack-evidence/<дата>/summary.json`")
-    + "\n10. Сценарии с `ip netns` требуют записи в `/run/netns`: запускать в `unshare -rnm` и монтировать tmpfs на `/run` внутри. `curl` — только с `-q` и `--noproxy '*'`.\n11. Проверки с Xray — при `CM_TEST_XRAY=$HOME/.cache/cm-cores/xray/xray`; без переменной печатают SKIPPED и не засчитываются.",
+    + "\n10. Сценарии с `ip netns` требуют записи в `/run/netns`: запускать в `unshare -U --map-root-user --map-auto -n -m` и монтировать tmpfs на `/run` внутри. Где контроллер запускает ядро или приложение, `unshare -r` не годится: в нём запрещён `setgroups`, и сброс привилегий отвечает `failed`. `/sys` внутри остаётся от хоста — интерфейсы своего пространства смотреть через `ip`, а не через `/sys/class/net`. `curl` — только с `-q` и `--noproxy '*'`.\n11. Проверки с Xray — при `CM_TEST_XRAY=$HOME/.cache/cm-cores/xray/xray`; без переменной печатают SKIPPED и не засчитываются.",
     tests_report=[
         "- Отчёт: таблица «ребро → PASS/FAIL → тест», дефекты в формате `<ребро>: ожидалось …, получено …`; обходы контроллера и утечки трафика мимо туннеля — P0, первыми.",
         "- `i06-evidence/<дата>/summary.json` и `pack-evidence/<дата>/summary.json`.",

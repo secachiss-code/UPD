@@ -75,13 +75,13 @@ vertex("I11.A3", "A", "Запускать приложение в его netns �
 Заполняет `AppLaunch`, который в I06 отвечает `unsupported`.
 
 `AppLaunch { instance, generation, program, args }`:
-1. у экземпляра есть сеть (I08.N6) и её поколение совпадает → иначе `NotRunning` / `GenerationMismatch`;
-2. состояние туннеля допускает запуск: worker запущен (`Workers::status` → running) → иначе `NotRunning`. Запуск в сеть без работающего ядра запрещён: приложение стартовало бы в `Blocked`;
+1. у экземпляра есть сеть (I08.N6) и файл `resolv.conf` этой сети → иначе `NotRunning`;
+2. состояние туннеля допускает запуск: worker запущен и отвечает (`Workers::status` → `running` и `api_ready`) → иначе `NotRunning`; `generation` кадра равно поколению worker-а (его клиент читает из `WorkerStatus`) → иначе `GenerationMismatch`. Запуск в сеть без работающего ядра запрещён: приложение стартовало бы в `Blocked`. Запись о worker-е остаётся и после гибели процесса, поэтому одного `running` мало;
 3. `LaunchSpec` из `program` и `args` кадра (правила I11.A1 для пути и аргументов; env из кадра не принимается);
 4. `run_as_for(peer.uid, peer.gid)`;
 5. запуск: дочерний процесс входит в netns и только потом сбрасывает привилегии.
 
-В `src/controller/drop.rs` — `pub fn drop_into_netns_pre_exec(command, netns_fd: RawFd, run_as, keep_fds, limits)`: первым шагом `setns(netns_fd, CLONE_NEWNET)`, затем шаги `drop_pre_exec`. Дескриптор netns открывается в родителе: `/run/netns/cm-<index>` (`O_RDONLY | O_CLOEXEC`); в `test_mode` корень — `<base>/netns`.
+В `src/controller/drop.rs` — `pub fn drop_into_netns_pre_exec(command, netns_fd: RawFd, resolv: Option<&Path>, run_as, keep_fds, limits) -> Result<(), ControlError>`: первым шагом `setns(netns_fd, CLONE_NEWNET)`; при заданном `resolv` — `unshare(CLONE_NEWNS)`, корень в `MS_REC|MS_SLAVE` и bind этого файла поверх `/etc/resolv.conf` (одного `setns` мало: приложение читало бы DNS хоста); затем шаги `drop_pre_exec`. Отказ любого шага — приложение не запускается. Дескриптор netns открывается в родителе: `/run/netns/cm-<index>` (`O_RDONLY | O_CLOEXEC`) и закрывается сразу после `spawn`; в `test_mode` корень — `<base>/netns`. Рабочий каталог приложения — `HOME`, а если его нет — `/`.
 
 Окружение: allowlist из окружения **клиента** недоступен контроллеру, поэтому `AppLaunch` получает env так: `PATH=/usr/bin:/bin`, `HOME` — домашний каталог uid из `getpwuid_r`, `XDG_RUNTIME_DIR=/run/user/<uid>`, плюс `TZ` и `LANG` из пресета экземпляра, если он записан (файл `<root>/instances/<instance>/env.json` владельца: `{"timezone": …, "locale": …}`, проверки владельца и прав — как у `read_owned_config`).
 
@@ -344,9 +344,14 @@ edge("M02", "I11.A2", "I11.A3",
      ])
 edge("M03", "I11.A3", "I11.A5",
      "Приложение запускается внутри сети своего туннеля, под uid вызывающего, и только при работающем ядре.",
-     "`tests/audit_pack_app_ops.rs`: `unshare -rnm` (tmpfs на /run для `ip netns`), контроллер с `SystemExec` и `CM_TEST_MIHOMO`; приложение — `/bin/sh -c`, пишущее свои `ip -br addr`, `id -u` и `env` в файл.",
+     "`tests/audit_pack_app_ops.rs`: `unshare -U --map-root-user --map-auto -n -m` (tmpfs на /run для `ip netns`; с `unshare -r` вызов `setgroups` запрещён и `worker_start` отвечает `failed`), в `<base>/netns` — ссылка `cm-0` на `/run/netns/cm-0`, контроллер с `SystemExec` и `CM_TEST_MIHOMO`; приложение — `/bin/sh -c`, пишущее свои `ip -br addr`, `id -u` и `env` в файл.",
      [
          "app_launch без сети → not_running; с сетью, но без worker → not_running",
+         "после `kill -9` процесса ядра: app_launch → not_running (запись о worker-е есть, api не отвечает)",
+         "generation кадра ≠ поколению worker-а → generation_mismatch; после worker_reload на поколение 2 запуск с generation 2 → ok",
+         "файл приложения: `/etc/resolv.conf` == \"nameserver 198.18.0.2\\noptions edns0\\n\"; `/etc/resolv.conf` вне приложения не изменился",
+         "после 5 запусков число открытых дескрипторов контроллера (`/proc/<pid>/fd`) не выросло",
+         "env.json — симлинк, файл с записью для группы или длиннее 4096 байт → invalid_config; timezone `../x` → invalid_config",
          "после net_apply и worker_start: app_launch → ok, data {type launched, pid N}",
          "файл приложения: интерфейсы только lo и cmv0n с адресом 10.213.0.2/30 (нет интерфейсов хоста)",
          "env приложения: PATH, HOME, XDG_RUNTIME_DIR и TZ/LANG из env.json; нет переменных контроллера",

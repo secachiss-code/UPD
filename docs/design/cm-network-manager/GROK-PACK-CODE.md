@@ -798,7 +798,7 @@ pub fn generate_config(nodes: &[serde_json::Value], leased_port: u16) -> Result<
 - `stop()`: как у `MihomoWorker` — SIGTERM группе, через 2 с SIGKILL, освобождение аренд.
 - `set_run_as(RunAs)` — как у `MihomoWorker` (I06.I3).
 
-Общий с `MihomoWorker` код (ожидание порта, остановка группы, запись приватного файла) вынести в `src/core/process.rs` и использовать в обоих; копий не оставлять. В `lifecycle.rs` mihomo — только замена тел этих функций на вызовы.
+Общий с `MihomoWorker` код (ожидание порта, остановка группы, запись приватного файла) вынести в `src/core/process.rs` и использовать в обоих; копий не оставлять. Остановка своего потомка — `process::terminate_child(&mut Child)`: ожидание прекращается по `try_wait`, иначе завершившийся лидер (зомби) держит группу «живой» все две секунды. В `lifecycle.rs` mihomo — только замена тел этих функций на вызовы.
 
 Контракты, которые проверит роль 2:
 - **K06 → PACK.Z:** Xray проходит тот же жизненный цикл, что mihomo, а отсутствие reload видно в capabilities и в коде ошибки.
@@ -974,7 +974,7 @@ pub fn destroy(t: &TunnelNet, remaining: &[TunnelNet], exec: &mut dyn NetExec) -
 ```
 - `listeners` в TUN-режиме не добавляются; `external-controller-unix` по-прежнему ставит только `attach_instance_controller`.
 
-`MihomoWorker`: новый метод `pub fn set_tunnel_net(&mut self, t: TunnelNet)`. Если задан, `start` и `reload` используют `attach_tun` вместо `attach_worker_listeners`, порт не арендуется, а готовность маршрута — «интерфейс `t.tun` существует и поднят» вместо ожидания порта.
+`MihomoWorker`: новый метод `pub fn set_tunnel_net(&mut self, t: TunnelNet)`. Если задан, `start` и `reload` используют `attach_tun` вместо `attach_worker_listeners`, порт не арендуется, а готовность маршрута — «у интерфейса `t.tun` стоят флаги `IFF_UP` и `IFF_RUNNING`» вместо ожидания порта. Флаги читаются через `ioctl(SIOCGIFFLAGS)`, а не из `/sys/class/net`: TUN поднят самим CM ещё до запуска ядра, а `IFF_RUNNING` появляется, только когда ядро открыло устройство; sysfs к тому же показывает то сетевое пространство, в котором смонтирован.
 
 `pub fn resolv_conf(t: &TunnelNet) -> String` в `src/net/dns.rs` → `"nameserver <t.dns_addr>\noptions edns0\n"`; файл кладётся в `/etc/netns/<t.netns>/resolv.conf` командой из I08.N6.
 
@@ -1037,8 +1037,8 @@ pub fn audit(desired: &[TunnelNet], observed: &Observed) -> Vec<Drift>
 pub fn repair_commands(drift: &Drift, desired: &[TunnelNet]) -> Vec<Cmd>
 ```
 - Нераспознанный JSON → `Drift` не выдаётся, функция разбора возвращает `Err(NetError::Drift)`.
-- `audit`: для каждого желаемого туннеля проверяются blackhole (dst `default`, kind `blackhole`, таблица `t.table`), маршрут в TUN, правило (`priority`, `iif`), интерфейсы, netns. Интерфейс `cmv<N>h` или правило с приоритетом 1000..1063 без желаемого туннеля → `OrphanVeth` / `OrphanRule`.
-- `repair_commands`: `MissingBlackhole` → команда 14 из I08.N2; `MissingRule` → команда 16; `OrphanVeth(name)` → `ip link del <name>`; `OrphanRule(p)` → `ip rule del priority <p>`. Для `MissingVeth`, `MissingTun`, `MissingNetns` — пустой список: сеть пересоздаётся целиком через `NetRevert` и `NetApply`, а не чинится по частям.
+- `audit`: для каждого желаемого туннеля проверяются blackhole (dst `default`, kind `blackhole`, таблица `t.table`), маршрут в TUN, правило (`priority`, `iif`), интерфейсы, netns. Интерфейс `cmv<N>h` без желаемого туннеля → `OrphanVeth`. Правило с приоритетом `1000+N` и `iif cmv<N>h` без желаемого туннеля → `OrphanRule`; чужое правило с тем же приоритетом (другой `iif` или без него) сиротой не считается.
+- `repair_commands`: `MissingBlackhole` → команда 14 из I08.N2; `MissingRule` → команда 16; `OrphanVeth(name)` → `ip link del <name>`; `OrphanRule(p)` → `ip rule del iif cmv<p-1000>h priority <p>`. Для `MissingVeth`, `MissingTun`, `MissingNetns` — пустой список: сеть пересоздаётся целиком через `NetRevert` и `NetApply`, а не чинится по частям.
 - Порядок результата `audit` — по index, внутри — в порядке перечисления вариантов.
 
 Контракты, которые проверит роль 2:
@@ -1048,7 +1048,7 @@ pub fn repair_commands(drift: &Drift, desired: &[TunnelNet]) -> Vec<Cmd>
   - убрано правило iif → [MissingRule(0)]; repair → [ip rule add iif cmv0h lookup 100 priority 1000]
   - нет cmtun0 в links → [MissingTunRoute(0), MissingTun(0)] в этом порядке; repair для MissingTun → []
   - лишний интерфейс cmv7h без желаемого туннеля → [OrphanVeth("cmv7h")]; repair → [ip link del cmv7h]
-  - правило priority 1042 без туннеля → [OrphanRule(1042)]; правило priority 32766 (main) не считается сиротой
+  - правило priority 1042 с iif cmv42h без туннеля → [OrphanRule(1042)], repair → `ip rule del iif cmv42h priority 1042`; правило priority 1042 без iif или с iif eth0 сиротой не считается; правило priority 32766 (main) не считается сиротой
   - parse_rules("not json") → Err(Drift)
 
 ### I09.N8 — Вести состояние туннеля конечным автоматом.
@@ -1166,13 +1166,13 @@ pub fn plan(spec: &LaunchSpec, netns: &str, run_as: RunAs, preset: &EnvironmentP
 Заполняет `AppLaunch`, который в I06 отвечает `unsupported`.
 
 `AppLaunch { instance, generation, program, args }`:
-1. у экземпляра есть сеть (I08.N6) и её поколение совпадает → иначе `NotRunning` / `GenerationMismatch`;
-2. состояние туннеля допускает запуск: worker запущен (`Workers::status` → running) → иначе `NotRunning`. Запуск в сеть без работающего ядра запрещён: приложение стартовало бы в `Blocked`;
+1. у экземпляра есть сеть (I08.N6) и файл `resolv.conf` этой сети → иначе `NotRunning`;
+2. состояние туннеля допускает запуск: worker запущен и отвечает (`Workers::status` → `running` и `api_ready`) → иначе `NotRunning`; `generation` кадра равно поколению worker-а (его клиент читает из `WorkerStatus`) → иначе `GenerationMismatch`. Запуск в сеть без работающего ядра запрещён: приложение стартовало бы в `Blocked`. Запись о worker-е остаётся и после гибели процесса, поэтому одного `running` мало;
 3. `LaunchSpec` из `program` и `args` кадра (правила I11.A1 для пути и аргументов; env из кадра не принимается);
 4. `run_as_for(peer.uid, peer.gid)`;
 5. запуск: дочерний процесс входит в netns и только потом сбрасывает привилегии.
 
-В `src/controller/drop.rs` — `pub fn drop_into_netns_pre_exec(command, netns_fd: RawFd, run_as, keep_fds, limits)`: первым шагом `setns(netns_fd, CLONE_NEWNET)`, затем шаги `drop_pre_exec`. Дескриптор netns открывается в родителе: `/run/netns/cm-<index>` (`O_RDONLY | O_CLOEXEC`); в `test_mode` корень — `<base>/netns`.
+В `src/controller/drop.rs` — `pub fn drop_into_netns_pre_exec(command, netns_fd: RawFd, resolv: Option<&Path>, run_as, keep_fds, limits) -> Result<(), ControlError>`: первым шагом `setns(netns_fd, CLONE_NEWNET)`; при заданном `resolv` — `unshare(CLONE_NEWNS)`, корень в `MS_REC|MS_SLAVE` и bind этого файла поверх `/etc/resolv.conf` (одного `setns` мало: приложение читало бы DNS хоста); затем шаги `drop_pre_exec`. Отказ любого шага — приложение не запускается. Дескриптор netns открывается в родителе: `/run/netns/cm-<index>` (`O_RDONLY | O_CLOEXEC`) и закрывается сразу после `spawn`; в `test_mode` корень — `<base>/netns`. Рабочий каталог приложения — `HOME`, а если его нет — `/`.
 
 Окружение: allowlist из окружения **клиента** недоступен контроллеру, поэтому `AppLaunch` получает env так: `PATH=/usr/bin:/bin`, `HOME` — домашний каталог uid из `getpwuid_r`, `XDG_RUNTIME_DIR=/run/user/<uid>`, плюс `TZ` и `LANG` из пресета экземпляра, если он записан (файл `<root>/instances/<instance>/env.json` владельца: `{"timezone": …, "locale": …}`, проверки владельца и прав — как у `read_owned_config`).
 
@@ -1183,6 +1183,11 @@ pub fn plan(spec: &LaunchSpec, netns: &str, run_as: RunAs, preset: &EnvironmentP
 Контракты, которые проверит роль 2:
 - **M03 → I11.A5:** Приложение запускается внутри сети своего туннеля, под uid вызывающего, и только при работающем ядре.
   - app_launch без сети → not_running; с сетью, но без worker → not_running
+  - после `kill -9` процесса ядра: app_launch → not_running (запись о worker-е есть, api не отвечает)
+  - generation кадра ≠ поколению worker-а → generation_mismatch; после worker_reload на поколение 2 запуск с generation 2 → ok
+  - файл приложения: `/etc/resolv.conf` == "nameserver 198.18.0.2\noptions edns0\n"; `/etc/resolv.conf` вне приложения не изменился
+  - после 5 запусков число открытых дескрипторов контроллера (`/proc/<pid>/fd`) не выросло
+  - env.json — симлинк, файл с записью для группы или длиннее 4096 байт → invalid_config; timezone `../x` → invalid_config
   - после net_apply и worker_start: app_launch → ok, data {type launched, pid N}
   - файл приложения: интерфейсы только lo и cmv0n с адресом 10.213.0.2/30 (нет интерфейсов хоста)
   - env приложения: PATH, HOME, XDG_RUNTIME_DIR и TZ/LANG из env.json; нет переменных контроллера
