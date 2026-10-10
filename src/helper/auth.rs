@@ -50,19 +50,12 @@ fn authorize(p: Peer, action: &str) -> Auth {
         return Auth::Yes;
     }
     let Some(start) = start_time(p.pid) else { return Auth::No(t!("процесс запроса уже завершился").into()) };
-    let subject = format!("{},{},{}", p.pid, start, p.uid);
-    let mut cmd = Command::new("pkcheck");
-    cmd.args(["--action-id", action, "--process", &subject, "--allow-user-interaction"]).stdin(Stdio::null());
-    let mut policy = CapturePolicy::background(Some(64 << 10));
-    policy.deadline = Instant::now() + Duration::from_secs(300);
-    match capture_with_policy(&mut cmd, policy) {
-        Ok(o) => match o.status.code() {
-            Some(0) => Auth::Yes,
-            Some(3) => Auth::No(t!("окно подтверждения закрыто").into()),
-            Some(2) => Auth::No(t!("нет агента polkit для ввода пароля").into()),
-            _ => Auth::No(t!("нет прав (polkit: {0})", action)),
-        },
-        Err(e) => Auth::No(t!("не удалось проверить права: {0}", e)),
+    match crate::controller::actions::pkcheck(p.pid, start, p.uid, action) {
+        crate::controller::actions::PkResult::Allowed => Auth::Yes,
+        crate::controller::actions::PkResult::Dismissed => Auth::No(t!("окно подтверждения закрыто").into()),
+        crate::controller::actions::PkResult::NoAgent => Auth::No(t!("нет агента polkit для ввода пароля").into()),
+        crate::controller::actions::PkResult::Denied => Auth::No(t!("нет прав (polkit: {0})", action)),
+        crate::controller::actions::PkResult::Failed => Auth::No(t!("не удалось проверить права: {0}", "pkcheck")),
     }
 }
 
