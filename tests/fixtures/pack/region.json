@@ -1,0 +1,16 @@
+{
+  "now_unix_ms": 1000000000,
+  "cases": [
+    {"name": "two fresh sources agree", "observations": [["a", "DE", 60], ["b", "DE", 60]], "decision": {"agreed": ["DE", 2]}},
+    {"name": "two sources disagree", "observations": [["a", "DE", 60], ["b", "NL", 60]], "decision": {"disagree": ["DE", "NL"]}},
+    {"name": "three sources, one differs", "observations": [["a", "DE", 60], ["b", "DE", 60], ["c", "NL", 60]], "decision": {"disagree": ["DE", "NL"]}},
+    {"name": "one fresh source", "observations": [["a", "DE", 60]], "decision": {"insufficient": 1}},
+    {"name": "nothing", "observations": [], "decision": {"insufficient": 0}},
+    {"name": "both stale", "observations": [["a", "DE", 960], ["b", "DE", 960]], "decision": "stale"},
+    {"name": "edge of freshness", "observations": [["a", "DE", 900], ["b", "DE", 900]], "decision": {"agreed": ["DE", 2]}},
+    {"name": "one fresh and one stale", "observations": [["a", "DE", 60], ["b", "DE", 960]], "decision": {"insufficient": 1}},
+    {"name": "the newest answer of a source wins", "observations": [["a", "DE", 600], ["a", "NL", 60], ["b", "NL", 60]], "decision": {"agreed": ["NL", 2]}},
+    {"name": "malformed countries are dropped", "observations": [["a", "Germany", 60], ["b", "de", 60], ["c", "", 60], ["d", "DE", 60]], "decision": {"insufficient": 1}},
+    {"name": "an observation from the future is dropped", "observations": [["a", "DE", -60], ["b", "DE", 60]], "decision": {"insufficient": 1}}
+  ]
+}

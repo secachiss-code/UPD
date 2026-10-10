@@ -1,0 +1,1 @@
+[{"dst":"default","dev":"cmtun0","scope":"link","flags":["linkdown"]},{"type":"blackhole","dst":"default","metric":200,"flags":[]}]

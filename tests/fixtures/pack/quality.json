@@ -1,0 +1,9 @@
+{
+  "candidates": [
+    {"node": "a", "country": "DE", "protocol": "vless", "delay_ms": 120, "loss_percent": 0},
+    {"node": "b", "country": "NL", "protocol": "ss", "delay_ms": 80, "loss_percent": 1},
+    {"node": "c", "country": null, "protocol": "vless", "delay_ms": null, "loss_percent": 0},
+    {"node": "d", "country": null, "protocol": "vless", "delay_ms": 90, "loss_percent": 20},
+    {"node": "e", "country": "DE", "protocol": "trojan", "delay_ms": 40, "loss_percent": 21}
+  ]
+}

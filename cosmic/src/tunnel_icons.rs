@@ -79,6 +79,39 @@ mod tests {
         include_bytes!("../res/icons/cm-unverified-symbolic.svg"),
     ];
 
+    fn view(host: &str, sessions: u32, condition: &str) -> cm::status::tunnels::TunnelView {
+        cm::status::tunnels::TunnelView {
+            name: "t".to_owned(),
+            host: host.to_owned(),
+            apps: "separate".to_owned(),
+            condition: condition.to_owned(),
+            axes: Default::default(),
+            age_s: Default::default(),
+            failure: None,
+            sessions,
+        }
+    }
+
+    /// M16: the worst tunnel condition wins; without tunnels the applet keeps its icon.
+    #[test]
+    fn badge_reflects_the_worst_condition() {
+        assert_eq!(badge_for(&[]), None);
+        assert_eq!(
+            badge_for(&[view("proxy", 1, "blocked"), view("proxy", 1, "degraded")]),
+            Some(TunnelBadge::Blocked)
+        );
+        assert_eq!(
+            badge_for(&[view("proxy", 1, "degraded"), view("off", 2, "unknown")]),
+            Some(TunnelBadge::Partial)
+        );
+        assert_eq!(
+            badge_for(&[view("off", 2, "unknown")]),
+            Some(TunnelBadge::HostOffAppActive)
+        );
+        assert_eq!(badge_for(&[view("tunnel", 2, "unknown")]), None);
+        assert_eq!(badge_for(&[view("off", 0, "unknown")]), None);
+    }
+
     #[test]
     fn tunnel_symbols_are_symbolic_16px_and_distinct() {
         let mut seen: Vec<&[u8]> = UPDATE_BADGES.to_vec();

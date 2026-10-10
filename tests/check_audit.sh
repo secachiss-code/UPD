@@ -21,6 +21,10 @@ NEW_MODULE_FMT=$(find src/sources src/profiles src/migration src/identity src/co
 rustfmt --edition 2024 --check $NEW_MODULE_FMT
 # BI role 2 (TESTS-BI.md): new audit files only; older test files are not reformatted.
 rustfmt --edition 2024 --check tests/audit_bi_*.rs tests/bi_support/mod.rs
+# PACK role 2 (TESTS-PACK.md): controller and package audits; the L2 stand needs CM_TEST_MIHOMO
+# and CM_TEST_XRAY, otherwise those checks print SKIPPED and do not count.
+rustfmt --edition 2024 --check tests/audit_i06_*.rs tests/audit_pack_*.rs tests/pack_support/mod.rs
+python3 -m py_compile tests/pack_stand.py
 
 # H.03 made the whole crate clippy-clean; H.09: every unsafe block carries a SAFETY comment.
 cargo clippy --locked --offline --all-targets -- -D warnings -D clippy::undocumented_unsafe_blocks
