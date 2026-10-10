@@ -35,6 +35,7 @@ pub fn outbound(node: &Value, tag: &str) -> Result<Value, XrayConfigError> {
         .get("type")
         .and_then(Value::as_str)
         .ok_or(XrayConfigError::InvalidNode)?;
+    reject_unknown_fields(object, kind)?;
     let address = required_string(object, "server")?;
     let port = required_port(object)?;
     let mut settings = match kind {
@@ -154,6 +155,88 @@ pub fn generate_config(nodes: &[Value], leased_port: u16) -> Result<Vec<u8>, Xra
     serde_json::to_vec(&document).map_err(|_| XrayConfigError::InvalidNode)
 }
 
+/// Поля, которые конвертер переносит в конфиг Xray.
+const COMMON_FIELDS: &[&str] = &[
+    "name",
+    "type",
+    "server",
+    "port",
+    "network",
+    "tls",
+    "servername",
+    "sni",
+    "skip-cert-verify",
+    "client-fingerprint",
+    "alpn",
+    "ws-opts",
+    "grpc-opts",
+    "reality-opts",
+];
+/// Подсказки mihomo про UDP и сокет. На то, с каким сервером и как шифруется соединение,
+/// они не влияют, поэтому пропускаются.
+const IGNORED_FIELDS: &[&str] = &[
+    "udp",
+    "tfo",
+    "mptcp",
+    "ip-version",
+    "packet-encoding",
+    "xudp",
+];
+
+/// Незнакомое поле — отказ: молча пропущенный `plugin` или `smux` дал бы узел, который
+/// выглядит принятым, но соединяется не так, как описано в подписке.
+fn reject_unknown_fields(node: &Map<String, Value>, kind: &str) -> Result<(), XrayConfigError> {
+    let own: &[&str] = match kind {
+        "ss" => &["cipher", "password"],
+        "trojan" => &["password"],
+        "vmess" => &["uuid", "alterId", "cipher"],
+        "vless" => &["uuid", "flow"],
+        _ => return Ok(()),
+    };
+    let known = |key: &str| {
+        COMMON_FIELDS.contains(&key) || IGNORED_FIELDS.contains(&key) || own.contains(&key)
+    };
+    if !node.keys().all(|key| known(key)) {
+        return Err(XrayConfigError::Unsupported("field"));
+    }
+    only_fields(node.get("ws-opts"), &["path", "headers"])?;
+    only_fields(
+        node.get("ws-opts")
+            .and_then(Value::as_object)
+            .and_then(|opts| opts.get("headers")),
+        &["Host"],
+    )?;
+    only_fields(node.get("grpc-opts"), &["grpc-service-name"])?;
+    only_fields(node.get("reality-opts"), &["public-key", "short-id"])
+}
+
+fn only_fields(value: Option<&Value>, allowed: &[&str]) -> Result<(), XrayConfigError> {
+    let Some(value) = value else {
+        return Ok(());
+    };
+    let object = value.as_object().ok_or(XrayConfigError::InvalidNode)?;
+    if object.keys().all(|key| allowed.contains(&key.as_str())) {
+        Ok(())
+    } else {
+        Err(XrayConfigError::Unsupported("field"))
+    }
+}
+
+fn alpn(node: &Map<String, Value>) -> Result<Option<Value>, XrayConfigError> {
+    let Some(value) = node.get("alpn") else {
+        return Ok(None);
+    };
+    let items = value.as_array().ok_or(XrayConfigError::InvalidNode)?;
+    if items.is_empty()
+        || !items
+            .iter()
+            .all(|item| item.as_str().is_some_and(|text| !text.is_empty()))
+    {
+        return Err(XrayConfigError::InvalidNode);
+    }
+    Ok(Some(value.clone()))
+}
+
 fn stream_settings(
     node: &Map<String, Value>,
     kind: &str,
@@ -211,8 +294,13 @@ fn stream_settings(
                 Value::String(fingerprint.to_owned()),
             );
         }
+        if let Some(alpn) = alpn(node)? {
+            tls.insert("alpn".to_owned(), alpn);
+        }
         stream.insert("security".to_owned(), Value::String("tls".to_owned()));
         stream.insert("tlsSettings".to_owned(), Value::Object(tls));
+    } else if node.contains_key("alpn") {
+        return Err(XrayConfigError::Unsupported("field"));
     }
     if stream.is_empty() {
         Ok(None)
