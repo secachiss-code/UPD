@@ -285,6 +285,69 @@ pub fn reject_geo_document(document: &Value) -> Result<(), ConfigError> {
     Ok(())
 }
 
+/// TUN mode for one application network. The input is refused when it already carries `tun`,
+/// `dns`, a host listener, or a GEO rule. Listeners are not added here.
+pub fn attach_tun(
+    document: &Value,
+    tunnel: &crate::net::TunnelNet,
+) -> Result<Vec<u8>, ConfigError> {
+    reject_geo_document(document)?;
+    if document.get("dns").is_some() || document.get("tun").is_some() {
+        return Err(ConfigError::Forbidden);
+    }
+    crate::core::worker::generate(document, 1).map_err(|_| ConfigError::Forbidden)?;
+    let mut out = document.clone();
+    let object = out.as_object_mut().ok_or(ConfigError::Forbidden)?;
+    object.insert(
+        "tun".to_owned(),
+        serde_json::json!({
+            "enable": true,
+            "device": tunnel.tun,
+            "stack": "gvisor",
+            "auto-route": false,
+            "auto-redirect": false,
+            "auto-detect-interface": false,
+            "mtu": tunnel.mtu,
+            "inet4-address": [tunnel.tun_addr],
+            "dns-hijack": ["any:53", "tcp://any:53"]
+        }),
+    );
+    object.insert(
+        "dns".to_owned(),
+        serde_json::json!({
+            "enable": true,
+            "ipv6": false,
+            "enhanced-mode": "redir-host",
+            "nameserver": ["https://1.1.1.1/dns-query", "https://dns.google/dns-query"],
+            "default-nameserver": ["1.1.1.1", "8.8.8.8"]
+        }),
+    );
+    object.remove("listeners");
+    serde_json::to_vec(&out).map_err(|_| ConfigError::Forbidden)
+}
+
+/// API socket only. Used after [`attach_tun`], which must not grow a `listeners` array.
+pub fn attach_unix_controller(
+    document: &Value,
+    socket_path: &std::path::Path,
+) -> Result<Vec<u8>, ConfigError> {
+    reject_geo_document(document)?;
+    let mut value = document.clone();
+    let path = socket_path.to_str().ok_or(ConfigError::Forbidden)?;
+    if path.is_empty() || !path.starts_with('/') || path.chars().any(|c| c.is_control()) {
+        return Err(ConfigError::Forbidden);
+    }
+    let object = value.as_object_mut().ok_or(ConfigError::Forbidden)?;
+    if object.contains_key("external-controller-unix") {
+        return Err(ConfigError::Forbidden);
+    }
+    object.insert(
+        "external-controller-unix".to_owned(),
+        Value::String(path.to_owned()),
+    );
+    serde_json::to_vec(&value).map_err(|_| ConfigError::Forbidden)
+}
+
 /// Listeners from `worker::generate`, then the API socket path from the instance directory.
 ///
 /// `socket_path` is not read from `document`. `external-controller-unix` on input is

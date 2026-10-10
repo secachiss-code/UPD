@@ -21,6 +21,7 @@ pub enum ResourceKind {
     Fwmark,
     RouteTable,
     TunName,
+    Tunnel,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -234,6 +235,9 @@ fn next_value(document: &Document, kind: ResourceKind) -> Result<String, LeaseEr
             .find(|value| !used.contains(&value.as_str())),
         ResourceKind::Socket => (0..256)
             .map(|offset| format!("sock{offset}"))
+            .find(|value| !used.contains(&value.as_str())),
+        ResourceKind::Tunnel => (0..64)
+            .map(|offset| offset.to_string())
             .find(|value| !used.contains(&value.as_str())),
     };
     candidate.ok_or(LeaseError::Exhausted)

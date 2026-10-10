@@ -10,8 +10,8 @@ use std::time::Duration;
 
 use serde_json::Value;
 
-/// uid of the process on the other end of a connected unix socket.
-pub fn peer_uid(stream: &std::os::unix::net::UnixStream) -> Option<u32> {
+/// uid, gid and pid of the process on the other end of a connected unix socket.
+pub fn peer_cred(stream: &std::os::unix::net::UnixStream) -> Option<(u32, u32, i32)> {
     use std::os::fd::AsRawFd;
     let mut cred = libc::ucred {
         pid: 0,
@@ -29,7 +29,13 @@ pub fn peer_uid(stream: &std::os::unix::net::UnixStream) -> Option<u32> {
             &mut len,
         )
     };
-    (result == 0 && len as usize == std::mem::size_of::<libc::ucred>()).then_some(cred.uid)
+    (result == 0 && len as usize == std::mem::size_of::<libc::ucred>())
+        .then_some((cred.uid, cred.gid, cred.pid))
+}
+
+/// uid of the process on the other end of a connected unix socket.
+pub fn peer_uid(stream: &std::os::unix::net::UnixStream) -> Option<u32> {
+    peer_cred(stream).map(|(uid, _, _)| uid)
 }
 
 /// The socket and its parent directory belong to `uid`, and the directory is not group/other accessible.

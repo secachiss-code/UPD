@@ -1,6 +1,9 @@
 //! Core instance contract. Real process control arrives with later I04 tasks.
 
 pub mod adapter;
+pub mod delivery;
+pub mod process;
+pub mod xray;
 pub mod fake;
 pub mod instance;
 pub mod leases;
@@ -17,5 +20,5 @@ pub use fake::{FakeAdapter, FakeOp};
 pub use legacy_host::LegacyHost;
 pub use instance::{InstanceDirs, InstanceError, InstanceId, InstanceRoot};
 pub use leases::{Lease, LeaseError, LeaseRegistry, ResourceKind};
-pub use unit::{NetPrivileges, legacy_hardening_directives, render_core_unit};
+pub use unit::{NetPrivileges, legacy_hardening_directives, render_core_unit, render_user_core_unit};
 pub use worker::{WorkerError, generate as generate_worker};

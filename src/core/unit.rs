@@ -16,8 +16,41 @@ pub struct NetPrivileges {
     pub bind_service: bool,
 }
 
+pub fn render_user_core_unit(
+    owned_root: &std::path::Path,
+    uid: u32,
+    id: &InstanceId,
+    privileges: NetPrivileges,
+) -> String {
+    let root = owned_root.join("instances").join(id.as_str());
+    let root = root.display().to_string();
+    render_unit(
+        id,
+        privileges,
+        &root,
+        &format!("User={uid}\n"),
+        &format!("cm-core-u{uid}-{}", id.as_str()),
+    )
+}
+
 pub fn render_core_unit(id: &InstanceId, privileges: NetPrivileges) -> String {
     let root = format!("{SYSTEM_ROOT}/instances/{}", id.as_str());
+    render_unit(
+        id,
+        privileges,
+        &root,
+        "",
+        &format!("cm-core-{}", id.as_str()),
+    )
+}
+
+fn render_unit(
+    id: &InstanceId,
+    privileges: NetPrivileges,
+    root: &str,
+    user_line: &str,
+    runtime: &str,
+) -> String {
     let caps = capability_list(privileges);
     let capability_lines = if caps.is_empty() {
         "CapabilityBoundingSet=\n".to_owned()
@@ -38,6 +71,7 @@ pub fn render_core_unit(id: &InstanceId, privileges: NetPrivileges) -> String {
          \n\
          [Service]\n\
          Type=simple\n\
+         {user_line}\
          ExecStart={bin} -d {root} -f {root}/config/config.yaml\n\
          Restart=on-failure\n\
          RestartSec=5\n\
@@ -48,7 +82,7 @@ pub fn render_core_unit(id: &InstanceId, privileges: NetPrivileges) -> String {
          {capability_lines}\
          ProtectSystem=strict\n\
          ReadWritePaths=-{root}\n\
-         RuntimeDirectory=cm-core-{id}\n\
+         RuntimeDirectory={runtime}\n\
          RuntimeDirectoryMode=0700\n\
          ProtectHome=yes\n\
          PrivateTmp=yes\n\

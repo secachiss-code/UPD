@@ -400,6 +400,22 @@ impl<'a> RequestSpec<'a> {
     pub const fn max_redirects(&self) -> u8 {
         0
     }
+
+    /// One bounded GET for a pinned core archive. The caller supplies the deadline and the body cap.
+    pub(crate) fn for_bounded_get(
+        endpoint: &'a ConfiguredEndpoint,
+        user_agent: &'a UserAgent,
+        timeout: Duration,
+        max_body_bytes: usize,
+    ) -> Self {
+        Self {
+            endpoint,
+            user_agent,
+            remaining_budget: timeout,
+            request_timeout: timeout,
+            max_body_bytes,
+        }
+    }
 }
 
 impl fmt::Debug for RequestSpec<'_> {
@@ -444,12 +460,10 @@ impl HttpResponse {
         self
     }
 
-    #[cfg(test)]
     pub(crate) fn status(&self) -> u16 {
         self.status
     }
 
-    #[cfg(test)]
     pub(crate) fn body(&self) -> &[u8] {
         &self.body
     }

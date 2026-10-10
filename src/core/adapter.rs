@@ -144,4 +144,12 @@ pub trait CoreAdapter {
     fn reload(&mut self, config: &CoreConfig) -> Result<CoreReadiness, CoreError>;
     fn health(&mut self) -> Result<CoreReadiness, CoreError>;
     fn statistics(&mut self) -> Result<CoreStatistics, CoreError>;
+
+    /// Pid of the running core, when this adapter spawned one. The default is none.
+    fn core_pid(&self) -> Option<u32> {
+        None
+    }
+
+    /// Application TUN for this worker. Cores without a TUN mode ignore it.
+    fn set_tunnel_net(&mut self, _tunnel: crate::net::TunnelNet) {}
 }
