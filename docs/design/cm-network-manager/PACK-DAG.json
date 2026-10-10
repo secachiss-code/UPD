@@ -1,0 +1,1762 @@
+{
+  "schema_version": 1,
+  "date": "2026-10-10",
+  "directions": [
+    {
+      "id": "P",
+      "title": "Контроллер · Протокол",
+      "goal": "Типизированные кадры с версией, жёсткий декодер, отдельные действия polkit по классам операций."
+    },
+    {
+      "id": "I",
+      "title": "Контроллер · Идентификация",
+      "goal": "Кто просит: только из сокета и ядра, никогда из тела запроса; чьё это: путь и имя из uid peer."
+    },
+    {
+      "id": "H",
+      "title": "Контроллер · Ужесточение",
+      "goal": "Дочерний процесс получает только то, что ему положено: uid вызывающего, без capabilities и чужих дескрипторов."
+    },
+    {
+      "id": "T",
+      "title": "Контроллер · Транзакции",
+      "goal": "Журнал владения, компенсация при частичном отказе, поколения и идемпотентность."
+    },
+    {
+      "id": "W",
+      "title": "Контроллер · Работа с ядром",
+      "goal": "Жизненный цикл worker только через контроллер и CoreAdapter."
+    },
+    {
+      "id": "S",
+      "title": "Контроллер · Сервис",
+      "goal": "Вход `cm controller serve` и связка всех частей."
+    },
+    {
+      "id": "D",
+      "title": "Доставка ядер",
+      "goal": "Скачать закреплённую версию, проверить, распаковать с пределами, установить атомарно с откатом."
+    },
+    {
+      "id": "X",
+      "title": "Xray",
+      "goal": "Конфиг и жизненный цикл второго ядра через тот же CoreAdapter."
+    },
+    {
+      "id": "N",
+      "title": "Сеть приложения",
+      "goal": "Свой netns на туннель: veth → правило iif → таблица → TUN worker-а; при сбое трафик блокируется."
+    },
+    {
+      "id": "A",
+      "title": "Приложения",
+      "goal": "Проверенный запуск приложения в своей сети под своим uid; ярлыки; общий туннель группы."
+    },
+    {
+      "id": "R",
+      "title": "Регион",
+      "goal": "Страна выхода по нескольким наблюдениям; окружение процесса; что делать, когда страна сменилась."
+    },
+    {
+      "id": "Q",
+      "title": "Качество",
+      "goal": "Объяснимый выбор узла: сначала ограничения, потом оценка, без дёрганья."
+    },
+    {
+      "id": "U",
+      "title": "Интерфейс",
+      "goal": "Настоящие состояния туннелей вместо макета — в TUI и апплете."
+    },
+    {
+      "id": "Z",
+      "title": "Приёмка",
+      "goal": "Отрицательные проверки контроллера и сквозной сценарий: приложение в своей сети выходит только через свой туннель."
+    }
+  ],
+  "vertices": [
+    {
+      "id": "I06.P1",
+      "direction": "P",
+      "title": "Описать кадры запроса и ответа контроллера.",
+      "size": "S",
+      "level": "L1",
+      "deps": [],
+      "files": [
+        "src/controller/mod.rs",
+        "src/controller/protocol.rs",
+        "src/lib.rs"
+      ],
+      "spec": "`pub mod controller;` в `src/lib.rs`. Подмодули: `protocol, codec, actions, peer, owner, harden, drop, journal, txn, registry, core_ops, dispatch, server`.\n\n```rust\npub const CONTROL_VERSION: u32 = 1;\npub const MAX_FRAME_BYTES: usize = 64 << 10;\n\n#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]\n#[serde(deny_unknown_fields)]\npub struct Request { pub v: u32, pub id: String, pub op: Op }\n\n#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]\n#[serde(tag = \"type\", rename_all = \"snake_case\", deny_unknown_fields)]\npub enum Op {\n    WorkerStart { instance: String, generation: u64 },\n    WorkerReload { instance: String, generation: u64, next_generation: u64 },\n    WorkerStop { instance: String, generation: u64 },\n    WorkerStatus { instance: String },\n    NetApply { instance: String, generation: u64 },     // содержание — I07\n    NetRevert { instance: String, generation: u64 },    // содержание — I07\n    AppLaunch { instance: String, generation: u64, program: String, args: Vec<String> }, // I11\n    Reconcile,\n}\n\n#[derive(Clone, Copy, Debug, PartialEq, Eq)]\npub enum OpClass { Status, Worker, Net, App }\n\nimpl Op { pub fn class(&self) -> OpClass; pub fn instance(&self) -> Option<&str>; }\n\n#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]\n#[serde(deny_unknown_fields)]\npub struct Reply { pub v: u32, pub id: String, pub ok: bool, pub code: String, pub data: Option<ReplyData> }\n\n#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]\n#[serde(tag = \"type\", rename_all = \"snake_case\", deny_unknown_fields)]\npub enum ReplyData {\n    Started { generation: u64 },\n    Status { running: bool, generation: Option<u64>, api: String, route: String, remote: String },\n    Reconciled { compensated: u32 },\n}\n```\n\nКлассы: `WorkerStatus` → `Status`; `WorkerStart/Reload/Stop`, `Reconcile` → `Worker`; `NetApply/NetRevert` → `Net`; `AppLaunch` → `App`.\n\n**В кадре нет uid, пути и байтов конфига.** Поля с такими именами не добавлять: uid берётся из сокета (I06.I1), путь вычисляется (I06.I2), конфиг читается из каталога владельца.\n\n```rust\n#[derive(Clone, Copy, Debug, PartialEq, Eq)]\npub enum ControlError {\n    BadFrame, TooLarge, UnsupportedVersion, BadId, BadInstance, BadArgument,\n    Denied, PeerChanged, GenerationMismatch, Busy, Quota, NotRunning, Conflict,\n    InvalidConfig, Timeout, Unsupported, Crashed, Failed,\n}\nimpl ControlError { pub fn code(self) -> &'static str }  // snake_case имени: \"bad_frame\", \"too_large\", …\n```\n`Reply::ok(id, data)` → `ok: true, code: \"ok\"`; `Reply::error(id, error)` → `ok: false, code: error.code(), data: None`. Других текстов в ответе нет.",
+      "external": [
+        "I06.T01.a",
+        "H.09"
+      ],
+      "covers": []
+    },
+    {
+      "id": "I06.P2",
+      "direction": "P",
+      "title": "Декодировать и кодировать кадры с жёсткими пределами.",
+      "size": "M",
+      "level": "L1",
+      "deps": [
+        "I06.P1"
+      ],
+      "files": [
+        "src/controller/codec.rs"
+      ],
+      "spec": "`pub fn read_frame(reader: &mut impl BufRead) -> Result<Option<Vec<u8>>, ControlError>`\n- Читает до `\\n`, не больше `MAX_FRAME_BYTES + 1` байт. Длиннее → `TooLarge`; хвост до `\\n` при этом вычитывается порциями без накопления, чтобы следующее чтение началось с нового кадра.\n- EOF без данных → `Ok(None)`; EOF посреди кадра → `BadFrame`.\n- Возвращает кадр без завершающего `\\n`.\n\n`pub fn decode(frame: &[u8]) -> Result<Request, ControlError>` — порядок проверок:\n1. длина > `MAX_FRAME_BYTES` → `TooLarge`;\n2. не UTF-8, не JSON, неизвестное поле или неизвестный `type` → `BadFrame`;\n3. `v != CONTROL_VERSION` → `UnsupportedVersion`;\n4. `id` не `^[a-z0-9-]{8,64}$` → `BadId`;\n5. `instance` не проходит `core::InstanceId::new` → `BadInstance`;\n6. `WorkerReload`: `next_generation <= generation` → `BadArgument`;\n7. `AppLaunch`: `program` не абсолютный путь, содержит NUL или `..`-сегмент; `args` больше 64 штук, аргумент длиннее 4096 байт или содержит NUL → `BadArgument`.\n\n`pub fn encode(reply: &Reply) -> Vec<u8>` — одна строка JSON и `\\n`; внутри строки нет `\\n`.\n\n`pub fn request_digest(request: &Request) -> String` — sha256 (hex) канонического JSON поля `op` (сериализация serde_json без пробелов); нужен идемпотентности (I06.T3).",
+      "external": [],
+      "covers": []
+    },
+    {
+      "id": "I06.P3",
+      "direction": "P",
+      "title": "Сопоставить классы операций с действиями polkit и проверять права.",
+      "size": "M",
+      "level": "L1",
+      "deps": [
+        "I06.P1"
+      ],
+      "files": [
+        "src/controller/actions.rs",
+        "src/helper/auth.rs",
+        "src/main.rs",
+        "src/i18n_table.rs"
+      ],
+      "spec": "```rust\npub const ACTION_WORKER: &str = \"io.github.cm.worker\"; // жизненный цикл своего worker\npub const ACTION_NET: &str = \"io.github.cm.net\";       // маршруты и firewall\npub const ACTION_APP: &str = \"io.github.cm.app\";       // запуск приложения в своём окружении\npub fn action_for(class: OpClass) -> &'static str      // Status → helper::ACTION_STATUS\npub trait Authorizer: Send + Sync { fn authorize(&self, peer: &PeerIdentity, action: &str) -> Result<(), ControlError>; }\npub struct PolkitAuthorizer;\npub fn pkcheck(pid: i32, start_time: u64, uid: u32, action: &str) -> PkResult // Allowed | Dismissed | NoAgent | Denied | Failed\n```\n- `PolkitAuthorizer`: uid 0 → Ok; `test_mode()` и `CM_HELPER_ALLOW=1` → Ok; иначе `pkcheck` с субъектом `pid,start_time,uid` из `PeerIdentity`. Любой результат кроме `Allowed` → `ControlError::Denied`.\n- **Одна реализация вызова pkcheck.** `src/helper/auth.rs::authorize` вызывает `controller::actions::pkcheck` и переводит `PkResult` в свои прежние сообщения. Собственный запуск `pkcheck` из helper удаляется. Поведение и тексты helper не меняются.\n- **Политика.** В список действий генератора политики в `src/main.rs` (рядом с `helper::ACTION_MANAGE`) добавить три действия с сообщениями на 6 языках:\n  - `ACTION_WORKER` — `yes` для активного сеанса;\n  - `ACTION_NET` — `auth_admin_keep`;\n  - `ACTION_APP` — `yes`.\n  В существующих строках — только добавление элементов списка.",
+      "external": [],
+      "covers": []
+    },
+    {
+      "id": "I06.I1",
+      "direction": "I",
+      "title": "Установить личность процесса на другом конце сокета.",
+      "size": "M",
+      "level": "L1",
+      "deps": [],
+      "files": [
+        "src/controller/peer.rs"
+      ],
+      "spec": "```rust\npub struct PeerIdentity {\n    pub uid: u32, pub gid: u32, pub pid: i32,\n    pub start_time: u64,         // поле 22 /proc/<pid>/stat\n    pub cgroup: String,          // путь из строки \"0::\" /proc/<pid>/cgroup\n    pub session: Option<String>, // N из сегмента \"session-N.scope\"\n    pub netns_inode: u64,        // st_ino /proc/<pid>/ns/net\n    pidfd: OwnedFd,\n}\npub fn capture(stream: &UnixStream) -> Result<PeerIdentity, ControlError>\nimpl PeerIdentity { pub fn alive(&self) -> bool; pub fn verify(&self) -> Result<(), ControlError>; }\npub fn parse_start_time(stat: &str) -> Option<u64>\npub fn parse_cgroup(text: &str) -> Option<String>\npub fn session_of(cgroup: &str) -> Option<String>\n```\n`capture` — строго в этом порядке:\n1. `SO_PEERCRED` (uid, gid, pid); pid ≤ 0 → `PeerChanged`;\n2. `pidfd_open(pid, 0)` через `libc::syscall(libc::SYS_pidfd_open, …)`; ошибка → `PeerChanged`;\n3. только после этого чтение `/proc/<pid>/stat`, `cgroup`, `ns/net`;\n4. `alive()` ещё раз: если процесс уже завершился, прочитанное могло относиться к другому процессу → `PeerChanged`.\n\n`alive()` — `poll` на pidfd с нулевым тайм-аутом: `POLLIN` означает, что процесс завершился.\n`verify()` — `alive()` и `start_time` из `/proc/<pid>/stat` совпадает с сохранённым; иначе `PeerChanged`.\n\n`parse_start_time` берёт часть после последней `)`, поле 20 в ней: имя процесса может содержать пробелы и скобки.\n\n`Debug` для `PeerIdentity` не печатает `cgroup` целиком (только uid, pid, session). Чтение uid из любого другого источника запрещено.",
+      "external": [],
+      "covers": []
+    },
+    {
+      "id": "I06.I2",
+      "direction": "I",
+      "title": "Вычислить каталог, файл конфига и имя юнита владельца из uid peer.",
+      "size": "M",
+      "level": "L1",
+      "deps": [
+        "I06.I1"
+      ],
+      "files": [
+        "src/controller/owner.rs",
+        "src/core/unit.rs"
+      ],
+      "spec": "```rust\npub const SYSTEM_BASE: &str = \"/var/lib/cm/users\";\npub struct Owned { pub uid: u32, pub instance: InstanceId, pub root: PathBuf, pub unit: String }\npub fn owned(base: &Path, uid: u32, instance: &str) -> Result<Owned, ControlError>\nimpl Owned {\n    pub fn config_path(&self, generation: u64) -> PathBuf; // <root>/instances/<instance>/config/gen-<generation>.json\n    pub fn journal_path(&self) -> PathBuf;                 // <root>/journal.jsonl\n    pub fn generations_path(&self) -> PathBuf;             // <root>/generations.json\n}\npub fn read_owned_config(owned: &Owned, generation: u64) -> Result<CoreConfig, ControlError>\n```\n- `root = <base>/u<uid>`; `unit = \"cm-core-u<uid>-<instance>.service\"`. `uid` — только аргумент функции, который вызывающий берёт из `PeerIdentity`.\n- `instance` не проходит `InstanceId::new` → `BadInstance`.\n- `read_owned_config`: файл открывается с `O_NOFOLLOW|O_CLOEXEC`; затем `fstat` по открытому дескриптору. Отказ `InvalidConfig`, если это не обычный файл, владелец ≠ `owned.uid`, права содержат запись для группы или остальных (`mode & 0o022 != 0`), размер > `core::adapter::MAX_CONFIG_BYTES`, либо файла нет. Каталог `config` — симлинк → тоже `InvalidConfig`.\n\n`src/core/unit.rs`: новая `pub fn render_user_core_unit(owned_root: &Path, uid: u32, id: &InstanceId, privileges: NetPrivileges) -> String` — тот же текст, что `render_core_unit`, но:\n- `User=<uid>` в секции `[Service]`;\n- пути под `<owned_root>/instances/<id>`;\n- `RuntimeDirectory=cm-core-u<uid>-<id>`.\n\n`render_core_unit` не менять.",
+      "external": [],
+      "covers": []
+    },
+    {
+      "id": "I06.H1",
+      "direction": "H",
+      "title": "Подготовить дочерний процесс: дескрипторы, пределы, capabilities, секреты через fd.",
+      "size": "M",
+      "level": "L1",
+      "deps": [],
+      "files": [
+        "src/controller/harden.rs"
+      ],
+      "spec": "```rust\npub struct ChildLimits { pub nofile: u64, pub core: u64 }  // по умолчанию nofile 4096, core 0\npub fn harden_pre_exec(command: &mut Command, keep_fds: &[RawFd], limits: ChildLimits)\npub fn secret_fd(bytes: &[u8]) -> Result<OwnedFd, ControlError>\n```\n`harden_pre_exec` ставит `pre_exec` (с `// SAFETY:`), который в дочернем процессе до exec:\n1. закрывает все дескрипторы ≥ 3, кроме `keep_fds` — `close_range` по промежуткам между сохраняемыми номерами (`libc::syscall(libc::SYS_close_range, …)`);\n2. `setrlimit(RLIMIT_NOFILE)` и `setrlimit(RLIMIT_CORE)`;\n3. `prctl(PR_SET_NO_NEW_PRIVS, 1)`;\n4. сбрасывает ambient-набор (`PR_CAP_AMBIENT_CLEAR_ALL`) и bounding-набор (`PR_CAPBSET_DROP` для 0..=CAP_LAST_CAP, ошибки EINVAL для несуществующих номеров игнорировать).\n\nВ `pre_exec` — только async-signal-safe вызовы, без выделения памяти.\n\n`secret_fd`: `memfd_create(\"cm-secret\", MFD_CLOEXEC | MFD_ALLOW_SEALING)`, запись всех байтов, `lseek` в начало, печати `F_SEAL_WRITE | F_SEAL_GROW | F_SEAL_SHRINK | F_SEAL_SEAL`. Секрет не попадает ни в argv, ни в env.",
+      "external": [],
+      "covers": []
+    },
+    {
+      "id": "I06.I3",
+      "direction": "I",
+      "title": "Запускать процесс от имени вызывающего пользователя, а не root.",
+      "size": "M",
+      "level": "L2",
+      "deps": [
+        "I06.H1"
+      ],
+      "files": [
+        "src/controller/drop.rs",
+        "src/core/mihomo/lifecycle.rs"
+      ],
+      "spec": "```rust\n#[derive(Clone, Debug, PartialEq, Eq)]\npub struct RunAs { pub uid: u32, pub gid: u32, pub groups: Vec<u32> }\npub fn run_as_for(uid: u32, gid: u32) -> Result<RunAs, ControlError>  // группы через getgrouplist по имени из getpwuid_r\npub fn drop_pre_exec(command: &mut Command, run_as: RunAs, keep_fds: &[RawFd], limits: ChildLimits)\npub fn spawn_as(run_as: RunAs, program: &Path, args: &[String], env: &BTreeMap<String, String>) -> Result<Child, ControlError>\n```\n`drop_pre_exec` — один `pre_exec`, порядок обязателен:\n1. `setgroups(groups)`;\n2. `setresgid(gid, gid, gid)`;\n3. `setresuid(uid, uid, uid)`;\n4. проверка, что вернуть root нельзя: `setresuid(0, 0, 0)` обязан завершиться ошибкой, если целевой uid ≠ 0; иначе `_exit(126)`;\n5. шаги `harden_pre_exec` (дескрипторы, пределы, no_new_privs, capabilities).\n\nГруппы вычисляются в родителе, до fork.\n\n`spawn_as`: `env_clear()` и только переданный `env`; stdin null; `program` обязан быть абсолютным (`BadArgument`).\n\n`src/core/mihomo/lifecycle.rs`: у `MihomoWorker` новый метод `pub fn set_run_as(&mut self, run_as: RunAs)`. Если он задан, `spawn` вызывает `drop_pre_exec` вместо нынешнего `pre_exec` с одним `setsid` (сам `setsid` остаётся первым шагом). Без `set_run_as` поведение прежнее. В diff `lifecycle.rs` — только эти строки.",
+      "external": [],
+      "covers": []
+    },
+    {
+      "id": "I06.T1",
+      "direction": "T",
+      "title": "Вести журнал владения с дозаписью и восстановлением после обрыва.",
+      "size": "M",
+      "level": "L1",
+      "deps": [],
+      "files": [
+        "src/controller/journal.rs"
+      ],
+      "spec": "Файл — JSON-строки, права 0600, каждая запись дописывается и синхронизируется (`sync_data`).\n```rust\n#[derive(Serialize, Deserialize)]\npub struct Record { pub txn: String, pub event: Event, pub instance: String, pub generation: u64,\n                    pub digest: String, pub step: Option<String>, pub reply: Option<String>, pub at: i64 }\n#[serde(rename_all = \"snake_case\")]\npub enum Event { Begin, Step, Commit, Abort, Compensated, CompensationFailed }\npub enum TxnStatus { Pending, Committed, Aborted, Dirty }\npub struct TxnState { pub txn: String, pub instance: String, pub generation: u64, pub digest: String,\n                      pub steps_done: Vec<String>, pub status: TxnStatus, pub reply: Option<String> }\npub struct Journal { /* путь и открытый файл */ }\nimpl Journal {\n    pub fn open(path: &Path) -> Result<Self, ControlError>;      // создаёт 0600; симлинк → Failed\n    pub fn append(&mut self, record: &Record) -> Result<(), ControlError>;\n    pub fn replay(&self) -> Result<Vec<TxnState>, ControlError>; // в порядке Begin\n    pub fn find(&self, txn: &str) -> Result<Option<TxnState>, ControlError>;\n    pub fn compact(&mut self) -> Result<(), ControlError>;\n}\n```\n- `Commit` несёт `reply` — строку ответа, которую получит повторный запрос с тем же `id`.\n- Статусы: `Commit` → `Committed`; `Abort` или `Compensated` → `Aborted`; `CompensationFailed` → `Dirty`; иначе `Pending`.\n- **Оборванная последняя строка** (нет `\\n` или не JSON) при `replay` пропускается; при `open` файл усекается до конца последней целой строки.\n- `compact`: если файл больше 1 МиБ — переписать атомарно (`.tmp`, fsync, rename), оставив все `Pending` и `Dirty` целиком и последние 256 `Committed`. Вызывается из `append` после записи `Commit`.",
+      "external": [
+        "I04.T02.b"
+      ],
+      "covers": []
+    },
+    {
+      "id": "I06.T2",
+      "direction": "T",
+      "title": "Выполнять шаги транзакции с компенсацией и восстановлением.",
+      "size": "L",
+      "level": "L1",
+      "deps": [
+        "I06.T1"
+      ],
+      "files": [
+        "src/controller/txn.rs"
+      ],
+      "spec": "```rust\npub trait Step { fn name(&self) -> &'static str;\n                 fn apply(&mut self) -> Result<(), ControlError>;\n                 fn compensate(&mut self) -> Result<(), ControlError>; }\npub struct TxnMeta<'a> { pub txn: &'a str, pub instance: &'a str, pub generation: u64, pub digest: &'a str }\npub fn run(journal: &mut Journal, meta: &TxnMeta, steps: &mut [Box<dyn Step + '_>], reply: &str,\n           crash_before: &dyn Fn(&str) -> bool, now: i64) -> Result<(), ControlError>\npub fn reconcile(journal: &mut Journal, steps_for: &mut dyn FnMut(&TxnState) -> Vec<Box<dyn Step>>, now: i64) -> Result<u32, ControlError>\n```\n`run`:\n1. запись `Begin`;\n2. для каждого шага по порядку: если `crash_before(name)` → вернуть `Crashed` **без компенсации и без записи** (так тест воспроизводит падение процесса); `apply`; при успехе запись `Step`;\n3. `apply` вернул ошибку → `compensate` уже выполненных шагов в обратном порядке, запись `Abort`, вернуть эту ошибку;\n4. компенсация вернула ошибку → запись `CompensationFailed`, вернуть `Failed` (остальные компенсации всё равно выполняются);\n5. после последнего шага: `crash_before(\"commit\")` → `Crashed`; иначе запись `Commit` с `reply`.\n\n`reconcile`: для каждой `Pending` транзакции `steps_for(state)` даёт шаги по именам из `steps_done`; `compensate` в обратном порядке; запись `Compensated` (или `CompensationFailed`). Возвращает число транзакций, получивших `Compensated`. `Dirty` и завершённые не трогает. Повторный вызов ничего не делает.\n\nШаг обязан быть идемпотентным в `compensate`: после обрыва неизвестно, успел ли `apply` шага, перед которым упал процесс.",
+      "external": [],
+      "covers": []
+    },
+    {
+      "id": "I06.T3",
+      "direction": "T",
+      "title": "Хранить поколения и отвечать на повторный запрос сохранённым ответом.",
+      "size": "M",
+      "level": "L1",
+      "deps": [
+        "I06.T1"
+      ],
+      "files": [
+        "src/controller/registry.rs"
+      ],
+      "spec": "```rust\npub struct Generations { /* <root>/generations.json: {\"<instance>\": <u64>} , 0600, атомарная запись */ }\nimpl Generations {\n    pub fn load(path: &Path) -> Result<Self, ControlError>;\n    pub fn current(&self, instance: &str) -> Option<u64>;\n    pub fn set(&mut self, instance: &str, generation: u64) -> Result<(), ControlError>;\n    pub fn clear(&mut self, instance: &str) -> Result<(), ControlError>;\n}\npub enum Replay { Fresh, Stored(String /* строка ответа */) }\npub fn replay_or_fresh(journal: &Journal, txn: &str, digest: &str) -> Result<Replay, ControlError>\npub fn check_start(current: Option<u64>, requested: u64) -> Result<(), ControlError>\npub fn check_running(current: Option<u64>, requested: u64) -> Result<(), ControlError>\n```\n- `check_start`: `requested < current` → `GenerationMismatch` (устаревший запрос); иначе Ok.\n- `check_running` (reload, stop): `current == None` → `NotRunning`; `requested != current` → `GenerationMismatch`.\n- `replay_or_fresh`:\n  - транзакции с таким `txn` нет → `Fresh`;\n  - `Committed` и `digest` совпал → `Stored(reply)`;\n  - `digest` другой → `Conflict` (тот же ключ для другой операции);\n  - `Pending`, `Dirty` или `Aborted` с тем же digest → `Conflict` (сначала нужен `reconcile`).",
+      "external": [],
+      "covers": []
+    },
+    {
+      "id": "I06.W1",
+      "direction": "W",
+      "title": "Управлять жизненным циклом worker через CoreAdapter как транзакциями.",
+      "size": "L",
+      "level": "L2",
+      "deps": [
+        "I06.T2",
+        "I06.T3",
+        "I06.I2",
+        "I06.I3"
+      ],
+      "files": [
+        "src/controller/core_ops.rs"
+      ],
+      "spec": "```rust\npub const MAX_INSTANCES_PER_UID: usize = 16;\npub trait AdapterFactory: Send + Sync { fn make(&self, owned: &Owned, run_as: &RunAs) -> Box<dyn CoreAdapter + Send>; }\npub struct Workers { /* Mutex<HashMap<(u32, String), Running>>; Running { adapter, generation } */ }\nimpl Workers {\n    pub fn new(factory: Arc<dyn AdapterFactory>) -> Self;\n    pub fn start(&self, owned: &Owned, run_as: &RunAs, txn: &str, digest: &str, generation: u64, now: i64) -> Result<Reply, ControlError>;\n    pub fn reload(&self, owned: &Owned, txn: &str, digest: &str, generation: u64, next: u64, now: i64) -> Result<Reply, ControlError>;\n    pub fn stop(&self, owned: &Owned, txn: &str, digest: &str, generation: u64, now: i64) -> Result<Reply, ControlError>;\n    pub fn status(&self, owned: &Owned, txn: &str) -> Reply;\n    pub fn reconcile(&self, owned: &Owned, txn: &str, now: i64) -> Result<Reply, ControlError>;\n    pub fn stop_all(&self);\n}\npub struct MihomoFactory { pub binary: PathBuf, pub lease_dir: PathBuf }\n```\nОбщее для `start`, `reload`, `stop`: открыть `Journal` и `Generations` владельца; `replay_or_fresh` — `Stored` возвращается сразу, без выполнения.\n\n**start:**\n- `check_start`;\n- экземпляр уже запущен → `Conflict`;\n- у uid уже `MAX_INSTANCES_PER_UID` запущенных → `Quota`;\n- `read_owned_config(owned, generation)`;\n- транзакция из шагов:\n  - `adapter_start` — apply: `factory.make` и `adapter.start(config)`; compensate: `adapter.stop()`, ошибку `NotRunning` считать успехом;\n  - `record_generation` — apply: `Generations::set`; compensate: вернуть прежнее значение или `clear`;\n- при успехе экземпляр попадает в карту; ответ `Started { generation }`.\n\n**reload:** `check_running(current, generation)`; `read_owned_config(owned, next)`; шаги `adapter_reload` (compensate: `reload` прежним конфигом поколения `generation`) и `record_generation(next)`. Ошибка адаптера оставляет прежнее поколение.\n\n**stop:** `check_running`; шаги `adapter_stop` (compensate — ничего: остановку не откатываем) и `clear_generation`; экземпляр убирается из карты.\n\n**status:** без журнала и без проверки поколения; для не запущенного — `Status { running: false, generation: None, api: \"down\", route: \"down\", remote: \"unknown\" }`. Значения осей — snake_case имён вариантов `ApiState`/`RouteState`/`RemoteState`.\n\n**reconcile:** `txn::reconcile` по журналу владельца; для шага `adapter_start` компенсация — остановить экземпляр, если он есть в карте; `Reconciled { compensated }`.\n\nОшибки `CoreError` → `ControlError`: `InvalidConfig→InvalidConfig, Unsupported→Unsupported, NotRunning→NotRunning, Busy→Busy, Timeout→Timeout, Conflict→Conflict`, остальные → `Failed`.\n\n`MihomoFactory::make`: `MihomoWorker::new(id, InstanceRoot::new(&owned.root), lease_dir, binary)` и `set_run_as(run_as)`.\n\nКарта экземпляров разделена по uid: экземпляр другого uid с тем же именем не виден и не считается в квоте.\n\n**Точка обрыва для проверок.** `crash_before` для `txn::run` в продукте всегда возвращает `false`. Только при `test_mode()` и заданной переменной `CM_CONTROLLER_CRASH_BEFORE=<имя шага или commit>` на этом шаге процесс завершается через `std::process::abort()`. Вне `test_mode()` переменная не читается.",
+      "external": [
+        "I04.T05.a"
+      ],
+      "covers": []
+    },
+    {
+      "id": "I06.W2",
+      "direction": "W",
+      "title": "Провести кадр через проверки и вернуть ответ без утечек.",
+      "size": "M",
+      "level": "L1",
+      "deps": [
+        "I06.P2",
+        "I06.P3",
+        "I06.I1",
+        "I06.W1"
+      ],
+      "files": [
+        "src/controller/dispatch.rs"
+      ],
+      "spec": "```rust\npub const MAX_CONCURRENT_OPS: usize = 4;\npub struct Deps { pub base: PathBuf, pub authorizer: Arc<dyn Authorizer>, pub workers: Arc<Workers>,\n                  pub slots: Arc<OpSlots>, pub now: fn() -> i64 }\npub fn handle(frame: &[u8], peer: &PeerIdentity, deps: &Deps) -> Vec<u8>   // всегда одна строка ответа\n```\nПорядок, каждый отказ — ответ `Reply::error` и немедленный выход:\n1. `decode`; при ошибке `id` в ответе — пустая строка;\n2. `peer.verify()` → `PeerChanged`;\n3. `authorizer.authorize(peer, action_for(op.class()))` → `Denied`;\n4. `OpSlots::try_acquire()` (счётчик, не больше `MAX_CONCURRENT_OPS` одновременно) → `Busy`; слот освобождается при выходе из `handle`, в том числе при панике (guard);\n5. `owned(&deps.base, peer.uid, instance)` — uid только из `peer`;\n6. операция:\n   - `WorkerStart/Reload/Stop/Status`, `Reconcile` → `Workers` (`run_as` — `run_as_for(peer.uid, peer.gid)`);\n   - `NetApply`, `NetRevert`, `AppLaunch` → `Unsupported` (после проверки прав; содержание — I07 и I11).\n\n`Reconcile` не имеет `instance`: `owned` строится с фиксированным именем `\"journal\"` только ради путей журнала.\n\nОтвет — только `code` из фиксированного набора и `ReplyData`. Ни путь, ни argv, ни текст ошибки ОС в ответ и в журнал процесса не попадают.",
+      "external": [],
+      "covers": []
+    },
+    {
+      "id": "I06.S1",
+      "direction": "S",
+      "title": "Дать вход `cm controller serve` на unix-сокете.",
+      "size": "M",
+      "level": "L2",
+      "deps": [
+        "I06.W2"
+      ],
+      "files": [
+        "src/controller/server.rs",
+        "src/main.rs"
+      ],
+      "spec": "`src/main.rs`: `if args.first() == \"controller\" { exit(cm::controller::server::dispatch(&args[1..])) }` рядом с `source` и `identity`.\n\n`cm controller serve --socket PATH [--base DIR]`:\n- вне `test_mode()` требует euid 0 (код 4) и `--base` не принимает (всегда `SYSTEM_BASE`); в `test_mode()` `--base` обязателен;\n- сокет:\n  - если `LISTEN_PID` — этот процесс и `LISTEN_FDS >= 1`, берётся fd 3 (как в helper);\n  - иначе — `bind` по `PATH`, права 0666. Родительский каталог обязан существовать, не быть симлинком и принадлежать euid;\n  - доступ ограничивают `SO_PEERCRED` и polkit, а не права сокета;\n- фабрика: `MihomoFactory { binary: core::unit::CORE_BIN (в test_mode — `CM_CORE_BIN`, если задан), lease_dir: <base>/leases }`;\n- на соединение — поток; одновременно не больше 32 соединений, лишние закрываются сразу;\n- в потоке: `peer::capture` один раз; цикл `read_frame → handle → write`; ошибка `read_frame` → ответ с этим кодом и закрытие соединения; тайм-аут чтения кадра 30 с;\n- `SIGTERM` и `SIGINT`: перестать принимать, `Workers::stop_all()`, удалить свой сокет (если создавал сам), выйти с кодом 0.\n\nКоды выхода: 0 — штатная остановка; 2 — использование; 4 — нет прав или сокет небезопасен.\n\nИнтеграция в установку (юнит, сокет systemd, общий процесс с helper) в эту вершину не входит: её решает пользователь при приёмке (см. отчёт).",
+      "external": [],
+      "covers": []
+    },
+    {
+      "id": "I06.T05.a",
+      "direction": "Z",
+      "title": "Принять контроллер отрицательными проверками.",
+      "size": "M",
+      "level": "L2",
+      "deps": [
+        "I06.S1"
+      ],
+      "files": [
+        "docs/design/cm-network-manager/i06-evidence/<дата>/summary.json"
+      ],
+      "spec": "Вершина роли 2: кода нет. Закрывается, когда все рёбра проверены и обходов нет.",
+      "external": [
+        "I04.T05.c"
+      ],
+      "covers": []
+    },
+    {
+      "id": "I05.D1",
+      "direction": "D",
+      "title": "Описать закреплённые версии ядер и проверку sha256.",
+      "size": "S",
+      "level": "L1",
+      "deps": [],
+      "files": [
+        "src/core/delivery/mod.rs",
+        "src/core/delivery/pin.rs",
+        "src/core/mod.rs"
+      ],
+      "spec": "`pub mod delivery;` в `src/core/mod.rs`.\n```rust\n#[derive(Clone, Copy, Debug, PartialEq, Eq)] pub enum CoreKind { Mihomo, Xray }\n#[derive(Clone, Copy, Debug, PartialEq, Eq)] pub enum Archive { Gzip, Zip { member: &'static str } }\npub struct Pin { pub kind: CoreKind, pub version: &'static str, pub url: &'static str, pub archive: Archive,\n                 pub archive_sha256: &'static str, pub binary_sha256: &'static str,\n                 pub max_archive: u64, pub max_binary: u64, pub version_marker: &'static str }\npub static PINS: &[Pin];\npub fn pin(kind: CoreKind) -> &'static Pin\npub fn verify_sha256(bytes: &[u8], expected_hex: &str) -> Result<(), DeliveryError>\n```\nЗначения — из [I05-PIN.md](I05-PIN.md), без изменений:\n\n| kind | version | url | archive | archive_sha256 | binary_sha256 | version_marker |\n|---|---|---|---|---|---|---|\n| Mihomo | v1.19.32 | `https://github.com/MetaCubeX/mihomo/releases/download/v1.19.32/mihomo-linux-amd64-compatible-v1.19.32.gz` | Gzip | `ba3ce607747a07f948fc35780e108a4a7c7f552a38b9bd4d115f313ebcb89c20` | `7a0d59da2e678d56c899a3db996a2ad8963286c4f3634b0451435db248f13fa1` | `v1.19.32` |\n| Xray | v26.3.27 | `https://github.com/XTLS/Xray-core/releases/download/v26.3.27/Xray-linux-64.zip` | Zip { member: \"xray\" } | `23cd9af937744d97776ee35ecad4972cf4b2109d1e0fe6be9930467608f7c8ae` | `8255dd939c34cf966cc91517b6324dd3c8d0bcf49ffac8beca049a38c46845ed` | `Xray 26.3.27` |\n\n`max_archive` = 64 МиБ, `max_binary` = 128 МиБ для обоих.\n\n`#[derive(Clone, Copy, Debug, PartialEq, Eq)] pub enum DeliveryError { HashMismatch, TooLarge, BadArchive, MemberMissing, Fetch, VersionMismatch, ConfigRejected, Io, NothingToRollBack }` — `Display` фиксированными фразами, без путей и URL.\n\n`verify_sha256`: сравнение без учёта регистра hex; длина ≠ 64 или не hex → `HashMismatch`.",
+      "external": [],
+      "covers": [
+        "I05.T04.a"
+      ]
+    },
+    {
+      "id": "I05.D2",
+      "direction": "D",
+      "title": "Распаковать gzip и один файл из zip с пределами размера.",
+      "size": "M",
+      "level": "L1",
+      "deps": [
+        "I05.D1"
+      ],
+      "files": [
+        "src/core/delivery/unpack.rs"
+      ],
+      "spec": "```rust\npub fn unpack_gzip(bytes: &[u8], max: u64) -> Result<Vec<u8>, DeliveryError>\npub fn unpack_zip_member(bytes: &[u8], member: &str, max: u64) -> Result<Vec<u8>, DeliveryError>\n```\n`unpack_gzip`: `flate2::read::GzDecoder`, чтение через `take(max + 1)`; больше `max` → `TooLarge`; ошибка потока → `BadArchive`.\n\n`unpack_zip_member` — собственный минимальный читатель (крейта zip в зависимостях нет, новых не добавлять):\n1. найти End of Central Directory (`PK\\x05\\x06`) в последних 65557 байтах; нет → `BadArchive`;\n2. zip64 (любое поле 0xFFFF/0xFFFFFFFF), многотомный архив (disk ≠ 0) → `BadArchive`;\n3. пройти центральный каталог (`PK\\x01\\x02`), не больше 4096 записей; запись с точным именем `member` (без `/`, без `..`) — искомая; нет → `MemberMissing`;\n4. флаг шифрования (bit 0) → `BadArchive`; метод только 0 (stored) или 8 (deflate), иначе `BadArchive`;\n5. заявленный несжатый размер > `max` → `TooLarge` до распаковки;\n6. локальный заголовок (`PK\\x03\\x04`) по смещению; данные в пределах файла, иначе `BadArchive`;\n7. deflate — `flate2::read::DeflateDecoder` через `take(max + 1)`; фактический размер > `max` → `TooLarge`; фактический размер ≠ заявленному → `BadArchive`;\n8. CRC-32 результата (`flate2::Crc`) ≠ записанному → `BadArchive`.\n\nВсе смещения и длины — с проверкой переполнения и границ; паник на произвольном входе нет.",
+      "external": [],
+      "covers": [
+        "I05.T04.a"
+      ]
+    },
+    {
+      "id": "I05.D3",
+      "direction": "D",
+      "title": "Получить бинарник ядра: загрузка, проверка архива, распаковка, проверка бинарника.",
+      "size": "M",
+      "level": "L1",
+      "deps": [
+        "I05.D2"
+      ],
+      "files": [
+        "src/core/delivery/fetch.rs"
+      ],
+      "spec": "```rust\npub trait Download { fn get(&self, url: &str, max_bytes: u64) -> Result<Vec<u8>, DeliveryError>; }\npub struct TransportDownload;   // через sources::transport::FetchTransport (H.04): предел тела, общий deadline\npub fn obtain(pin: &Pin, download: &dyn Download) -> Result<Vec<u8>, DeliveryError>\n```\n`obtain` строго по порядку:\n1. `download.get(pin.url, pin.max_archive)`;\n2. `verify_sha256(archive, pin.archive_sha256)`;\n3. распаковка по `pin.archive`;\n4. `verify_sha256(binary, pin.binary_sha256)`.\n\nПервый отказ прерывает цепочку. Бинарник с неверным хешем наружу не возвращается.\n\n`TransportDownload`: только `https://`, ошибки транспорта → `Fetch`, превышение предела → `TooLarge`. URL берётся только из `Pin`, не из аргументов пользователя.",
+      "external": [],
+      "covers": [
+        "I05.T04.a"
+      ]
+    },
+    {
+      "id": "I05.D4",
+      "direction": "D",
+      "title": "Установить кандидата атомарно и уметь откатиться.",
+      "size": "M",
+      "level": "L1",
+      "deps": [
+        "I05.D3"
+      ],
+      "files": [
+        "src/core/delivery/install.rs"
+      ],
+      "spec": "Раскладка под `<root>/<kind>/` (`kind` — `mihomo` или `xray`; в продукте `<root>` = `/var/lib/cm/cores`):\n- `versions/<version>/<kind>` — бинарник 0755, каталог 0755;\n- `current` → `versions/<version>/<kind>` (симлинк);\n- `previous` → прежняя цель `current` (симлинк, может отсутствовать).\n\n```rust\npub struct Installed { pub version: String, pub path: PathBuf }\npub fn install(root: &Path, pin: &Pin, binary: &[u8],\n               probe: &dyn Fn(&Path) -> Result<String, DeliveryError>,\n               accept: &dyn Fn(&Path) -> Result<(), DeliveryError>) -> Result<Installed, DeliveryError>\npub fn rollback(root: &Path, kind: CoreKind) -> Result<Installed, DeliveryError>\npub fn current(root: &Path, kind: CoreKind) -> Option<Installed>\n```\n`install`:\n1. записать `versions/<version>.tmp/<kind>` (0755), `fsync` файла и каталога;\n2. `probe(path)` — вывод версии кандидата; не содержит `pin.version_marker` → `VersionMismatch`;\n3. `accept(path)` — вызывающий проверяет кандидатом действующие конфиги; ошибка → `ConfigRejected`;\n4. переименовать `<version>.tmp` → `<version>` (если каталог версии уже есть — заменить);\n5. `previous` ← прежняя цель `current` (если была и отличается);\n6. `current` переключается атомарно: симлинк `current.tmp`, затем `rename` поверх `current`.\n\nОтказ на шагах 1–3 удаляет `.tmp` и не трогает `current` и `previous`. Работающие процессы продолжают исполнять прежний файл: каталоги старых версий не удаляются.\n\n`rollback`: `previous` нет → `NothingToRollBack`; иначе `current` и `previous` меняются местами (тем же атомарным способом).\n\n`cm vpn core update` в эту вершину не входит: существующую команду не менять.",
+      "external": [],
+      "covers": [
+        "I05.T04.b"
+      ]
+    },
+    {
+      "id": "I05.X1",
+      "direction": "X",
+      "title": "Построить config Xray из узлов Store.",
+      "size": "L",
+      "level": "L1",
+      "deps": [],
+      "files": [
+        "src/core/xray/mod.rs",
+        "src/core/xray/config.rs",
+        "src/core/mod.rs"
+      ],
+      "spec": "`pub mod xray;` в `src/core/mod.rs`. Вход — тот же, что у генератора mihomo: объекты узлов в формате mihomo (`definition.full_definition()`), выход — JSON Xray.\n\n```rust\n#[derive(Clone, Debug, PartialEq, Eq)]\npub enum XrayConfigError { Empty, InvalidNode, Unsupported(&'static str), InvalidPort }\npub fn outbound(node: &serde_json::Value, tag: &str) -> Result<serde_json::Value, XrayConfigError>\npub fn generate_config(nodes: &[serde_json::Value], leased_port: u16) -> Result<Vec<u8>, XrayConfigError>\n```\n`generate_config` (первый узел — выбранный):\n```json\n{\"log\":{\"loglevel\":\"warning\"},\n \"inbounds\":[{\"tag\":\"cm\",\"listen\":\"127.0.0.1\",\"port\":<leased_port>,\"protocol\":\"mixed\",\"settings\":{\"udp\":true}}],\n \"outbounds\":[<outbound(nodes[0], \"node\")>, {\"tag\":\"direct\",\"protocol\":\"freedom\"}, {\"tag\":\"block\",\"protocol\":\"blackhole\"}],\n \"routing\":{\"rules\":[{\"type\":\"field\",\"inboundTag\":[\"cm\"],\"outboundTag\":\"node\"}]}}\n```\n`leased_port` 0 → `InvalidPort`; `nodes` пуст → `Empty`.\n\nСоответствие `type` узла mihomo → outbound Xray:\n\n| mihomo | Xray `protocol` и `settings` |\n|---|---|\n| `ss` (`server, port, cipher, password`) | `shadowsocks`, `{\"servers\":[{\"address\",\"port\",\"method\":cipher,\"password\"}]}` |\n| `trojan` (`server, port, password`) | `trojan`, `{\"servers\":[{\"address\",\"port\",\"password\"}]}` |\n| `vmess` (`server, port, uuid, alterId, cipher`) | `vmess`, `{\"vnext\":[{\"address\",\"port\",\"users\":[{\"id\":uuid,\"alterId\":alterId или 0,\"security\":cipher или \"auto\"}]}]}` |\n| `vless` (`server, port, uuid, flow`) | `vless`, `{\"vnext\":[{\"address\",\"port\",\"users\":[{\"id\":uuid,\"encryption\":\"none\",\"flow\":flow — только если задан}]}]}` |\n\n`streamSettings` (добавляется, только если есть что задавать):\n- `network`: mihomo `network` (`tcp` по умолчанию, `ws`, `grpc`); иное → `Unsupported(\"network\")`;\n- `ws-opts` → `wsSettings {\"path\": path, \"headers\": {\"Host\": …}}` (поле `headers` — только если Host задан);\n- `grpc-opts.grpc-service-name` → `grpcSettings {\"serviceName\": …}`;\n- `tls: true` (у trojan — всегда) → `\"security\":\"tls\"`, `tlsSettings {\"serverName\": servername или sni, \"allowInsecure\": skip-cert-verify — только если true, \"fingerprint\": client-fingerprint — только если задан}`;\n- `reality-opts` → `\"security\":\"reality\"`, `realitySettings {\"serverName\", \"publicKey\": public-key, \"shortId\": short-id, \"fingerprint\": client-fingerprint или \"chrome\"}`.\n\nОтказы:\n- `type` не из таблицы (в том числе `tuic`, `hysteria2`, `wireguard`, `http`, `socks5`) → `Unsupported(<type>)` — без тихой замены;\n- нет обязательного поля, порт вне 1..=65535, uuid не в формате 8-4-4-4-12 → `InvalidNode`;\n- поля узла, меняющие маршрут мимо CM (`dialer-proxy`, `interface-name`, `routing-mark`) → `Unsupported(\"dialer\")`.\n\nОшибки не содержат значений узла (адресов, паролей, uuid).",
+      "external": [
+        "I05.T01.b"
+      ],
+      "covers": [
+        "I05.T03.a"
+      ]
+    },
+    {
+      "id": "I05.X2",
+      "direction": "X",
+      "title": "Вести жизненный цикл Xray через CoreAdapter.",
+      "size": "L",
+      "level": "L2",
+      "deps": [
+        "I05.X1",
+        "I06.I3"
+      ],
+      "files": [
+        "src/core/xray/lifecycle.rs"
+      ],
+      "spec": "`pub struct XrayWorker` — те же каталоги и аренды, что у `MihomoWorker` (`InstanceRoot`, `LeaseRegistry`, порт), `impl CoreAdapter`:\n\n- `capabilities()`: `core: \"xray\"`, `version: \"26.3.27\"`, `reload_without_restart: false`, `delay_probe: false`.\n- `validate(config)`: файл во временном каталоге instance, `xray run -test -c <file>` с `env_clear()`, тайм-аут 20 с; код ≠ 0 → `InvalidConfig`. Вывод ядра в ошибку не попадает.\n- `start(config)`: `CoreConfig` — документ Xray от `generate_config` с портом-заглушкой; адаптер подставляет арендованный порт в `inbounds[0].port` (и отказывает `InvalidConfig`, если входящих не ровно один, он не `mixed` или слушает не `127.0.0.1`), пишет `config.json` 0600, `validate`, запускает `xray run -c <file>` в новой сессии (`setsid`), ждёт до 5 с, пока порт принимает TCP. Готовность: `ApiState::ApiReady` (процесс жив и порт принимает), `RouteState::RouteReady`, `RemoteState::Unknown`.\n- `reload(config)`: `Err(CoreError::Unsupported)` — у Xray нет перезагрузки без рестарта ([I05-GAPS.md](I05-GAPS.md)). Отдельный метод `pub fn restart(&mut self, config: &CoreConfig) -> Result<CoreReadiness, CoreError>`: `validate` нового конфига → `stop` → `start`; если новый не прошёл `validate`, работающий процесс не трогается.\n- `health()`: процесс жив и порт принимает → прежняя готовность; иначе `DOWN`. `remote` всегда `Unknown`.\n- `statistics()`: `Err(CoreError::Unsupported)`.\n- `stop()`: как у `MihomoWorker` — SIGTERM группе, через 2 с SIGKILL, освобождение аренд.\n- `set_run_as(RunAs)` — как у `MihomoWorker` (I06.I3).\n\nОбщий с `MihomoWorker` код (ожидание порта, остановка группы, запись приватного файла) вынести в `src/core/process.rs` и использовать в обоих; копий не оставлять. В `lifecycle.rs` mihomo — только замена тел этих функций на вызовы.",
+      "external": [],
+      "covers": [
+        "I05.T03.b"
+      ]
+    },
+    {
+      "id": "I08.N1",
+      "direction": "N",
+      "title": "Вывести все имена и адреса сети туннеля из его номера.",
+      "size": "S",
+      "level": "L1",
+      "deps": [],
+      "files": [
+        "src/net/mod.rs",
+        "src/net/plan.rs",
+        "src/lib.rs"
+      ],
+      "spec": "`pub mod net;` в `src/lib.rs`.\n```rust\npub const MAX_TUNNELS: u8 = 64;\n#[derive(Clone, Debug, PartialEq, Eq)]\npub struct TunnelNet {\n    pub index: u8,              // 0..MAX_TUNNELS, из аренды\n    pub netns: String,          // \"cm-<index>\"\n    pub veth_host: String,      // \"cmv<index>h\"\n    pub veth_ns: String,        // \"cmv<index>n\"\n    pub host_addr: String,      // \"10.213.<index>.1/30\"\n    pub ns_addr: String,        // \"10.213.<index>.2/30\"\n    pub gateway: String,        // \"10.213.<index>.1\"\n    pub tun: String,            // \"cmtun<index>\"\n    pub tun_addr: String,       // \"198.18.<index>.1/30\"\n    pub dns_addr: String,       // \"198.18.<index>.2\"\n    pub table: u32,             // 100 + index\n    pub rule_priority: u32,     // 1000 + index\n    pub mtu: u32,               // 1400\n    pub owner_uid: u32,\n}\npub fn tunnel_net(index: u8, owner_uid: u32) -> Result<TunnelNet, NetError>\n#[derive(Clone, Copy, Debug, PartialEq, Eq)]\npub enum NetError { BadIndex, CommandFailed, Timeout, Drift, Busy, Unsupported }\n```\n`index >= MAX_TUNNELS` → `BadIndex`. Функция чистая: одинаковый вход — одинаковый результат. Диапазоны `10.213.0.0/16` и `198.18.0.0/16` — константы модуля с комментарием: путь данных проверен лабораторией `tools/packet_flow_lab.sh`.",
+      "external": [],
+      "covers": [
+        "I08.T01.b"
+      ]
+    },
+    {
+      "id": "I08.N2",
+      "direction": "N",
+      "title": "Составить команды создания и удаления сети туннеля.",
+      "size": "M",
+      "level": "L1",
+      "deps": [
+        "I08.N1"
+      ],
+      "files": [
+        "src/net/commands.rs"
+      ],
+      "spec": "```rust\n#[derive(Clone, Debug, PartialEq, Eq)] pub enum Program { Ip, Nft, Sysctl }\n#[derive(Clone, Debug, PartialEq, Eq)] pub struct Cmd { pub program: Program, pub args: Vec<String>, pub stdin: Option<String> }\npub fn create_commands(t: &TunnelNet, ipv6: Ipv6Policy) -> Vec<Cmd>\npub fn destroy_commands(t: &TunnelNet) -> Vec<Cmd>\n```\n`create_commands` — ровно в этом порядке (значения для index 0, uid 1000):\n1. `ip netns add cm-0`\n2. `ip link add cmv0h type veth peer name cmv0n`\n3. `ip link set cmv0n netns cm-0`\n4. `ip addr add 10.213.0.1/30 dev cmv0h`\n5. `ip link set cmv0h up`\n6. `ip -n cm-0 link set lo up`\n7. `ip -n cm-0 addr add 10.213.0.2/30 dev cmv0n`\n8. `ip -n cm-0 link set cmv0n up`\n9. `ip -n cm-0 route add default via 10.213.0.1`\n10. `ip netns exec cm-0 sysctl -qw net.ipv6.conf.all.disable_ipv6=1` — только при `Ipv6Policy::Block`\n11. `ip tuntap add dev cmtun0 mode tun user 1000`\n12. `ip addr add 198.18.0.1/30 dev cmtun0`\n13. `ip link set cmtun0 mtu 1400 up`\n14. `ip route add blackhole default metric 200 table 100`\n15. `ip route add default dev cmtun0 table 100`\n16. `ip rule add iif cmv0h lookup 100 priority 1000`\n17. `sysctl -qw net.ipv4.ip_forward=1`\n\nBlackhole (14) ставится **раньше** маршрута в TUN (15) и правила (16): ни в какой момент трафик veth не попадает в основную таблицу.\n\n`destroy_commands` — обратный порядок по смыслу: `ip rule del iif cmv0h lookup 100 priority 1000`, `ip route flush table 100`, `ip link del cmtun0`, `ip link del cmv0h`, `ip netns del cm-0`. `ip_forward` не выключается (им могут пользоваться другие).\n\nАргументы — отдельные элементы `args`, без оболочки. Шаг 10 — `Program::Ip` с аргументами `netns exec cm-0 sysctl …`.",
+      "external": [],
+      "covers": [
+        "I08.T02.a",
+        "I09.T02.a"
+      ]
+    },
+    {
+      "id": "I08.N3",
+      "direction": "N",
+      "title": "Отрисовать таблицу nftables для всех туннелей.",
+      "size": "S",
+      "level": "L1",
+      "deps": [
+        "I08.N1"
+      ],
+      "files": [
+        "src/net/firewall.rs"
+      ],
+      "spec": "`pub fn render_table(tunnels: &[TunnelNet]) -> String` — точный текст (для туннелей 0 и 3; пары в порядке возрастания index):\n```\ntable inet cm {\n  chain forward {\n    type filter hook forward priority filter; policy accept;\n    iifname \"cmv0h\" oifname \"cmtun0\" counter accept\n    iifname \"cmtun0\" oifname \"cmv0h\" counter accept\n    iifname \"cmv3h\" oifname \"cmtun3\" counter accept\n    iifname \"cmtun3\" oifname \"cmv3h\" counter accept\n    iifname \"cmv*\" counter drop\n    oifname \"cmv*\" counter drop\n  }\n}\n```\n- Политика цепочки `accept`: чужой forwarding (docker, libvirt) не затрагивается. Запрещается только трафик интерфейсов CM мимо своего TUN.\n- Два последних правила есть всегда, даже при пустом списке туннелей.\n- `pub fn replace_commands(tunnels: &[TunnelNet]) -> Vec<Cmd>`: одна команда `nft -f -` со stdin `\"table inet cm\\ndelete table inet cm\\n\" + render_table(...)` — атомарная замена таблицы одной транзакцией nft.\n- Имя цепочки `forward`: `fwd` — зарезервированное слово nft.",
+      "external": [],
+      "covers": [
+        "I08.T03.a",
+        "I09.T02.a"
+      ]
+    },
+    {
+      "id": "I08.N4",
+      "direction": "N",
+      "title": "Выполнять команды сети с откатом при отказе.",
+      "size": "M",
+      "level": "L2",
+      "deps": [
+        "I08.N2",
+        "I08.N3"
+      ],
+      "files": [
+        "src/net/exec.rs"
+      ],
+      "spec": "```rust\npub trait NetExec { fn run(&mut self, cmd: &Cmd) -> Result<(), NetError>; }\npub struct SystemExec;                      // /usr/bin/ip, /usr/bin/nft, /usr/bin/sysctl; env_clear; тайм-аут 10 с\npub struct RecordingExec { pub ran: Vec<Cmd>, pub fail_at: Option<usize> }\npub fn create(t: &TunnelNet, ipv6: Ipv6Policy, all: &[TunnelNet], exec: &mut dyn NetExec) -> Result<(), NetError>\npub fn destroy(t: &TunnelNet, remaining: &[TunnelNet], exec: &mut dyn NetExec) -> Result<(), NetError>\n```\n`create`:\n1. `replace_commands(all)` — таблица с запретами ставится **до** появления интерфейсов;\n2. `create_commands` по порядку;\n3. отказ команды → выполнить `destroy_commands` (ошибки отката игнорировать, кроме последней — её вернуть как `CommandFailed`) и вернуть `CommandFailed`.\n\n`destroy`: `destroy_commands` — каждая команда выполняется, даже если предыдущая отказала (объект мог не существовать); затем `replace_commands(remaining)`.\n\n`SystemExec`: программа — только по фиксированному абсолютному пути; код ≠ 0 → `CommandFailed`; вывод команды в ошибку не попадает; `stdin` передаётся через pipe.",
+      "external": [],
+      "covers": [
+        "I08.T02.a"
+      ]
+    },
+    {
+      "id": "I08.N5",
+      "direction": "N",
+      "title": "Включить TUN и перехват DNS в конфиге worker-а.",
+      "size": "M",
+      "level": "L2",
+      "deps": [
+        "I08.N1"
+      ],
+      "files": [
+        "src/core/mihomo/config.rs"
+      ],
+      "spec": "`pub fn attach_tun(document: &Value, t: &TunnelNet) -> Result<Vec<u8>, ConfigError>` — рядом с `attach_worker_listeners`:\n- входной документ проходит те же запреты, что worker (`HOST_LISTENER_KEYS`, GEO-правила); ключи `tun` и `dns` во входе → `Forbidden`;\n- добавляется:\n```json\n\"tun\": {\"enable\": true, \"device\": \"<t.tun>\", \"stack\": \"gvisor\", \"auto-route\": false, \"auto-redirect\": false,\n        \"auto-detect-interface\": false, \"mtu\": <t.mtu>, \"inet4-address\": [\"<t.tun_addr>\"],\n        \"dns-hijack\": [\"any:53\", \"tcp://any:53\"]},\n\"dns\": {\"enable\": true, \"ipv6\": false, \"enhanced-mode\": \"redir-host\",\n        \"nameserver\": [\"https://1.1.1.1/dns-query\", \"https://dns.google/dns-query\"],\n        \"default-nameserver\": [\"1.1.1.1\", \"8.8.8.8\"]}\n```\n- `listeners` в TUN-режиме не добавляются; `external-controller-unix` по-прежнему ставит только `attach_instance_controller`.\n\n`MihomoWorker`: новый метод `pub fn set_tunnel_net(&mut self, t: TunnelNet)`. Если задан, `start` и `reload` используют `attach_tun` вместо `attach_worker_listeners`, порт не арендуется, а готовность маршрута — «интерфейс `t.tun` существует и поднят» вместо ожидания порта.\n\n`pub fn resolv_conf(t: &TunnelNet) -> String` в `src/net/dns.rs` → `\"nameserver <t.dns_addr>\\noptions edns0\\n\"`; файл кладётся в `/etc/netns/<t.netns>/resolv.conf` командой из I08.N6.",
+      "external": [],
+      "covers": [
+        "I10.T01.a",
+        "I10.T02.a"
+      ]
+    },
+    {
+      "id": "I08.N6",
+      "direction": "N",
+      "title": "Создавать и удалять сеть туннеля операциями контроллера.",
+      "size": "L",
+      "level": "L2",
+      "deps": [
+        "I08.N4",
+        "I08.N5",
+        "I06.W2"
+      ],
+      "files": [
+        "src/controller/net_ops.rs",
+        "src/controller/dispatch.rs",
+        "src/core/leases.rs"
+      ],
+      "spec": "Заполняет `NetApply` и `NetRevert`, которые в I06 отвечают `unsupported`.\n\n- `ResourceKind::Tunnel` в `src/core/leases.rs`: значения `\"0\"`..`\"63\"` (первое свободное), держатель — `u<uid>-<instance>`.\n- `NetApply { instance, generation }` — транзакция журнала владельца, шаги:\n  1. `lease_tunnel` — apply: аренда номера; compensate: освобождение;\n  2. `resolv_conf` — apply: каталог `/etc/netns/cm-<i>` 0755 и файл `resolv.conf` 0644 (в `test_mode` корень — `<base>/etc-netns`); compensate: удаление;\n  3. `net_create` — apply: `net::exec::create`; compensate: `net::exec::destroy`.\n  Ответ — новый вариант `ReplyData::Net { index: u8, netns: String }`.\n- `NetRevert { instance, generation }` — шаги в обратном порядке: `net_destroy`, `resolv_conf` удалить, аренду освободить. Сети нет → `NotRunning`.\n- Проверка поколения — как у worker (`check_start` / `check_running`), отдельная запись в `Generations` с ключом `net:<instance>`.\n- `WorkerStart` для экземпляра, у которого есть сеть: `Workers::start` вызывает `adapter.set_tunnel_net(...)` до `start` (фабрика получает `Option<TunnelNet>`).\n- Исполнитель — `Arc<Mutex<dyn NetExec + Send>>` в `Deps`: в продукте `SystemExec`, в тестах `RecordingExec`.\n- `reconcile` (I06) получает компенсации этих шагов: после обрыва сеть либо создана целиком, либо удалена.\n\nКласс операции и действие polkit — `Net` / `io.github.cm.net` (без изменений).",
+      "external": [],
+      "covers": [
+        "I08.T02.a",
+        "I08.T04.a"
+      ]
+    },
+    {
+      "id": "I09.N7",
+      "direction": "N",
+      "title": "Сверять желаемое состояние сети с фактическим.",
+      "size": "M",
+      "level": "L1",
+      "deps": [
+        "I08.N1"
+      ],
+      "files": [
+        "src/net/observe.rs"
+      ],
+      "spec": "```rust\npub struct Observed { pub rules: Vec<ObservedRule>, pub routes: BTreeMap<u32, Vec<ObservedRoute>>, pub links: Vec<String>, pub netns: Vec<String> }\npub struct ObservedRule { pub priority: u32, pub iif: Option<String>, pub table: String }\npub struct ObservedRoute { pub dst: String, pub dev: Option<String>, pub kind: Option<String> /* \"blackhole\" */, pub metric: Option<u32> }\npub fn parse_rules(json: &str) -> Result<Vec<ObservedRule>, NetError>      // вывод `ip -j rule`\npub fn parse_routes(json: &str) -> Result<Vec<ObservedRoute>, NetError>    // вывод `ip -j route show table N`\npub fn parse_links(json: &str) -> Result<Vec<String>, NetError>            // вывод `ip -j link`, поле ifname\n#[derive(Clone, Debug, PartialEq, Eq)]\npub enum Drift { MissingBlackhole(u8), MissingRule(u8), MissingTunRoute(u8), MissingVeth(u8), MissingTun(u8), MissingNetns(u8), OrphanVeth(String), OrphanRule(u32) }\npub fn audit(desired: &[TunnelNet], observed: &Observed) -> Vec<Drift>\npub fn repair_commands(drift: &Drift, desired: &[TunnelNet]) -> Vec<Cmd>\n```\n- Нераспознанный JSON → `Drift` не выдаётся, функция разбора возвращает `Err(NetError::Drift)`.\n- `audit`: для каждого желаемого туннеля проверяются blackhole (dst `default`, kind `blackhole`, таблица `t.table`), маршрут в TUN, правило (`priority`, `iif`), интерфейсы, netns. Интерфейс `cmv<N>h` или правило с приоритетом 1000..1063 без желаемого туннеля → `OrphanVeth` / `OrphanRule`.\n- `repair_commands`: `MissingBlackhole` → команда 14 из I08.N2; `MissingRule` → команда 16; `OrphanVeth(name)` → `ip link del <name>`; `OrphanRule(p)` → `ip rule del priority <p>`. Для `MissingVeth`, `MissingTun`, `MissingNetns` — пустой список: сеть пересоздаётся целиком через `NetRevert` и `NetApply`, а не чинится по частям.\n- Порядок результата `audit` — по index, внутри — в порядке перечисления вариантов.",
+      "external": [],
+      "covers": [
+        "I09.T03.a"
+      ]
+    },
+    {
+      "id": "I09.N8",
+      "direction": "N",
+      "title": "Вести состояние туннеля конечным автоматом.",
+      "size": "S",
+      "level": "L1",
+      "deps": [],
+      "files": [
+        "src/net/state.rs"
+      ],
+      "spec": "```rust\n#[derive(Clone, Copy, Debug, PartialEq, Eq)]\npub enum TunnelState { Stopped, Starting, Up, Degraded, Blocked, Failed }\n#[derive(Clone, Copy, Debug, PartialEq, Eq)]\npub enum TunnelEvent { StartRequested, NetReady, CoreReady, RemoteLost, RemoteBack, CoreDown, DriftFound, StopRequested, Repaired }\npub fn next(state: TunnelState, event: TunnelEvent) -> TunnelState\npub fn net_axis(state: TunnelState) -> VerificationValue\npub fn passes_traffic(state: TunnelState) -> bool\n```\nПереходы (остальные пары оставляют состояние прежним):\n\n| Состояние | Событие → новое состояние |\n|---|---|\n| Stopped | StartRequested → Starting |\n| Starting | CoreReady → Up; CoreDown → Failed; DriftFound → Blocked; StopRequested → Stopped |\n| Up | RemoteLost → Degraded; CoreDown → Blocked; DriftFound → Blocked; StopRequested → Stopped |\n| Degraded | RemoteBack → Up; CoreDown → Blocked; DriftFound → Blocked; StopRequested → Stopped |\n| Blocked | CoreReady → Up; Repaired → Starting; StopRequested → Stopped |\n| Failed | StartRequested → Starting; StopRequested → Stopped |\n\n- `NetReady` в `Starting` состояние не меняет (ждём ядро).\n- `net_axis`: Up → Verified; Degraded → Partial; Blocked → Blocked; Failed → Error; Stopped и Starting → Unknown.\n- `passes_traffic`: только Up и Degraded. `Blocked` — трафик приложения не идёт никуда (blackhole), а не напрямую.\n- Остановка туннеля с живыми сессиями приложений (Q12): вызывающий оставляет сеть (`NetRevert` не вызывается) — приложение остаётся в `Blocked`; это правило записать в doc-комментарии `next`.",
+      "external": [],
+      "covers": [
+        "I09.T01.a",
+        "I09.T04.a"
+      ]
+    },
+    {
+      "id": "I11.A1",
+      "direction": "A",
+      "title": "Проверить описание приложения перед запуском.",
+      "size": "M",
+      "level": "L1",
+      "deps": [],
+      "files": [
+        "src/app/mod.rs",
+        "src/app/spec.rs",
+        "src/lib.rs"
+      ],
+      "spec": "`pub mod app;` в `src/lib.rs`. Вход — `profiles::model::ApplicationDefinition` (тип не менять).\n```rust\n#[derive(Clone, Debug, PartialEq, Eq)]\npub struct LaunchSpec { pub program: PathBuf, pub args: Vec<String>, pub cwd: Option<PathBuf>, pub env: BTreeMap<String, String> }\n#[derive(Clone, Debug, PartialEq, Eq)]\npub enum SpecError { NotAbsolute, HasNul, DotDot, TooManyArgs, ArgTooLong, BadEnvName, ForbiddenEnv(String), DuplicateEnv, BadCwd }\npub fn check(definition: &ApplicationDefinition) -> Result<LaunchSpec, SpecError>\n```\nПравила, в этом порядке:\n1. `executable` — абсолютный путь (`NotAbsolute`), без NUL (`HasNul`), без сегмента `..` (`DotDot`); поиск по `PATH` не выполняется никогда;\n2. `argv`: не больше 256 аргументов (`TooManyArgs`), каждый ≤ 8192 байт (`ArgTooLong`), без NUL (`HasNul`);\n3. `cwd`, если задан: абсолютный, без NUL и `..` (`BadCwd`);\n4. `environment`: имя по `^[A-Za-z_][A-Za-z0-9_]*$` (`BadEnvName`); значение без NUL (`HasNul`); повтор имени → `DuplicateEnv`;\n5. запрещённые имена → `ForbiddenEnv(имя)`:\n   - всё, что начинается с `LD_`;\n   - `TZ`, `LANG`, `LANGUAGE`, всё с префиксом `LC_` — их задаёт окружение региона;\n   - `PATH`, `HOME`, `USER`, `LOGNAME`, `SHELL`;\n   - `DBUS_SESSION_BUS_ADDRESS`, `XDG_RUNTIME_DIR` — их выдаёт запуск, а не описание.\n\n`SpecError::Display` — фиксированные фразы через `t!`; в `ForbiddenEnv` — только имя переменной, без значения.",
+      "external": [],
+      "covers": [
+        "I11.T01.a"
+      ]
+    },
+    {
+      "id": "I11.A2",
+      "direction": "A",
+      "title": "Собрать план запуска: сеть, пользователь, окружение.",
+      "size": "M",
+      "level": "L1",
+      "deps": [
+        "I11.A1",
+        "I06.I3"
+      ],
+      "files": [
+        "src/app/plan.rs",
+        "src/identity/plan.rs"
+      ],
+      "spec": "```rust\n#[derive(Clone, Debug, PartialEq, Eq)]\npub struct AppLaunchPlan { pub netns: String, pub program: PathBuf, pub args: Vec<String>, pub cwd: Option<PathBuf>,\n                           pub env: BTreeMap<String, String>, pub run_as: RunAs }\npub fn plan(spec: &LaunchSpec, netns: &str, run_as: RunAs, preset: &EnvironmentPreset,\n            session_env: &BTreeMap<String, String>) -> AppLaunchPlan\n```\n`env` собирается в таком порядке (следующий слой перекрывает предыдущий):\n1. из `session_env` — только allowlist `identity::plan::PARENT_ENV_KEYS` (сделать его `pub`; `PATH` по умолчанию `/usr/bin:/bin`);\n2. переменные `spec.env`;\n3. окружение региона: `TZ = preset.timezone`, `LANG = preset.locale`.\n\n`preset` — `profiles::model::EnvironmentPreset`. Ничего другого от родителя в `env` не попадает.\n\nВ `src/identity/plan.rs` — только `pub` у `PARENT_ENV_KEYS` и у функции сборки allowlist, чтобы список был один.",
+      "external": [
+        "BI.L1"
+      ],
+      "covers": [
+        "I11.T01.a",
+        "I14.T03.a"
+      ]
+    },
+    {
+      "id": "I11.A3",
+      "direction": "A",
+      "title": "Запускать приложение в его netns операцией контроллера.",
+      "size": "L",
+      "level": "L2",
+      "deps": [
+        "I11.A2",
+        "I06.W2",
+        "I08.N6"
+      ],
+      "files": [
+        "src/controller/app_ops.rs",
+        "src/controller/dispatch.rs",
+        "src/controller/drop.rs"
+      ],
+      "spec": "Заполняет `AppLaunch`, который в I06 отвечает `unsupported`.\n\n`AppLaunch { instance, generation, program, args }`:\n1. у экземпляра есть сеть (I08.N6) и её поколение совпадает → иначе `NotRunning` / `GenerationMismatch`;\n2. состояние туннеля допускает запуск: worker запущен (`Workers::status` → running) → иначе `NotRunning`. Запуск в сеть без работающего ядра запрещён: приложение стартовало бы в `Blocked`;\n3. `LaunchSpec` из `program` и `args` кадра (правила I11.A1 для пути и аргументов; env из кадра не принимается);\n4. `run_as_for(peer.uid, peer.gid)`;\n5. запуск: дочерний процесс входит в netns и только потом сбрасывает привилегии.\n\nВ `src/controller/drop.rs` — `pub fn drop_into_netns_pre_exec(command, netns_fd: RawFd, run_as, keep_fds, limits)`: первым шагом `setns(netns_fd, CLONE_NEWNET)`, затем шаги `drop_pre_exec`. Дескриптор netns открывается в родителе: `/run/netns/cm-<index>` (`O_RDONLY | O_CLOEXEC`); в `test_mode` корень — `<base>/netns`.\n\nОкружение: allowlist из окружения **клиента** недоступен контроллеру, поэтому `AppLaunch` получает env так: `PATH=/usr/bin:/bin`, `HOME` — домашний каталог uid из `getpwuid_r`, `XDG_RUNTIME_DIR=/run/user/<uid>`, плюс `TZ` и `LANG` из пресета экземпляра, если он записан (файл `<root>/instances/<instance>/env.json` владельца: `{\"timezone\": …, \"locale\": …}`, проверки владельца и прав — как у `read_owned_config`).\n\nОтвет — новый вариант `ReplyData::Launched { pid: u32 }`. Контроллер не ждёт завершения приложения, но забирает статус выхода в фоне (нет зомби).\n\nНе входит: cgroup-область на сессию и запись `Session` в Store — следующая итерация (нужен `systemd-run` или делегированный cgroup).",
+      "external": [],
+      "covers": [
+        "I11.T02.a"
+      ]
+    },
+    {
+      "id": "I11.A4",
+      "direction": "A",
+      "title": "Сгенерировать ярлык приложения с верным экранированием.",
+      "size": "S",
+      "level": "L1",
+      "deps": [
+        "I11.A1"
+      ],
+      "files": [
+        "src/app/desktop.rs"
+      ],
+      "spec": "`pub fn desktop_entry(id: &str, name: &str, icon: Option<&str>) -> Result<String, SpecError>` и `pub fn exec_quote(arg: &str) -> String`.\n\nТекст (ровно так, `\\n` в конце каждой строки):\n```\n[Desktop Entry]\nType=Application\nName=<name>\nExec=cm app run <exec_quote(id)>\nIcon=<icon>            ← строка есть, только если icon задан\nTerminal=false\nX-CM-Application=<id>\n```\n- `id` — по правилам `profiles::model::Id`; иначе `BadEnvName` не использовать — вернуть `SpecError::NotAbsolute` нельзя: добавить вариант `SpecError::BadId`.\n- `name`: переводы строк и управляющие символы запрещены (`HasNul`); `\\` → `\\\\` (правило значений Desktop Entry).\n- `exec_quote` по спецификации Desktop Entry: аргумент заключается в двойные кавычки, если содержит пробел, табуляцию, перевод строки или любой из символов `\"'\\><~|&;$*?#()` и обратную кавычку; внутри кавычек экранируются обратной чертой `\"`, обратная кавычка, `$` и `\\`; затем каждый `%` удваивается (`%%`).\n- Ярлык запускает `cm app run`, а не программу напрямую: иначе приложение стартовало бы в сети хоста.",
+      "external": [],
+      "covers": [
+        "I11.T03.a"
+      ]
+    },
+    {
+      "id": "I11.A5",
+      "direction": "A",
+      "title": "Дать команду `cm app`.",
+      "size": "M",
+      "level": "L1",
+      "deps": [
+        "I11.A3",
+        "I11.A4",
+        "I06.S1"
+      ],
+      "files": [
+        "src/app/cli.rs",
+        "src/main.rs",
+        "src/i18n_table.rs"
+      ],
+      "spec": "`src/main.rs`: `if args.first() == \"app\" { exit(cm::app::cli::dispatch(&args[1..])) }` рядом с `identity`.\n\n- `cm app check FILE` — читает `ApplicationDefinition` из JSON-файла, печатает итог `spec::check` (программа, число аргументов, имена переменных без значений). Код 0 или 2.\n- `cm app desktop ID NAME [--icon ICON]` — печатает ярлык в stdout. Код 0 или 2.\n- `cm app run INSTANCE -- PROGRAM [ARGS…]` — отправляет контроллеру `AppLaunch` (сокет `CM_CONTROLLER_SOCKET`, по умолчанию `/run/cm/controller.sock`), `generation` берёт из ответа `WorkerStatus` этого экземпляра; печатает `pid`. Коды: 0; 2 — использование или `SpecError`; 3 — отказ контроллера (в выводе — его код в квадратных скобках); 4 — контроллер недоступен.\n- `cm app` без аргументов — справка, код 2.\n\nКлиент контроллера: `pub fn call(socket: &Path, op: Op) -> Result<Reply, ClientError>` в `src/controller/client.rs` — один кадр, один ответ, тайм-аут 30 с; `id` — 16 случайных hex-символов из `/dev/urandom`.\n\nСтроки — через `t!`, переводы на 6 языков в конец `src/i18n_table.rs`.",
+      "external": [],
+      "covers": [
+        "I11.T03.a"
+      ]
+    },
+    {
+      "id": "I12.A6",
+      "direction": "A",
+      "title": "Считать держателей общего туннеля и решать, когда его останавливать.",
+      "size": "M",
+      "level": "L1",
+      "deps": [],
+      "files": [
+        "src/app/shared.rs"
+      ],
+      "spec": "```rust\n#[derive(Clone, Debug, Default, PartialEq, Eq)]\npub struct TunnelRefs { /* tunnel id → множество session id */ }\n#[derive(Clone, Debug, PartialEq, Eq)]\npub enum RefAction { None, StartTunnel(Id), StopTunnel(Id) }\nimpl TunnelRefs {\n    pub fn acquire(&mut self, tunnel: &Id, session: &Id) -> RefAction;\n    pub fn release(&mut self, tunnel: &Id, session: &Id, owner: &TunnelOwner) -> RefAction;\n    pub fn holders(&self, tunnel: &Id) -> usize;\n}\npub fn rebuild(sessions: &[Session]) -> TunnelRefs   // только SessionLifecycle::Active\n```\n- `acquire`: первый держатель → `StartTunnel`; повтор той же сессии — без изменений и `None`.\n- `release`: держателей стало 0 → `StopTunnel`, **кроме** `TunnelOwner::Host`: туннель хоста живёт своим режимом, завершение последней сессии приложения его не останавливает (Q12). Неизвестная сессия → `None`.\n- Счётчик не уходит ниже нуля и не зависит от порядка операций разных сессий.",
+      "external": [],
+      "covers": [
+        "I12.T02.a"
+      ]
+    },
+    {
+      "id": "I12.A7",
+      "direction": "A",
+      "title": "Решать, что делать с живой сессией при смене назначения.",
+      "size": "S",
+      "level": "L1",
+      "deps": [
+        "I12.A6"
+      ],
+      "files": [
+        "src/app/reassign.rs"
+      ],
+      "spec": "```rust\n#[derive(Clone, Debug, PartialEq, Eq)]\npub enum Reassign { NoChange, AppliesToNextLaunch, RestartRequired { reason: ReassignReason } }\n#[derive(Clone, Copy, Debug, PartialEq, Eq)]\npub enum ReassignReason { TunnelChanged, GenerationChanged, NodeGone }\npub fn decide(session: Option<&Session>, current: &ApplicationAssignment, wanted: &ApplicationAssignment,\n              tunnel_generation: u64, node_present: bool) -> Reassign\n```\n- нет активной сессии: назначение то же → `NoChange`, иначе `AppliesToNextLaunch`;\n- активная сессия, а назначение указывает на другой туннель или группу → `RestartRequired { TunnelChanged }`;\n- назначение то же, но `tunnel_generation != session.tunnel_generation` → `RestartRequired { GenerationChanged }`;\n- `node_present == false` → `RestartRequired { NodeGone }` (проверяется первым);\n- иначе `NoChange`.\n\nЖивое соединение никогда не переадресуется молча (Q13): функция не имеет варианта «переключить на лету».",
+      "external": [],
+      "covers": [
+        "I12.T04.a"
+      ]
+    },
+    {
+      "id": "I14.R1",
+      "direction": "R",
+      "title": "Определять страну выхода по нескольким наблюдениям.",
+      "size": "M",
+      "level": "L1",
+      "deps": [],
+      "files": [
+        "src/env/mod.rs",
+        "src/env/geo.rs",
+        "src/lib.rs"
+      ],
+      "spec": "`pub mod env;` в `src/lib.rs`.\n```rust\n#[derive(Clone, Debug, PartialEq, Eq)]\npub struct Observation { pub source: String, pub country: String /* ISO 3166-1 alpha-2 */, pub at_unix_ms: i64 }\n#[derive(Clone, Debug, PartialEq, Eq)]\npub enum RegionDecision { Agreed { country: String, sources: usize }, Disagree { countries: Vec<String> }, Insufficient { fresh: usize }, Stale }\npub const MIN_SOURCES: usize = 2;\npub const MAX_AGE_MS: i64 = 15 * 60 * 1000;\npub fn decide(observations: &[Observation], now_unix_ms: i64) -> RegionDecision\npub fn region_axis(decision: &RegionDecision, preset_country: &str) -> VerificationValue\n```\n`decide`:\n1. отбрасываются наблюдения с некорректным кодом страны (не две заглавные латинские буквы) и из будущего (`at > now`);\n2. от каждого `source` берётся только самое свежее;\n3. свежие — не старше `MAX_AGE_MS`. Свежих нет, а устаревшие есть → `Stale`; наблюдений нет вовсе → `Insufficient { fresh: 0 }`;\n4. свежих источников меньше `MIN_SOURCES` → `Insufficient { fresh }`;\n5. все свежие назвали одну страну → `Agreed`; иначе `Disagree` со списком стран по алфавиту без повторов.\n\nИмя узла («🇩🇪 Germany-1») наблюдением не является и в функцию не передаётся.\n\n`region_axis`: `Agreed` и страна == `preset_country` → `Verified`; `Agreed` с другой страной → `Blocked`; `Disagree` → `Partial`; `Stale` и `Insufficient` → `Unknown`.",
+      "external": [],
+      "covers": [
+        "I14.T01.a"
+      ]
+    },
+    {
+      "id": "I14.R2",
+      "direction": "R",
+      "title": "Проверить, что окружение региона применимо на этой системе.",
+      "size": "S",
+      "level": "L1",
+      "deps": [
+        "I14.R1"
+      ],
+      "files": [
+        "src/env/apply.rs"
+      ],
+      "spec": "```rust\n#[derive(Clone, Debug, PartialEq, Eq)]\npub enum EnvIssue { ZoneMissing, LocaleNotInstalled, LanguagesEmpty, LocaleLanguageMismatch }\npub fn check_preset(preset: &EnvironmentPreset, tzdir: &Path, installed_locales: &[String]) -> Vec<EnvIssue>\npub fn parse_locale_list(text: &str) -> Vec<String>     // вывод `locale -a`\npub fn normalize_locale(name: &str) -> String           // \"de_DE.UTF-8\" и \"de_DE.utf8\" → \"de_DE.utf8\"\n```\n- `ZoneMissing`: файла `tzdir/<timezone>` нет либо имя не проходит правила `identity::tzdata` (использовать ту же проверку имени — сделать её `pub`).\n- `LocaleNotInstalled`: `normalize_locale(preset.locale)` нет среди `normalize_locale` установленных. Это предупреждение, не отказ: Chromium берёт локаль из своей ICU (лаборатория, п. 10), а программам на glibc нужна установленная.\n- `LanguagesEmpty`: `preset.languages` пуст.\n- `LocaleLanguageMismatch`: язык `preset.locale` (до `_`) не совпадает с языком `preset.languages[0]` (до `-`).\n\nПорядок результата — порядок перечисления вариантов. Система не меняется: функция только читает.",
+      "external": [
+        "BI.R3"
+      ],
+      "covers": [
+        "I14.T03.a",
+        "I14.T04.a"
+      ]
+    },
+    {
+      "id": "I14.R3",
+      "direction": "R",
+      "title": "Решать, что делать с сессией, когда страна выхода сменилась.",
+      "size": "S",
+      "level": "L1",
+      "deps": [
+        "I14.R1"
+      ],
+      "files": [
+        "src/env/invalidate.rs"
+      ],
+      "spec": "```rust\n#[derive(Clone, Debug, PartialEq, Eq)]\npub enum Invalidation { Keep, RegionUnknown, RegionMismatch { expected: String, observed: String } }\npub fn on_region_change(preset_country: &str, previous: &RegionDecision, current: &RegionDecision) -> Invalidation\npub fn axis_after(invalidation: &Invalidation) -> VerificationValue\n```\n- `current` — `Agreed` со страной пресета → `Keep`;\n- `Agreed` с другой страной → `RegionMismatch { expected: preset_country, observed }`;\n- `Disagree`, `Stale`, `Insufficient` → `RegionUnknown`, **кроме** случая, когда `previous` был `Agreed` со страной пресета, а `current` — `Stale`: тогда тоже `RegionUnknown` (устаревшее подтверждение не продлевается).\n\n`axis_after`: `Keep` → `Verified`; `RegionUnknown` → `Unknown`; `RegionMismatch` → `Blocked`.\n\nПриложение при этом не перезапускается и не переключается: вызывающий только меняет ось REGION и показывает причину (I14.T05).",
+      "external": [],
+      "covers": [
+        "I14.T05.a"
+      ]
+    },
+    {
+      "id": "I16.Q1",
+      "direction": "Q",
+      "title": "Отбирать узлы ограничениями и ранжировать оценкой с объяснением.",
+      "size": "M",
+      "level": "L1",
+      "deps": [],
+      "files": [
+        "src/quality/mod.rs",
+        "src/quality/score.rs",
+        "src/lib.rs"
+      ],
+      "spec": "`pub mod quality;` в `src/lib.rs`.\n```rust\n#[derive(Clone, Debug, PartialEq)]\npub struct Candidate { pub node: String, pub country: Option<String>, pub protocol: String,\n                       pub delay_ms: Option<u32>, pub loss_percent: u8, pub last_ok_unix_ms: Option<i64> }\n#[derive(Clone, Debug, PartialEq, Eq)]\npub struct Constraints { pub countries: Option<Vec<String>>, pub protocols: Option<Vec<String>>, pub max_delay_ms: Option<u32> }\n#[derive(Clone, Debug, PartialEq, Eq)]\npub enum Rejection { NoMeasurement, CountryNotAllowed, CountryUnknown, ProtocolNotAllowed, TooSlow, TooLossy }\n#[derive(Clone, Debug, PartialEq)]\npub struct Ranked { pub node: String, pub score: u32 }\npub struct Outcome { pub ranked: Vec<Ranked>, pub rejected: Vec<(String, Rejection)> }\npub fn evaluate(candidates: &[Candidate], constraints: &Constraints) -> Outcome\npub fn score(delay_ms: u32, loss_percent: u8) -> u32\n```\nОтбор — первое сработавшее правило:\n1. `delay_ms == None` → `NoMeasurement`;\n2. задан `countries`: `country == None` → `CountryUnknown`; не из списка → `CountryNotAllowed`;\n3. задан `protocols` и протокола нет в списке → `ProtocolNotAllowed`;\n4. задан `max_delay_ms` и `delay_ms` больше → `TooSlow`;\n5. `loss_percent > 20` → `TooLossy`.\n\n`score` (меньше — лучше): `delay_ms + loss_percent as u32 * 50`. Потери весят больше задержки: 1 % потерь равен 50 мс.\n\n`ranked` — по возрастанию `score`, при равенстве — по имени узла (детерминированно). `rejected` — в порядке входа. Ограничение никогда не ослабляется ради того, чтобы «хоть что-то выбрать»: пустой `ranked` — допустимый ответ.",
+      "external": [],
+      "covers": [
+        "I16.T01.a",
+        "I16.T02.a"
+      ]
+    },
+    {
+      "id": "I16.Q2",
+      "direction": "Q",
+      "title": "Переключать узел только при заметном и устойчивом выигрыше.",
+      "size": "S",
+      "level": "L1",
+      "deps": [
+        "I16.Q1"
+      ],
+      "files": [
+        "src/quality/switch.rs"
+      ],
+      "spec": "```rust\npub const MIN_GAIN_PERCENT: u32 = 20;\npub const MIN_DWELL_MS: i64 = 60_000;\n#[derive(Clone, Debug, PartialEq, Eq)]\npub enum Switch { Stay { reason: StayReason }, To { node: String } }\n#[derive(Clone, Copy, Debug, PartialEq, Eq)]\npub enum StayReason { AlreadyBest, GainTooSmall, DwellNotElapsed, NoCandidates }\npub fn decide(current: Option<&str>, ranked: &[Ranked], last_switch_unix_ms: i64, now_unix_ms: i64) -> Switch\n```\n- `ranked` пуст → `Stay { NoCandidates }`: текущий узел не меняется на произвольный;\n- `current == None` или текущего нет в `ranked` (он отвергнут ограничениями) → `To { ranked[0] }` немедленно, без ожидания;\n- текущий — `ranked[0]` → `Stay { AlreadyBest }`;\n- `now - last_switch < MIN_DWELL_MS` → `Stay { DwellNotElapsed }`;\n- выигрыш `(cur.score - best.score) * 100 / cur.score < MIN_GAIN_PERCENT` → `Stay { GainTooSmall }`;\n- иначе `To { ranked[0] }`.\n\nПереключение узла у живой сессии приложения — отдельное решение I12.A7 (`RestartRequired`); эта функция отвечает только на вопрос «какой узел лучше».",
+      "external": [],
+      "covers": [
+        "I16.T03.a"
+      ]
+    },
+    {
+      "id": "I17.U1",
+      "direction": "U",
+      "title": "Строить представление туннелей из настоящих сессий и проверок.",
+      "size": "M",
+      "level": "L1",
+      "deps": [],
+      "files": [
+        "src/status/tunnels.rs",
+        "src/status.rs",
+        "src/tui/mock_tunnels.rs"
+      ],
+      "spec": "`src/status/tunnels.rs` (модуль библиотеки; подключить в `src/status.rs` одной строкой `pub mod tunnels;` — если `status.rs` не каталог-модуль, создать `src/status/` рядом, не перенося существующий код):\n```rust\n#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]\npub struct TunnelView { pub name: String, pub host: String, pub apps: String, pub condition: String,\n                        pub axes: BTreeMap<String, String>, pub age_s: BTreeMap<String, Option<u64>>,\n                        pub failure: Option<String>, pub sessions: u32 }\npub fn build(host: &HostPolicy, tunnel: &TunnelInstance, sessions: &[Session], verifications: &[Verification],\n             group: Option<&ApplicationGroup>, now_unix_ms: i64) -> TunnelView\n```\nФормат совпадает с фикстурами `tests/fixtures/i17/states.json`: страница `src/tui/mock_tunnels.rs` принимает `TunnelView` без изменений отрисовки. В `mock_tunnels.rs` — только замена собственной структуры `Scenario` на `pub use cm::status::tunnels::TunnelView as Scenario;` и чтение фикстур через неё.\n\nПравила `build`:\n- `name` — `tunnel.id`; `host` — `off`/`proxy`/`tunnel` по `host.mode`; `apps` — `shared`, если `tunnel.owner` — `Group`, иначе `separate`;\n- `sessions` — число активных сессий этого туннеля (`tunnel_instance_id` совпал, `lifecycle == Active`);\n- по каждой оси берётся самая свежая `Verification` **текущего поколения** туннеля; проверки прежних поколений не учитываются. Нет проверки → значение `unknown`, возраст `None`;\n- значение оси — snake_case варианта `VerificationValue`; `age_s = (now - evidence_at) / 1000`, отрицательное → 0;\n- `condition`: любая ось `blocked` → `blocked`; иначе любая `error` или `partial` → `degraded`; иначе `unknown`. Значения `ok` нет: страница не сводит оси в один зелёный статус;\n- `failure`: `net` = `error` → `api-down`; `region` = `blocked` → `region-mismatch`; иначе `None` (первое сработавшее).",
+      "external": [
+        "I17-D.T05.a"
+      ],
+      "covers": [
+        "I17.T01.a",
+        "I17.T02.a"
+      ]
+    },
+    {
+      "id": "I17.U2",
+      "direction": "U",
+      "title": "Выбирать значок апплета по состояниям туннелей.",
+      "size": "S",
+      "level": "L1",
+      "deps": [
+        "I17.U1"
+      ],
+      "files": [
+        "cosmic/src/tunnel_icons.rs"
+      ],
+      "spec": "`pub fn badge_for(views: &[TunnelView]) -> Option<TunnelBadge>` в существующем `cosmic/src/tunnel_icons.rs` (тип `TunnelBadge` уже есть; `TunnelView` — из `cm::status::tunnels`).\n\nПриоритет, первое сработавшее:\n1. у любого туннеля `condition == \"blocked\"` → `Blocked`;\n2. у любого туннеля `condition == \"degraded\"` → `Partial`;\n3. у любого туннеля `host == \"off\"` и `sessions > 0` → `HostOffAppActive`;\n4. иначе `None` — апплет показывает обычный значок обновлений.\n\nПодключение значка в панель (`cosmic/src/panel.rs`) в эту вершину не входит: источник `TunnelView` в апплете появится вместе с контроллером на установке.",
+      "external": [],
+      "covers": [
+        "I17.T03.a"
+      ]
+    },
+    {
+      "id": "PACK.Z",
+      "direction": "Z",
+      "title": "Принять пакет сквозным сценарием.",
+      "size": "L",
+      "level": "L2",
+      "deps": [
+        "I06.T05.a",
+        "I05.D4",
+        "I05.X2",
+        "I08.N6",
+        "I09.N7",
+        "I09.N8",
+        "I11.A3",
+        "I11.A5",
+        "I12.A7",
+        "I14.R2",
+        "I14.R3",
+        "I16.Q2",
+        "I17.U2"
+      ],
+      "files": [
+        "docs/design/cm-network-manager/pack-evidence/<дата>/summary.json"
+      ],
+      "spec": "Вершина роли 2: кода нет. Закрывается, когда все рёбра проверены, обходов нет и сквозной сценарий Z02 проходит.",
+      "external": [],
+      "covers": []
+    }
+  ],
+  "edges": [
+    {
+      "id": "C01",
+      "source": "I06.P1",
+      "target": "I06.P2",
+      "contract": "Кадр несёт только версию, ключ и операцию; uid, путей и байтов конфига в схеме нет.",
+      "check": "`tests/audit_i06_protocol.rs`: сериализация и разбор образцов.",
+      "values": [
+        "`{\"v\":1,\"id\":\"a1b2c3d4-0001\",\"op\":{\"type\":\"worker_start\",\"instance\":\"browser\",\"generation\":7}}` ⇄ Request{v 1, id, WorkerStart{browser, 7}} (roundtrip)",
+        "классы: WorkerStatus → Status; WorkerStart, WorkerReload, WorkerStop, Reconcile → Worker; NetApply, NetRevert → Net; AppLaunch → App",
+        "Op::instance(): Reconcile → None, остальные → Some",
+        "ControlError::code(): BadFrame → \"bad_frame\", GenerationMismatch → \"generation_mismatch\", PeerChanged → \"peer_changed\"; все 18 кодов различны и состоят из [a-z_]",
+        "Reply::ok(\"k\", Started{generation 7}) → `{\"v\":1,\"id\":\"k\",\"ok\":true,\"code\":\"ok\",\"data\":{\"type\":\"started\",\"generation\":7}}`",
+        "Reply::error(\"k\", Denied) → ok false, code \"denied\", data null"
+      ],
+      "level": "L1"
+    },
+    {
+      "id": "C02",
+      "source": "I06.P2",
+      "target": "I06.W2",
+      "contract": "Декодер отвергает всё, что не является точным кадром версии 1, и не читает больше 64 КиБ.",
+      "check": "`tests/audit_i06_protocol.rs`: табличный тест и детерминированная мутация.",
+      "values": [
+        "кадр длиной 65537 байт → TooLarge; ровно 65536 байт корректного JSON с длинным id → BadId (не TooLarge)",
+        "`not json`, `{}`, `[]`, байты 0xFF → BadFrame",
+        "лишнее поле: `{\"v\":1,\"id\":\"a1b2c3d4-0001\",\"uid\":0,\"op\":{…}}` → BadFrame; лишнее поле внутри op (`\"uid\":0`, `\"path\":\"/x\"`) → BadFrame",
+        "неизвестный type `\"worker_kill\"` → BadFrame",
+        "v 0 и v 2 → UnsupportedVersion",
+        "id \"short\", \"UPPER-CASE-1\", \"a b c d e f g h\", 65 символов → BadId",
+        "instance \"\", \"-x\", \"A\", \"a/b\", \"../x\", 33 символа → BadInstance",
+        "WorkerReload generation 5 next 5 и next 4 → BadArgument; next 6 → Ok",
+        "AppLaunch program \"firefox\", \"/usr/../bin/sh\", с NUL → BadArgument; 65 аргументов → BadArgument; аргумент 4097 байт → BadArgument",
+        "read_frame: поток «кадр на 70000 байт\\n» + корректный кадр → первый TooLarge, второй читается целиком",
+        "read_frame: пустой поток → Ok(None); «abc» без \\n → BadFrame",
+        "encode(reply) оканчивается одним \\n и не содержит \\n внутри",
+        "мутация: 100000 кадров из корректного образца с детерминированным PRNG (xorshift, seed 1) — замена, вставка, удаление байта: decode не паникует и возвращает Ok либо один из кодов BadFrame, TooLarge, UnsupportedVersion, BadId, BadInstance, BadArgument",
+        "request_digest одинаков для одинаковых op и различен для WorkerStart{browser,7} и WorkerStart{browser,8}; не зависит от id"
+      ],
+      "level": "L1"
+    },
+    {
+      "id": "C03",
+      "source": "I06.P1",
+      "target": "I06.P3",
+      "contract": "У каждого класса операций своё действие polkit; `manage` не используется.",
+      "check": "`tests/audit_i06_protocol.rs` и существующий тест политики в `src/main.rs`.",
+      "values": [
+        "action_for(Status) == \"io.github.cm.status\"; Worker → \"io.github.cm.worker\"; Net → \"io.github.cm.net\"; App → \"io.github.cm.app\"",
+        "сгенерированная политика содержит `<action id=\"io.github.cm.worker\">` с allow_active yes, `io.github.cm.net` с allow_active auth_admin_keep и allow_any auth_admin, `io.github.cm.app` с allow_active yes",
+        "у каждого нового действия есть message на en и переводы ru, de, it, zh, ar"
+      ],
+      "level": "L1"
+    },
+    {
+      "id": "C04",
+      "source": "I06.P3",
+      "target": "I06.W2",
+      "contract": "Проверка прав получает личность peer целиком и не знает uid из запроса; реализация pkcheck одна.",
+      "check": "`tests/audit_i06_protocol.rs` (подменный Authorizer) и `tests/audit_contracts.rs`-подобная проверка исходников.",
+      "values": [
+        "PolkitAuthorizer: peer uid 0 → Ok без запуска pkcheck (PATH без pkcheck)",
+        "test_mode и CM_HELPER_ALLOW=1 → Ok; CM_HELPER_ALLOW=1 без test_mode → pkcheck вызывается (PATH с подставным pkcheck, который пишет аргументы в файл и выходит 1) → Denied",
+        "подставной pkcheck получает `--action-id io.github.cm.worker --process <pid>,<start>,<uid>` с pid и start_time из PeerIdentity",
+        "в `src/helper/*.rs` нет строки `Command::new(\"pkcheck\")`; она есть ровно в одном файле — `src/controller/actions.rs`",
+        "существующие тесты helper (gate) проходят без изменений"
+      ],
+      "level": "L1"
+    },
+    {
+      "id": "C05",
+      "source": "I06.I1",
+      "target": "I06.I2",
+      "contract": "uid, gid и pid берутся только из SO_PEERCRED; подмена PID после захвата обнаруживается.",
+      "check": "`tests/audit_i06_peer.rs`: socketpair и дочерние процессы.",
+      "values": [
+        "capture на socketpair внутри одного процесса → uid == euid, pid == getpid(), start_time == поле 22 /proc/self/stat",
+        "parse_start_time(\"1234 (a b) c) S 1 1 1 0 -1 4194560 1 0 0 0 0 0 0 0 20 0 1 0 987654 0 0\") → Some(987654)",
+        "parse_cgroup(\"0::/user.slice/user-1000.slice/session-3.scope\\n\") → Some(\"/user.slice/user-1000.slice/session-3.scope\"); пустой текст → None",
+        "session_of(\"/user.slice/user-1000.slice/session-3.scope\") → Some(\"3\"); session_of(\"/user.slice/user-1000.slice/user@1000.service/app.slice/x.scope\") → None",
+        "netns_inode == st_ino /proc/self/ns/net",
+        "дочерний процесс открывает сокет и завершается; после wait: identity.alive() == false, verify() → Err(PeerChanged)",
+        "живой дочерний процесс: alive() == true, verify() == Ok",
+        "format!(\"{:?}\", identity) не содержит пути cgroup"
+      ],
+      "level": "L1"
+    },
+    {
+      "id": "C06",
+      "source": "I06.I1",
+      "target": "I06.W2",
+      "contract": "Диспетчер проверяет личность перед каждой операцией, а не один раз на соединение.",
+      "check": "`tests/audit_i06_dispatch.rs`.",
+      "values": [
+        "peer завершился между двумя кадрами одного соединения → второй ответ code \"peer_changed\", фабрика адаптеров не вызвана"
+      ],
+      "level": "L1"
+    },
+    {
+      "id": "C07",
+      "source": "I06.I2",
+      "target": "I06.W1",
+      "contract": "Каталог, конфиг и имя юнита однозначно определяются uid peer и именем экземпляра; чужой файл не читается.",
+      "check": "`tests/audit_i06_owner.rs` в `TempDirGuard`.",
+      "values": [
+        "owned(\"/b\", 1000, \"browser\") → root \"/b/u1000\", unit \"cm-core-u1000-browser.service\"",
+        "config_path(7) == \"/b/u1000/instances/browser/config/gen-7.json\"; journal_path == \"/b/u1000/journal.jsonl\"",
+        "owned(base, 1000, \"../x\") → Err(BadInstance)",
+        "read_owned_config: обычный файл 0600 владельца → Ok с теми же байтами",
+        "файл — симлинк на существующий файл → InvalidConfig; каталог config — симлинк → InvalidConfig",
+        "права 0666 → InvalidConfig; размер MAX_CONFIG_BYTES + 1 → InvalidConfig; файла нет → InvalidConfig",
+        "владелец файла ≠ owned.uid (owned с uid euid+1 при том же файле) → InvalidConfig",
+        "render_user_core_unit(\"/var/lib/cm/users/u1000\", 1000, browser, default) содержит строки `User=1000`, `ReadWritePaths=-/var/lib/cm/users/u1000/instances/browser`, `RuntimeDirectory=cm-core-u1000-browser`",
+        "render_core_unit для того же id не изменился (нет `User=`)"
+      ],
+      "level": "L1"
+    },
+    {
+      "id": "C08",
+      "source": "I06.H1",
+      "target": "I06.I3",
+      "contract": "Дочерний процесс не наследует дескрипторы, capabilities и возможность их вернуть.",
+      "check": "`tests/audit_i06_harden.rs`: дочерний `/bin/sh -c` печатает /proc/self/status и список /proc/self/fd.",
+      "values": [
+        "родитель открыл файл без O_CLOEXEC (fd ≥ 3): в дочернем /proc/self/fd только 0, 1, 2 и дескриптор самого ls",
+        "keep_fds [N]: дескриптор N в дочернем открыт, остальные ≥ 3 закрыты",
+        "в /proc/self/status дочернего: `NoNewPrivs:\\t1`, `CapAmb:\\t0000000000000000`, `CapBnd:\\t0000000000000000`",
+        "`ulimit -n` в дочернем → 4096; `ulimit -c` → 0",
+        "secret_fd(b\"secret-marker\"): чтение даёт те же 13 байт; запись → ошибка EPERM; F_GET_SEALS содержит WRITE, GROW, SHRINK, SEAL",
+        "secret_fd: флаг FD_CLOEXEC установлен"
+      ],
+      "level": "L1"
+    },
+    {
+      "id": "C09",
+      "source": "I06.I3",
+      "target": "I06.W1",
+      "contract": "Процесс worker и приложения работает под uid, gid и группами вызывающего и не может вернуть root.",
+      "check": "`tests/audit_i06_drop.rs`: внутри `unshare --user --map-users` с подчинённым uid, как `tests/audit_i04_tun.rs`.",
+      "values": [
+        "spawn_as(RunAs{uid 1, gid 1, groups [1]}, /usr/bin/id, [\"-u\"]) → вывод \"1\"; `id -g` → \"1\"; `id -G` → \"1\"",
+        "дочерний `sh -c 'cat /proc/self/status'`: `CapEff:\\t0000000000000000`, `NoNewPrivs:\\t1`",
+        "env: передан {A=1} при родителе с SECRET_TOKEN=x → в дочернем `env` только A=1",
+        "spawn_as с program \"id\" (не абсолютный) → Err(BadArgument)",
+        "MihomoWorker без set_run_as: существующий `audit_i04_lifecycle` проходит без изменений",
+        "MihomoWorker с set_run_as(uid 1): процесс ядра в harness имеет Uid 1 в /proc/<pid>/status (L2, с CM_TEST_MIHOMO)"
+      ],
+      "level": "L2"
+    },
+    {
+      "id": "C10",
+      "source": "I06.T1",
+      "target": "I06.T2",
+      "contract": "Журнал переживает обрыв записи и восстанавливает состояние каждой транзакции.",
+      "check": "`tests/audit_i06_journal.rs` в `TempDirGuard`.",
+      "values": [
+        "open создаёт файл 0600; путь-симлинк → Err(Failed)",
+        "Begin → Pending; Begin, Step(a), Commit(reply \"R\") → Committed, steps_done [a], reply Some(\"R\")",
+        "Begin, Step(a), Abort → Aborted; Begin, Step(a), Compensated → Aborted; Begin, CompensationFailed → Dirty",
+        "к файлу дописано `{\"txn\":\"x\",\"ev` без \\n: replay возвращает прежние транзакции; после open + append файл состоит только из целых строк",
+        "две транзакции вперемешку: replay в порядке их Begin",
+        "compact при файле > 1 МиБ из 5000 Committed и 2 Pending: остаются 2 Pending и 256 последних Committed; размер < 1 МиБ"
+      ],
+      "level": "L1"
+    },
+    {
+      "id": "C11",
+      "source": "I06.T2",
+      "target": "I06.W1",
+      "contract": "При отказе шага выполненное откатывается в обратном порядке; обрыв процесса оставляет след, по которому reconcile завершает откат.",
+      "check": "`tests/audit_i06_txn.rs`: шаги-счётчики, записывающие порядок вызовов.",
+      "values": [
+        "шаги A, B, C успешны → вызовы [A.apply, B.apply, C.apply], журнал Begin, Step A, Step B, Step C, Commit; результат Ok",
+        "B.apply → Err(Timeout): вызовы [A.apply, B.apply, A.compensate], журнал Begin, Step A, Abort; результат Err(Timeout)",
+        "C.apply → Err(Failed): компенсации в порядке [B.compensate, A.compensate]",
+        "B.apply ошибка и A.compensate ошибка → журнал … CompensationFailed, результат Err(Failed), статус Dirty",
+        "crash_before(\"B\"): вызовы [A.apply], результат Err(Crashed), журнал Begin, Step A — статус Pending",
+        "после этого reconcile: вызовы [A.compensate], возвращает 1, статус Aborted; повторный reconcile возвращает 0 и ничего не вызывает",
+        "crash_before(\"commit\") после трёх шагов → Pending с steps_done [A, B, C]; reconcile вызывает [C.compensate, B.compensate, A.compensate]",
+        "обрыв на каждом из шагов и на commit (4 точки): после reconcile ни одной Pending"
+      ],
+      "level": "L1"
+    },
+    {
+      "id": "C12",
+      "source": "I06.T1",
+      "target": "I06.T3",
+      "contract": "Повторный запрос с тем же ключом не выполняется второй раз.",
+      "check": "`tests/audit_i06_txn.rs`.",
+      "values": [
+        "нет транзакции → Fresh",
+        "Committed с reply \"R\" и тем же digest → Stored(\"R\")",
+        "тот же txn, другой digest → Err(Conflict)",
+        "Pending с тем же digest → Err(Conflict)"
+      ],
+      "level": "L1"
+    },
+    {
+      "id": "C13",
+      "source": "I06.T3",
+      "target": "I06.W1",
+      "contract": "Устаревшее поколение отвергается; поколение хранится атомарно и по uid.",
+      "check": "`tests/audit_i06_txn.rs`.",
+      "values": [
+        "check_start(None, 1) Ok; check_start(Some(3), 3) Ok; check_start(Some(3), 4) Ok; check_start(Some(3), 2) → GenerationMismatch",
+        "check_running(None, 1) → NotRunning; check_running(Some(3), 3) Ok; check_running(Some(3), 2) и (Some(3), 4) → GenerationMismatch",
+        "Generations: set(browser, 7), load заново → current(browser) == Some(7); clear → None; файл 0600",
+        "оставленный generations.json.tmp с мусором не влияет на load"
+      ],
+      "level": "L1"
+    },
+    {
+      "id": "C14",
+      "source": "I06.W1",
+      "target": "I06.W2",
+      "contract": "Жизненный цикл worker идёт только через контроллер; отказ адаптера не оставляет следов; экземпляры разных uid не видят друг друга.",
+      "check": "`tests/audit_i06_core_ops.rs`: `AdapterFactory`, выдающая `core::FakeAdapter`; base в `TempDirGuard`; конфиги `gen-N.json` пишет тест.",
+      "values": [
+        "start(browser, gen 1) → Started{1}; status → running true, generation Some(1), api \"api_ready\"",
+        "повторный start с тем же txn → тот же ответ, фабрика вызвана 1 раз",
+        "start(browser, gen 1) с новым txn при работающем → Err(Conflict)",
+        "start с gen 0 при текущем 1 (после stop и нового start gen 1) → Err(GenerationMismatch)",
+        "нет файла gen-2.json: start gen 2 → Err(InvalidConfig), фабрика не вызвана",
+        "reload(gen 1 → 2) → Ok, status generation Some(2); reload(gen 1 → 3) после этого → Err(GenerationMismatch)",
+        "адаптер отказал в reload (fail_next Reload InvalidConfig) → Err(InvalidConfig), status generation прежнее, generations.json прежний",
+        "stop(gen 2) → Ok; status → running false, generation None; stop ещё раз (новый txn) → Err(NotRunning)",
+        "адаптер отказал в start (fail_next Start Failed) → Err(Failed); status running false; generations.json без browser; журнал: транзакция Aborted",
+        "17-й экземпляр того же uid → Err(Quota); первый экземпляр другого uid при этом стартует",
+        "экземпляр browser uid 1000 запущен: status(owned uid 1001, browser) → running false",
+        "CoreError → ControlError: Unsupported → Unsupported, Busy → Busy, RouteUnavailable → Failed"
+      ],
+      "level": "L2"
+    },
+    {
+      "id": "C15",
+      "source": "I06.W2",
+      "target": "I06.S1",
+      "contract": "Каждый кадр проходит один и тот же порядок проверок; ответ не содержит ничего кроме кода и данных ответа.",
+      "check": "`tests/audit_i06_dispatch.rs`: `handle` с подменными Authorizer и фабрикой.",
+      "values": [
+        "мусорный кадр → `{\"v\":1,\"id\":\"\",\"ok\":false,\"code\":\"bad_frame\",\"data\":null}`",
+        "Authorizer отказывает → code \"denied\"; фабрика не вызвана; каталог владельца не создан",
+        "Authorizer получает действие \"io.github.cm.worker\" для worker_start и \"io.github.cm.status\" для worker_status",
+        "worker_start от peer uid U читает конфиг только из <base>/u<U>/…; файл в <base>/u<U+1>/… с тем же именем не открывается (проверка: его нет в ответе и нет обращения — конфиг U отсутствует → invalid_config)",
+        "net_apply и app_launch при разрешающем Authorizer → code \"unsupported\"; при отказывающем → \"denied\" (права проверяются раньше)",
+        "MAX_CONCURRENT_OPS: 4 операции заняты (фабрика блокируется на барьере) → пятый кадр code \"busy\"; после освобождения — проходит",
+        "ни один ответ не содержит подстрок base-каталога, \"gen-\", \"/proc\", имени пользователя",
+        "reconcile → code \"ok\", data {type reconciled, compensated N}"
+      ],
+      "level": "L1"
+    },
+    {
+      "id": "C16",
+      "source": "I06.S1",
+      "target": "I06.T05.a",
+      "contract": "Сервис на сокете выполняет полный сценарий worker и выдерживает отрицательные проверки.",
+      "check": "`tests/audit_i06_server.rs`: бинарник `cm controller serve` в `unshare -rn` с `CM_STATE_DIR`, `CM_HELPER_ALLOW=1`, `CM_CORE_BIN=$CM_TEST_MIHOMO`; клиент — unix-сокет из теста.",
+      "values": [
+        "worker_start(gen 1) с конфигом из `audit_i04_lifecycle` → ok started; worker_status → running true, api \"api_ready\"; worker_stop → ok; после stop нет процессов ядра и аренд",
+        "тот же id повторно → тот же ответ, второй процесс ядра не появился",
+        "kill -9 контроллера посреди worker_start (точка `CM_CONTROLLER_CRASH_BEFORE=record_generation`, читается только в test_mode) → перезапуск, reconcile → compensated 1, процессов ядра нет, поколение не записано",
+        "устаревший запрос: worker_stop(gen 1) после reload до gen 2 → generation_mismatch, worker продолжает работать",
+        "argv/path-инъекция: instance \"x;rm -rf\", \"$(id)\", \"..\" → bad_instance; ни одного нового файла вне base",
+        "кадр 1 МиБ без \\n → too_large и закрытие соединения; сервис продолжает принимать новые соединения",
+        "33-е одновременное соединение закрывается сразу; первые 32 работают",
+        "SIGTERM сервису при работающем worker → код выхода 0, процессов ядра нет, сокет удалён",
+        "без test_mode и не от root: `cm controller serve --socket X` → код 4",
+        "чужой uid (L2, `unshare --user --map-users` с двумя uid): клиент uid B не может остановить worker uid A — worker_stop(browser) → not_running, worker A работает; в <base>/u<A> нет файлов, созданных от имени B",
+        "за весь прогон в выводе сервиса и ответах нет содержимого конфига (маркер `secret-marker-i06` в конфиге)"
+      ],
+      "level": "L2"
+    },
+    {
+      "id": "K01",
+      "source": "I05.D1",
+      "target": "I05.D2",
+      "contract": "Пины совпадают с I05-PIN.md, а проверка хеша отвергает любое расхождение.",
+      "check": "`tests/audit_pack_delivery.rs`.",
+      "values": [
+        "pin(Mihomo).archive_sha256 == \"ba3ce607747a07f948fc35780e108a4a7c7f552a38b9bd4d115f313ebcb89c20\"; binary_sha256 == \"7a0d59da2e678d56c899a3db996a2ad8963286c4f3634b0451435db248f13fa1\"",
+        "pin(Xray).archive_sha256 == \"23cd9af937744d97776ee35ecad4972cf4b2109d1e0fe6be9930467608f7c8ae\"; binary_sha256 == \"8255dd939c34cf966cc91517b6324dd3c8d0bcf49ffac8beca049a38c46845ed\"; archive == Zip{member \"xray\"}",
+        "каждый url начинается с `https://github.com/` и содержит версию пина",
+        "verify_sha256(b\"{}\", \"44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a\") Ok; тот же hex в верхнем регистре Ok; один изменённый символ → HashMismatch; строка 63 символа → HashMismatch",
+        "с `CM_TEST_MIHOMO`: sha256 файла ядра == pin(Mihomo).binary_sha256; с `CM_TEST_XRAY`: == pin(Xray).binary_sha256 (без переменных — SKIPPED)"
+      ],
+      "level": "L1"
+    },
+    {
+      "id": "K02",
+      "source": "I05.D2",
+      "target": "I05.D3",
+      "contract": "Распаковка не выдаёт больше предела и не паникует на произвольных байтах.",
+      "check": "`tests/audit_pack_delivery.rs`: архивы строятся в тесте (`flate2` и ручная сборка zip).",
+      "values": [
+        "gzip из 1000 байт, max 1000 → Ok; max 999 → TooLarge; обрезанный на 10 байт → BadArchive",
+        "gzip-бомба: 64 МиБ нулей, max 1 МиБ → TooLarge, пик памяти теста не растёт до 64 МиБ (чтение через take)",
+        "zip с членами `LICENSE` и `xray` (deflate): member \"xray\" → его байты; member \"nope\" → MemberMissing",
+        "zip, где у `xray` заявлен размер 10, а в потоке 20 байт → BadArchive; заявлен размер > max → TooLarge",
+        "zip с неверным CRC → BadArchive; с флагом шифрования → BadArchive; метод 12 (bzip2) → BadArchive",
+        "member \"../xray\" и \"a/xray\" → MemberMissing; запись в архиве с именем `../xray` не выбирается по запросу \"xray\"",
+        "zip без EOCD, пустой вход, 22 байта мусора → BadArchive",
+        "мутация: 20000 вариантов корректного zip (xorshift, seed 1; замена, вставка, удаление байта) — без паник, результат Ok или один из кодов DeliveryError",
+        "с `CM_TEST_XRAY_ZIP` (скачанный Xray-linux-64.zip): unpack_zip_member(\"xray\") даёт sha256 == pin(Xray).binary_sha256 (без переменной — SKIPPED)"
+      ],
+      "level": "L1"
+    },
+    {
+      "id": "K03",
+      "source": "I05.D3",
+      "target": "I05.D4",
+      "contract": "Наружу выходит только бинарник, прошедший обе проверки хеша.",
+      "check": "`tests/audit_pack_delivery.rs`: подменный `Download` и тестовый `Pin`.",
+      "values": [
+        "корректный архив → Ok(binary); порядок вызовов: get один раз с max_bytes == pin.max_archive",
+        "архив с другим содержимым → HashMismatch, распаковка не вызывалась (архив-бомба с неверным хешем не распаковывается)",
+        "верный хеш архива, но binary_sha256 другой → HashMismatch",
+        "Download возвращает Fetch → Fetch; TooLarge → TooLarge",
+        "TransportDownload::get(\"http://example.invalid/x\", 10) → Fetch (не https) без сетевого запроса"
+      ],
+      "level": "L1"
+    },
+    {
+      "id": "K04",
+      "source": "I05.D4",
+      "target": "PACK.Z",
+      "contract": "Обрыв на любом шаге установки оставляет рабочий `current`; откат возвращает предыдущую версию.",
+      "check": "`tests/audit_pack_delivery.rs` в `TempDirGuard`.",
+      "values": [
+        "install v1 → current указывает на versions/v1/mihomo, файл 0755, previous отсутствует",
+        "install v2 → current → v2, previous → v1; файл v1 на месте",
+        "probe возвращает строку без version_marker → VersionMismatch; current по-прежнему v2; каталога `.tmp` нет",
+        "accept возвращает ошибку → ConfigRejected; current по-прежнему v2",
+        "rollback → current → v1, previous → v2; ещё один rollback → current → v2",
+        "rollback без previous → NothingToRollBack",
+        "current — всегда симлинк; после каждого шага `readlink` даёт существующий исполняемый файл"
+      ],
+      "level": "L1"
+    },
+    {
+      "id": "K05",
+      "source": "I05.X1",
+      "target": "I05.X2",
+      "contract": "Каждый поддержанный узел даёт конфиг, который принимает закреплённый Xray; неподдержанное отклоняется явно.",
+      "check": "`tests/audit_pack_xray.rs`: точное сравнение JSON и `xray run -test` при `CM_TEST_XRAY`.",
+      "values": [
+        "ss {server 203.0.113.8, port 443, cipher aes-128-gcm, password x} → `{\"tag\":\"node\",\"protocol\":\"shadowsocks\",\"settings\":{\"servers\":[{\"address\":\"203.0.113.8\",\"port\":443,\"method\":\"aes-128-gcm\",\"password\":\"x\"}]}}`",
+        "vless {uuid 11111111-2222-4333-8444-555555555555, tls true, servername example.invalid, network ws, ws-opts {path /p, headers {Host h.example}}} → protocol vless, users[0] {id, encryption none}, streamSettings {network ws, wsSettings {path /p, headers {Host h.example}}, security tls, tlsSettings {serverName example.invalid}}",
+        "vless с reality-opts {public-key K, short-id S} → security reality, realitySettings {serverName, publicKey K, shortId S, fingerprint chrome}",
+        "trojan {password x, sni example.invalid} → security tls всегда, tlsSettings.serverName example.invalid",
+        "vmess без alterId и cipher → alterId 0, security auto",
+        "type tuic, hysteria2, wireguard, http, socks5 → Err(Unsupported(<type>)); network h2 → Err(Unsupported(\"network\")); dialer-proxy → Err(Unsupported(\"dialer\"))",
+        "порт 0 или 70000, uuid \"x\", нет server → Err(InvalidNode); текст ошибки не содержит адреса, пароля, uuid",
+        "generate_config(&[], 20000) → Empty; generate_config(nodes, 0) → InvalidPort",
+        "generate_config(ss, 20000): inbounds[0] == {tag cm, listen 127.0.0.1, port 20000, protocol mixed, settings {udp true}}; outbounds теги [node, direct, block]; routing.rules[0] == {type field, inboundTag [cm], outboundTag node}",
+        "с `CM_TEST_XRAY`: `xray run -test` принимает конфиг для ss, vmess, vless+ws+tls, vless+reality, trojan (без переменной — SKIPPED)"
+      ],
+      "level": "L1"
+    },
+    {
+      "id": "K06",
+      "source": "I05.X2",
+      "target": "PACK.Z",
+      "contract": "Xray проходит тот же жизненный цикл, что mihomo, а отсутствие reload видно в capabilities и в коде ошибки.",
+      "check": "`tests/audit_pack_xray.rs`: внутри `unshare -rn` с `CM_TEST_XRAY`, upstream — локальный shadowsocks не нужен: outbound `freedom` через узел-заглушку недоступен, проверяется только lifecycle.",
+      "values": [
+        "capabilities: core \"xray\", reload_without_restart false, delay_probe false",
+        "start → ApiReady, порт 127.0.0.1:<аренда> принимает TCP; config.json 0600 и содержит арендованный порт",
+        "reload → Err(Unsupported), процесс прежний (тот же pid)",
+        "restart с корректным конфигом → новый pid, порт принимает; restart с конфигом, который `-test` отвергает → Err(InvalidConfig), прежний pid жив",
+        "statistics → Err(Unsupported); health после kill -9 → DOWN",
+        "stop → нет процессов группы, аренды освобождены",
+        "документ с двумя входящими или listen 0.0.0.0 → start → Err(InvalidConfig), аренда не удержана",
+        "`audit_i04_lifecycle` (mihomo) проходит без изменений после выноса общего кода в src/core/process.rs"
+      ],
+      "level": "L2"
+    },
+    {
+      "id": "K07",
+      "source": "I08.N1",
+      "target": "I08.N2",
+      "contract": "Имена и адреса туннеля однозначны, не пересекаются между туннелями и укладываются в пределы ядра.",
+      "check": "`tests/audit_pack_net.rs`.",
+      "values": [
+        "tunnel_net(0, 1000) == {netns cm-0, veth_host cmv0h, veth_ns cmv0n, host_addr 10.213.0.1/30, ns_addr 10.213.0.2/30, gateway 10.213.0.1, tun cmtun0, tun_addr 198.18.0.1/30, dns_addr 198.18.0.2, table 100, rule_priority 1000, mtu 1400, owner_uid 1000}",
+        "tunnel_net(63, 1000): veth_host cmv63h, host_addr 10.213.63.1/30, tun cmtun63, table 163, rule_priority 1063",
+        "tunnel_net(64, 1000) → Err(BadIndex)",
+        "для всех index 0..63: имена интерфейсов ≤ 15 символов; все имена, адреса, таблицы и приоритеты попарно различны"
+      ],
+      "level": "L1"
+    },
+    {
+      "id": "K08",
+      "source": "I08.N2",
+      "target": "I08.N4",
+      "contract": "Порядок команд не оставляет момента, когда трафик veth может уйти в основную таблицу.",
+      "check": "`tests/audit_pack_net.rs`: точное сравнение списков.",
+      "values": [
+        "create_commands(tunnel_net(0,1000), Block) — ровно 17 команд из спецификации, в том же порядке, аргументы по одному",
+        "при Ipv6Policy::Pass команды 10 нет (16 команд)",
+        "индекс команды `route add blackhole default metric 200 table 100` меньше индекса `route add default dev cmtun0 table 100`, а тот меньше индекса `rule add iif cmv0h lookup 100 priority 1000`",
+        "destroy_commands: [rule del iif cmv0h lookup 100 priority 1000; route flush table 100; link del cmtun0; link del cmv0h; netns del cm-0]",
+        "ни один аргумент не содержит пробела, `;`, `|`, `$`"
+      ],
+      "level": "L1"
+    },
+    {
+      "id": "K09",
+      "source": "I08.N3",
+      "target": "I08.N4",
+      "contract": "Таблица запрещает интерфейсам CM любой путь, кроме своего TUN, и не трогает чужой трафик.",
+      "check": "`tests/audit_pack_net.rs`: точный текст и `nft -c -f -` внутри `unshare -rn`.",
+      "values": [
+        "render_table([0, 3]) == текст из спецификации байт в байт",
+        "render_table([]) содержит оба правила `\"cmv*\" counter drop` и ни одного accept",
+        "туннели переданы в порядке [3, 0] → пары всё равно в порядке 0, 3",
+        "в тексте `policy accept;` и нет слова `fwd`",
+        "replace_commands: одна команда Nft с args [\"-f\", \"-\"], stdin начинается с \"table inet cm\\ndelete table inet cm\\n\"",
+        "внутри `unshare -rn`: `nft -c -f -` принимает stdin replace_commands([0, 3]); повторная загрузка той же таблицы проходит (замена, а не ошибка «уже существует»)"
+      ],
+      "level": "L2"
+    },
+    {
+      "id": "K10",
+      "source": "I08.N4",
+      "target": "I08.N6",
+      "contract": "Отказ любой команды создания сворачивает уже созданное; запреты стоят раньше интерфейсов.",
+      "check": "`tests/audit_pack_net.rs` с `RecordingExec`.",
+      "values": [
+        "create: первая выполненная команда — Nft (таблица), затем 17 команд create_commands",
+        "fail_at = k для каждого k из 1..=17: результат Err(CommandFailed); после отказа выполнены все команды destroy_commands",
+        "destroy: все 5 команд выполняются, даже если первая вернула ошибку; последней идёт Nft с таблицей для remaining",
+        "SystemExec: программа `Ip` запускается как `/usr/bin/ip`; окружение дочернего процесса пустое (проверка подставным `ip` невозможна — путь фиксирован; проверяется по исходнику: в `src/net/exec.rs` нет `Command::new(\"ip\")` без абсолютного пути)"
+      ],
+      "level": "L1"
+    },
+    {
+      "id": "K11",
+      "source": "I08.N5",
+      "target": "I08.N6",
+      "contract": "Worker в TUN-режиме слушает только свой TUN, перехватывает DNS и не добавляет маршрутов сам.",
+      "check": "`tests/audit_pack_net.rs`: точный JSON и `mihomo -t` при `CM_TEST_MIHOMO`.",
+      "values": [
+        "attach_tun(doc, tunnel_net(0,1000)).tun == {enable true, device cmtun0, stack gvisor, auto-route false, auto-redirect false, auto-detect-interface false, mtu 1400, inet4-address [198.18.0.1/30], dns-hijack [any:53, tcp://any:53]}",
+        "в результате нет ключа `listeners`; `dns.enable` true, `dns.enhanced-mode` redir-host",
+        "входной документ с ключом `tun` или `dns` → Err(Forbidden); с `mixed-port` → Err(Forbidden); с правилом GEOIP → Err(InvalidRule)",
+        "resolv_conf(tunnel_net(0,1000)) == \"nameserver 198.18.0.2\\noptions edns0\\n\"",
+        "с `CM_TEST_MIHOMO`: `mihomo -t` принимает результат attach_tun + attach_instance_controller"
+      ],
+      "level": "L2"
+    },
+    {
+      "id": "K12",
+      "source": "I08.N1",
+      "target": "I08.N3",
+      "contract": "Отрисовка таблицы использует только имена из TunnelNet.",
+      "check": "`tests/audit_pack_net.rs`.",
+      "values": [
+        "для index 0..63 каждая строка accept содержит ровно veth_host и tun этого туннеля"
+      ],
+      "level": "L1"
+    },
+    {
+      "id": "K13",
+      "source": "I08.N1",
+      "target": "I08.N5",
+      "contract": "TUN-конфиг и resolv.conf берут адреса из TunnelNet, а не из констант.",
+      "check": "`tests/audit_pack_net.rs`.",
+      "values": [
+        "attach_tun для index 5: device cmtun5, inet4-address [198.18.5.1/30]; resolv_conf → nameserver 198.18.5.2"
+      ],
+      "level": "L1"
+    },
+    {
+      "id": "K14",
+      "source": "I08.N6",
+      "target": "PACK.Z",
+      "contract": "Сеть туннеля создаётся и удаляется только транзакцией контроллера; после обрыва не остаётся половины сети.",
+      "check": "`tests/audit_pack_net_ops.rs`: `handle` с `RecordingExec` и подменным Authorizer; base в `TempDirGuard`.",
+      "values": [
+        "net_apply(browser, gen 1) → ok, data {type net, index 0, netns cm-0}; аренда Tunnel \"0\" у держателя u<uid>-browser; файл <base>/etc-netns/cm-0/resolv.conf == \"nameserver 198.18.0.2\\noptions edns0\\n\"",
+        "второй экземпляр → index 1; net_revert(browser) → аренда 0 свободна; следующий net_apply снова получает index 0",
+        "Authorizer получает действие \"io.github.cm.net\"; при отказе → denied, RecordingExec пуст",
+        "RecordingExec отказывает на 5-й команде create → ответ code failed; аренды нет; resolv.conf удалён; журнал: транзакция Aborted",
+        "обрыв (`crash_before`) перед шагом net_create → после reconcile аренды нет и resolv.conf удалён",
+        "net_revert без сети → not_running; net_apply с тем же id повторно → тот же ответ, команды не выполняются второй раз",
+        "65-й туннель → code quota либо failed с освобождением всего (аренд Tunnel ровно 64)",
+        "worker_start для экземпляра с сетью: фабрика получает Some(TunnelNet) с тем же index"
+      ],
+      "level": "L2"
+    },
+    {
+      "id": "K15",
+      "source": "I09.N7",
+      "target": "PACK.Z",
+      "contract": "Расхождение желаемого и фактического состояния сети обнаруживается и называется; чинится только безопасное.",
+      "check": "`tests/audit_pack_net.rs`: фикстуры JSON в `tests/fixtures/pack/` (сняты с `ip -j` в `unshare -rn` после create_commands).",
+      "values": [
+        "фикстуры после create для index 0: audit → []",
+        "из фикстуры маршрутов убран blackhole → [MissingBlackhole(0)]; repair → [ip route add blackhole default metric 200 table 100]",
+        "убрано правило iif → [MissingRule(0)]; repair → [ip rule add iif cmv0h lookup 100 priority 1000]",
+        "нет cmtun0 в links → [MissingTunRoute(0), MissingTun(0)] в этом порядке; repair для MissingTun → []",
+        "лишний интерфейс cmv7h без желаемого туннеля → [OrphanVeth(\"cmv7h\")]; repair → [ip link del cmv7h]",
+        "правило priority 1042 без туннеля → [OrphanRule(1042)]; правило priority 32766 (main) не считается сиротой",
+        "parse_rules(\"not json\") → Err(Drift)"
+      ],
+      "level": "L1"
+    },
+    {
+      "id": "K16",
+      "source": "I09.N8",
+      "target": "PACK.Z",
+      "contract": "Автомат туннеля не имеет перехода, в котором трафик идёт при неготовом ядре.",
+      "check": "`tests/audit_pack_net.rs`: перебор всех 6 × 9 пар.",
+      "values": [
+        "Stopped + StartRequested → Starting; Starting + CoreReady → Up; Up + RemoteLost → Degraded; Degraded + RemoteBack → Up",
+        "Up + CoreDown → Blocked; Degraded + CoreDown → Blocked; Up + DriftFound → Blocked; Starting + DriftFound → Blocked",
+        "Blocked + CoreReady → Up; Blocked + Repaired → Starting; Failed + StartRequested → Starting",
+        "любое состояние + StopRequested → Stopped",
+        "все пары вне таблицы оставляют состояние прежним (например Stopped + CoreReady → Stopped, Starting + NetReady → Starting)",
+        "passes_traffic истинно только для Up и Degraded",
+        "net_axis: Up → Verified, Degraded → Partial, Blocked → Blocked, Failed → Error, Stopped → Unknown, Starting → Unknown",
+        "ни из одного состояния одним событием нельзя попасть в Up, кроме CoreReady и RemoteBack"
+      ],
+      "level": "L1"
+    },
+    {
+      "id": "K17",
+      "source": "I08.N1",
+      "target": "I09.N7",
+      "contract": "Сверка ищет ровно те имена, таблицы и приоритеты, которые выдаёт TunnelNet.",
+      "check": "`tests/audit_pack_net.rs`.",
+      "values": [
+        "для index 5: audit на пустом Observed → [MissingBlackhole(5), MissingRule(5), MissingTunRoute(5), MissingVeth(5), MissingTun(5), MissingNetns(5)]",
+        "Observed, собранный из имён tunnel_net(5, 1000) (правило priority 1005 iif cmv5h table 105; маршруты blackhole и dev cmtun5 в таблице 105; интерфейсы cmv5h, cmtun5; netns cm-5) → []"
+      ],
+      "level": "L1"
+    },
+    {
+      "id": "M01",
+      "source": "I11.A1",
+      "target": "I11.A2",
+      "contract": "Описание приложения не может подменить программу, окружение региона или библиотеки.",
+      "check": "`tests/audit_pack_app.rs`, табличный тест.",
+      "values": [
+        "executable \"/usr/bin/firefox\", argv [\"--new-window\"], env [{MOZ_ENABLE_WAYLAND, 1}] → Ok(LaunchSpec{program /usr/bin/firefox, args [--new-window], env {MOZ_ENABLE_WAYLAND: 1}})",
+        "executable \"firefox\" → NotAbsolute; \"/usr/../bin/sh\" → DotDot; с NUL → HasNul",
+        "257 аргументов → TooManyArgs; аргумент 8193 байта → ArgTooLong",
+        "cwd \"relative\" и \"/a/../b\" → BadCwd",
+        "env имя \"1A\", \"A-B\", \"\" → BadEnvName; два раза A → DuplicateEnv",
+        "env LD_PRELOAD, LD_LIBRARY_PATH, TZ, LANG, LANGUAGE, LC_ALL, LC_TIME, PATH, HOME, DBUS_SESSION_BUS_ADDRESS → ForbiddenEnv с этим именем",
+        "ForbiddenEnv(\"TZ\") в Display не содержит значения переменной"
+      ],
+      "level": "L1"
+    },
+    {
+      "id": "M02",
+      "source": "I11.A2",
+      "target": "I11.A3",
+      "contract": "Окружение процесса состоит только из allowlist, переменных описания и региона; регион перекрывает всё.",
+      "check": "`tests/audit_pack_app.rs`.",
+      "values": [
+        "session_env {DISPLAY=:0, HOME=/h, SECRET_TOKEN=x, TZ=Europe/Moscow, LC_TIME=ru_RU.UTF-8}, spec.env {A=1}, preset {timezone Europe/Berlin, locale de_DE.UTF-8} → env == {A=1, DISPLAY=:0, HOME=/h, LANG=de_DE.UTF-8, PATH=/usr/bin:/bin, TZ=Europe/Berlin}",
+        "в env нет SECRET_TOKEN, LC_TIME",
+        "plan.netns == переданному; plan.run_as == переданному",
+        "identity::plan::PARENT_ENV_KEYS — один список на оба плана (в `src/app/plan.rs` нет своей копии имён DISPLAY, WAYLAND_DISPLAY)"
+      ],
+      "level": "L1"
+    },
+    {
+      "id": "M03",
+      "source": "I11.A3",
+      "target": "I11.A5",
+      "contract": "Приложение запускается внутри сети своего туннеля, под uid вызывающего, и только при работающем ядре.",
+      "check": "`tests/audit_pack_app_ops.rs`: `unshare -rnm` (tmpfs на /run для `ip netns`), контроллер с `SystemExec` и `CM_TEST_MIHOMO`; приложение — `/bin/sh -c`, пишущее свои `ip -br addr`, `id -u` и `env` в файл.",
+      "values": [
+        "app_launch без сети → not_running; с сетью, но без worker → not_running",
+        "после net_apply и worker_start: app_launch → ok, data {type launched, pid N}",
+        "файл приложения: интерфейсы только lo и cmv0n с адресом 10.213.0.2/30 (нет интерфейсов хоста)",
+        "env приложения: PATH, HOME, XDG_RUNTIME_DIR и TZ/LANG из env.json; нет переменных контроллера",
+        "приложение с NUL или относительным program в кадре → bad_argument (отсекает декодер)",
+        "после завершения приложения у контроллера нет зомби-потомков",
+        "с подчинённым uid (`--map-users`): `id -u` приложения == uid клиента, CapEff 0"
+      ],
+      "level": "L2"
+    },
+    {
+      "id": "M04",
+      "source": "I11.A1",
+      "target": "I11.A4",
+      "contract": "Ярлык не может выполнить ничего, кроме `cm app run <id>`.",
+      "check": "`tests/audit_pack_app.rs`.",
+      "values": [
+        "desktop_entry(\"browser\", \"Браузер\", None) == \"[Desktop Entry]\\nType=Application\\nName=Браузер\\nExec=cm app run browser\\nTerminal=false\\nX-CM-Application=browser\\n\"",
+        "с icon \"firefox\" — строка `Icon=firefox` между Exec и Terminal",
+        "exec_quote(\"plain\") == \"plain\"; exec_quote(\"a b\") == \"\\\"a b\\\"\"; exec_quote(\"a$b\") == \"\\\"a\\\\$b\\\"\"; exec_quote(\"50%\") == \"50%%\"; exec_quote(\"a\\\"b\") == \"\\\"a\\\\\\\"b\\\"\"",
+        "name с переводом строки → Err; name \"a\\\\b\" → строка `Name=a\\\\\\\\b`",
+        "id \"../x\" или \"a b\" → Err(BadId)"
+      ],
+      "level": "L1"
+    },
+    {
+      "id": "M05",
+      "source": "I11.A4",
+      "target": "I11.A5",
+      "contract": "Команда печатает ровно текст ярлыка.",
+      "check": "`tests/audit_pack_app.rs`: бинарник `cm`.",
+      "values": [
+        "`cm app desktop browser Браузер` → stdout == строка из M04, код 0",
+        "`cm app desktop ../x N` → код 2"
+      ],
+      "level": "L1"
+    },
+    {
+      "id": "M06",
+      "source": "I11.A5",
+      "target": "PACK.Z",
+      "contract": "`cm app` различает ошибки использования, отказы контроллера и его недоступность.",
+      "check": "`tests/audit_pack_app.rs`: бинарник `cm` с `CM_CONTROLLER_SOCKET` на подставной сервер из теста.",
+      "values": [
+        "`cm app` → справка, код 2; справка на en, de, it, zh, ar без кириллицы",
+        "`cm app check FILE` с корректным описанием → код 0, в выводе нет значений переменных; с LD_PRELOAD → код 2 и [ForbiddenEnv]",
+        "`cm app run browser -- /usr/bin/true`: клиент шлёт worker_status, затем app_launch с generation из ответа; ответ launched pid 42 → stdout содержит 42, код 0",
+        "сервер отвечает code not_running → код 3, вывод содержит [not_running]",
+        "сокета нет → код 4",
+        "`cm app run browser -- true` (не абсолютный путь) → код 2 без обращения к сокету"
+      ],
+      "level": "L1"
+    },
+    {
+      "id": "M07",
+      "source": "I12.A6",
+      "target": "I12.A7",
+      "contract": "Туннель группы живёт, пока есть хотя бы одна активная сессия; туннель хоста сессиями не управляется.",
+      "check": "`tests/audit_pack_app.rs`: сценарии и перебор порядков.",
+      "values": [
+        "acquire(t, s1) → StartTunnel(t); acquire(t, s2) → None; holders 2",
+        "acquire(t, s1) повторно → None; holders 2",
+        "release(t, s1, Group) → None; release(t, s2, Group) → StopTunnel(t); holders 0",
+        "release(t, s9, Group) для неизвестной сессии → None; holders не уходит ниже 0",
+        "release последней сессии с owner Host → None",
+        "все 24 перестановки операций [acquire s1, acquire s2, release s1, release s2] при корректном порядке внутри сессии дают ровно один StartTunnel и один StopTunnel",
+        "rebuild: из 3 сессий (2 Active на t, 1 Ended на t) → holders(t) == 2"
+      ],
+      "level": "L1"
+    },
+    {
+      "id": "M08",
+      "source": "I12.A7",
+      "target": "PACK.Z",
+      "contract": "Смена назначения никогда не переадресует живую сессию молча.",
+      "check": "`tests/audit_pack_app.rs`, табличный тест.",
+      "values": [
+        "нет сессии, то же назначение → NoChange; другое → AppliesToNextLaunch",
+        "сессия на OwnTunnel{t1}, wanted OwnTunnel{t2} → RestartRequired{TunnelChanged}",
+        "сессия на OwnTunnel{t1}, wanted Group{g} → RestartRequired{TunnelChanged}",
+        "то же назначение, session.tunnel_generation 3, текущее 4 → RestartRequired{GenerationChanged}",
+        "node_present false при любом назначении → RestartRequired{NodeGone}",
+        "то же назначение, то же поколение, узел есть → NoChange"
+      ],
+      "level": "L1"
+    },
+    {
+      "id": "M09",
+      "source": "I14.R1",
+      "target": "I14.R2",
+      "contract": "Страна выхода подтверждается только согласием нескольких свежих источников.",
+      "check": "`tests/audit_pack_env.rs`: фикстуры `tests/fixtures/pack/region.json`.",
+      "values": [
+        "два источника DE, оба 1 минуту назад → Agreed{DE, 2}",
+        "DE и NL → Disagree{[DE, NL]}; три источника DE, DE, NL → Disagree{[DE, NL]}",
+        "один свежий источник → Insufficient{1}; пусто → Insufficient{0}",
+        "два источника 16 минут назад → Stale; один свежий и один старый → Insufficient{1}",
+        "один источник дал DE (10 мин назад) и NL (1 мин назад), второй — NL → Agreed{NL, 2} (берётся свежее от источника)",
+        "страна \"Germany\", \"de\", \"\" и наблюдение из будущего отбрасываются",
+        "region_axis: Agreed{DE} при пресете DE → Verified; при пресете NL → Blocked; Disagree → Partial; Stale и Insufficient → Unknown"
+      ],
+      "level": "L1"
+    },
+    {
+      "id": "M10",
+      "source": "I14.R2",
+      "target": "PACK.Z",
+      "contract": "Проверка окружения называет каждую проблему и ничего не меняет в системе.",
+      "check": "`tests/audit_pack_env.rs`: tzdir-фикстура в `TempDirGuard`.",
+      "values": [
+        "preset {Europe/Berlin, de_DE.UTF-8, [de-DE, de]}, зона есть, locales [de_DE.utf8, en_US.utf8] → []",
+        "зоны нет → [ZoneMissing]; timezone \"../etc/passwd\" → [ZoneMissing]",
+        "locales [en_US.utf8] → [LocaleNotInstalled]",
+        "languages [] → [LanguagesEmpty]; locale de_DE.UTF-8 при languages [fr-FR] → [LocaleLanguageMismatch]",
+        "parse_locale_list(\"C\\nC.utf8\\nde_DE.utf8\\n\") == [C, C.utf8, de_DE.utf8]; normalize_locale(\"de_DE.UTF-8\") == normalize_locale(\"de_DE.utf8\")"
+      ],
+      "level": "L1"
+    },
+    {
+      "id": "M11",
+      "source": "I14.R1",
+      "target": "I14.R3",
+      "contract": "Смена страны выхода меняет только ось REGION; приложение не перезапускается и не переключается.",
+      "check": "`tests/audit_pack_env.rs`.",
+      "values": [
+        "preset DE, current Agreed{DE} → Keep → Verified",
+        "current Agreed{NL} → RegionMismatch{expected DE, observed NL} → Blocked",
+        "current Disagree, Insufficient → RegionUnknown → Unknown",
+        "previous Agreed{DE}, current Stale → RegionUnknown (подтверждение не продлевается)"
+      ],
+      "level": "L1"
+    },
+    {
+      "id": "M12",
+      "source": "I14.R3",
+      "target": "PACK.Z",
+      "contract": "Функции региона чистые: не читают сеть, файлы и часы.",
+      "check": "`tests/audit_pack_env.rs` и проверка исходников.",
+      "values": [
+        "в `src/env/geo.rs` и `src/env/invalidate.rs` нет `std::fs`, `std::net`, `SystemTime`, `Command`"
+      ],
+      "level": "L1"
+    },
+    {
+      "id": "M13",
+      "source": "I16.Q1",
+      "target": "I16.Q2",
+      "contract": "Ограничения применяются раньше оценки и никогда не ослабляются; ранжирование детерминировано.",
+      "check": "`tests/audit_pack_quality.rs`: фикстуры `tests/fixtures/pack/quality.json`.",
+      "values": [
+        "score(100, 0) == 100; score(100, 2) == 200; score(80, 1) == 130",
+        "кандидаты a{120 мс, 0 %}, b{80 мс, 1 %}, c{нет замера} без ограничений → ranked [a(120), b(130)], rejected [(c, NoMeasurement)]",
+        "countries [DE]: узел NL → CountryNotAllowed; узел без страны → CountryUnknown",
+        "protocols [vless]: узел ss → ProtocolNotAllowed; max_delay_ms 100: узел 120 мс → TooSlow; loss 21 % → TooLossy, loss 20 % проходит",
+        "все узлы отвергнуты → ranked пуст (ограничение не снимается)",
+        "равные score: порядок по имени узла; перестановка входа не меняет ranked"
+      ],
+      "level": "L1"
+    },
+    {
+      "id": "M14",
+      "source": "I16.Q2",
+      "target": "PACK.Z",
+      "contract": "Узел не меняется из-за шума измерений и не меняется на произвольный, когда кандидатов нет.",
+      "check": "`tests/audit_pack_quality.rs`.",
+      "values": [
+        "ranked [] → Stay{NoCandidates}",
+        "current None → To{ranked[0]}; current отсутствует в ranked → To{ranked[0]} даже при last_switch 1 с назад",
+        "current == ranked[0] → Stay{AlreadyBest}",
+        "current score 100, лучший 85 (выигрыш 15 %) → Stay{GainTooSmall}; лучший 80 (20 %) → To",
+        "выигрыш 50 %, но с прошлого переключения 59 с → Stay{DwellNotElapsed}; 60 с → To"
+      ],
+      "level": "L1"
+    },
+    {
+      "id": "M15",
+      "source": "I17.U1",
+      "target": "I17.U2",
+      "contract": "Представление туннеля строится из проверок текущего поколения и не сводит оси в один «зелёный» статус.",
+      "check": "`tests/audit_pack_status.rs` и существующие снимки `mock_tunnels` (не должны измениться).",
+      "values": [
+        "host Proxy, туннель owner Application, поколение 4, одна активная сессия, проверки поколения 4: net Verified 40 с назад, region Partial 300 с назад → {host proxy, apps separate, sessions 1, axes {net verified, region partial, state unknown, app unknown}, age_s {net 40, region 300, state None, app None}, condition degraded, failure None}",
+        "проверка net поколения 3 (Verified) при туннеле поколения 4 не учитывается → net unknown",
+        "две проверки одной оси: берётся с большим evidence_at",
+        "любая ось blocked → condition blocked; все verified → condition unknown (значения ok нет)",
+        "net error → failure api-down; region blocked → failure region-mismatch; оба сразу → api-down",
+        "owner Group → apps shared; сессии Ended не считаются",
+        "evidence_at в будущем → age 0",
+        "24 снимка `tests/fixtures/i17/snapshots/*.txt` проходят без перезаписи после замены Scenario на TunnelView"
+      ],
+      "level": "L1"
+    },
+    {
+      "id": "M16",
+      "source": "I17.U2",
+      "target": "PACK.Z",
+      "contract": "Значок апплета отражает худшее состояние; при отсутствии туннелей апплет не меняется.",
+      "check": "тест в `cosmic/src/tunnel_icons.rs` (cargo test в cosmic).",
+      "values": [
+        "[] → None",
+        "[{condition blocked}, {condition degraded}] → Blocked",
+        "[{condition degraded}] → Partial",
+        "[{host off, sessions 2, condition unknown}] → HostOffAppActive",
+        "[{host tunnel, sessions 2, condition unknown}] → None"
+      ],
+      "level": "L1"
+    },
+    {
+      "id": "X01",
+      "source": "I06.I3",
+      "target": "I05.X2",
+      "contract": "Xray запускается под uid вызывающего тем же механизмом, что mihomo.",
+      "check": "`tests/audit_pack_xray.rs`: внутри `unshare --user --map-users` с `CM_TEST_XRAY`.",
+      "values": [
+        "XrayWorker с set_run_as(uid 1): процесс ядра имеет Uid 1 и CapEff 0 в /proc/<pid>/status",
+        "без set_run_as поведение прежнее (uid запускающего)"
+      ],
+      "level": "L2"
+    },
+    {
+      "id": "X02",
+      "source": "I06.W2",
+      "target": "I08.N6",
+      "contract": "Операции сети проходят тот же порядок проверок, что операции worker: кадр → личность → права → владелец.",
+      "check": "`tests/audit_pack_net_ops.rs`.",
+      "values": [
+        "net_apply от peer, завершившегося перед кадром → peer_changed, RecordingExec пуст",
+        "net_apply с лишним полем `\"index\":5` в op → bad_frame: номер туннеля нельзя задать из запроса",
+        "net_apply и net_revert больше не отвечают unsupported"
+      ],
+      "level": "L1"
+    },
+    {
+      "id": "X03",
+      "source": "I06.W2",
+      "target": "I11.A3",
+      "contract": "Запуск приложения — операция класса App со своим действием polkit.",
+      "check": "`tests/audit_pack_app_ops.rs`.",
+      "values": [
+        "Authorizer получает \"io.github.cm.app\"; при отказе → denied, процесс не создан",
+        "app_launch больше не отвечает unsupported"
+      ],
+      "level": "L1"
+    },
+    {
+      "id": "X04",
+      "source": "I08.N6",
+      "target": "I11.A3",
+      "contract": "Приложение получает сеть только того экземпляра, который принадлежит вызывающему.",
+      "check": "`tests/audit_pack_app_ops.rs`: два uid (`--map-users`).",
+      "values": [
+        "uid B: app_launch(browser), сеть browser создана uid A → not_running; процесс не создан",
+        "дескриптор netns открывается по номеру из аренды владельца, а не по имени из кадра"
+      ],
+      "level": "L2"
+    },
+    {
+      "id": "X05",
+      "source": "I06.S1",
+      "target": "I11.A5",
+      "contract": "Клиент говорит с контроллером тем же кадром, что описан в протоколе.",
+      "check": "`tests/audit_pack_app.rs`.",
+      "values": [
+        "controller::client::call шлёт одну строку JSON версии 1 с id из 16 hex-символов и читает одну строку ответа",
+        "ответ длиннее 64 КиБ или не JSON → ошибка клиента, код выхода `cm app run` 4"
+      ],
+      "level": "L1"
+    },
+    {
+      "id": "X06",
+      "source": "I06.I3",
+      "target": "I11.A2",
+      "contract": "План запуска несёт RunAs вызывающего без изменений.",
+      "check": "`tests/audit_pack_app.rs`.",
+      "values": [
+        "plan(..., RunAs{uid 1000, gid 1000, groups [1000, 998]}, ...).run_as == тот же RunAs"
+      ],
+      "level": "L1"
+    },
+    {
+      "id": "Z01",
+      "source": "I06.T05.a",
+      "target": "PACK.Z",
+      "contract": "Контроллер принят: отрицательные проверки I06 пройдены до сквозного сценария.",
+      "check": "`i06-evidence/<дата>/summary.json`.",
+      "values": [
+        "все рёбра C01–C16 — PASS; обходов нет"
+      ],
+      "level": "L2"
+    },
+    {
+      "id": "Z02",
+      "source": "I11.A3",
+      "target": "PACK.Z",
+      "contract": "Сквозной сценарий: приложение в своём netns выходит наружу только через TUN своего worker-а; при гибели worker-а трафик блокируется, а не идёт напрямую.",
+      "check": "`tests/audit_pack_e2e.rs`: `unshare -rnm`, `cm controller serve` с `SystemExec` и `CM_TEST_MIHOMO`; «интернет» — третий netns с HTTP-сервером, как в `tools/packet_flow_lab.sh` (лаборатория координатора, результаты ниже — ожидаемые).",
+      "values": [
+        "net_apply → worker_start (mode direct) → app_launch `curl -q -s --noproxy '*' -m 5 http://198.51.100.2:8080/` → HTTP 200",
+        "счётчик `iifname \"cmv0h\" oifname \"cmtun0\"` > 0; счётчики `\"cmv*\" counter drop` == 0; `/connections` worker-а показывает downloadTotal > 0",
+        "kill -9 процесса ядра → тот же запрос: тайм-аут (curl rc 28), HTTP-кода нет; на интерфейсе «интернета» нет пакетов с адреса 10.213.0.2",
+        "удаление cmtun0 (`ip link del`) → запрос по-прежнему не проходит: в таблице 100 остаётся `blackhole default metric 200`",
+        "контроль: без правила iif и без таблицы cm (и с NAT наружу) тот же запрос даёт 200 — блокируют именно правила CM",
+        "DNS: `getent hosts example.test` внутри netns уходит на 198.18.0.2 (пакеты на cmtun0, порт 53), на «интернет»-интерфейсе нет DNS-пакетов с адреса 10.213.0.2",
+        "net_revert → нет cmv0h, cmtun0, netns cm-0, правила priority 1000 и таблицы 100; таблица cm содержит только два запрета",
+        "curl вызывается с `-q`: `~/.curlrc` пользователя может задавать прокси"
+      ],
+      "level": "L2"
+    }
+  ]
+}
