@@ -184,9 +184,10 @@ flowchart LR
 - **Контракт:** Реестр отвечает `Verified` только для строк, за которыми стоит evidence того же механизма.
 - **Как проверить:** `tests/audit_bi_engine.rs`.
 - **Значения:**
-  - (Chrome 155, Local) → Verified, evidence "docs/design/cm-network-manager/i15r-evidence/2026-10-08"
+  - (Chrome 155, Local) → Verified, evidence "docs/design/cm-network-manager/bi-evidence/2026-10-10"
   - (Brave 154, Local) → Verified, note содержит "farbling"
-  - (Chrome 156, Local), (Chromium 155, Local), (Firefox 157, Local), (LibreWolf 157, Crowd) → Unverified
+  - (LibreWolf 157, Local) → Verified; (LibreWolf 157, Crowd) → Verified, note содержит "RFP"
+  - (Chrome 156, Local), (Chromium 155, Local), (Firefox 157, Local), (LibreWolf 158, Crowd), (Chrome 155, Crowd) → Unverified
   - каждая строка JSON: каталог evidence существует в репозитории
 
 ### E06 · BI.M1 → BI.M2 (L1)
@@ -219,11 +220,12 @@ flowchart LR
 - **Значения:**
   - Local + DE + Chrome 155 (профиль и движок совпадают) → errors [], warnings []
   - Crowd + Chrome 155 + environment None → errors [StrategyEngineUnsupported]
-  - Crowd + LibreWolf 157 + environment DE → errors [CrowdWithRegion], warnings [UnverifiedVersion]
+  - Crowd + LibreWolf 157 + environment DE → errors [CrowdWithRegion], warnings []
   - Local + environment None → errors [LocalNeedsEnvironment]
   - Local + DE с timezone "Europe/Amsterdam" (подложено вручную) → errors [ZoneInvalid]
   - extra_args ["--user-agent=x"] → errors [ForbiddenArgument("--user-agent")]; ["--remote-debugging-pipe"], ["--headless=new"], ["--lang=ru"], ["--profile"] — по одному коду каждый
-  - extra_args ["--ozone-platform=wayland"] → errors []
+  - ["--time-zone-for-testing=Asia/Tokyo"], ["--profile-directory=Other"], ["--ProfileManager"], ["-P"] → по одному ForbiddenArgument с этим флагом
+  - extra_args ["--ozone-platform=wayland"] и ["-private-window"] → errors []
   - профиль Chrome 155, движок Chrome 156 → warnings [EngineChanged, UnverifiedVersion]
   - Local + DE + English → warnings [LanguageNotRegional]
   - Local + DE + Brave 154 → warnings [BraveFarblesLanguages]
@@ -239,7 +241,7 @@ flowchart LR
   - env == {DBUS_SESSION_BUS_ADDRESS, DISPLAY, HOME=/h, LANG=de_DE.UTF-8, PATH=/usr/bin, TZ=Europe/Berlin, WAYLAND_DISPLAY, XAUTHORITY, XDG_RUNTIME_DIR} — ровно 9 ключей; нет LC_TIME, LANGUAGE, SECRET_TOKEN
   - parent_env без PATH → PATH=/usr/bin:/bin
   - url "http://127.0.0.1:18765/" — последний аргумент; extra_args ["--ozone-platform=wayland"] — сразу перед url
-  - lab=true → после `--no-default-browser-check` идут "--headless=new", "--no-sandbox"
+  - lab=true → после `--no-default-browser-check` идут ровно "--headless=new", "--no-sandbox", "--disable-popup-blocking"; без lab `--disable-popup-blocking` нет
   - в argv нет `--user-agent`, `--remote-debugging-*`, `--enable-automation`; files == []
 
 ### E10 · BI.M3 → BI.L2 (L1)
@@ -251,6 +253,7 @@ flowchart LR
   - Crowd: user.js == "// Managed by cm identity. Changes here are overwritten at launch.\nuser_pref(\"intl.accept_languages\", \"en-US, en\");\nuser_pref(\"intl.locale.requested\", \"en-US\");\nuser_pref(\"privacy.resistFingerprinting\", true);\n"
   - Local env: TZ=Europe/Berlin, LANG=de_DE.UTF-8; Crowd env: LANG=en_US.UTF-8 и нет TZ
   - args == ["--profile", "/r/work/profile", "--no-remote"]; lab=true → + "--headless"
+  - lab=true: user.js == строка Local DE + "user_pref(\"dom.disable_open_during_load\", false);\n"; без lab этой строки нет
   - ни одна строка user.js не содержит "useragent"
 
 ### E11 · BI.G1 → BI.G2 (L1)
@@ -325,6 +328,8 @@ flowchart LR
   - второй launch той же личности, пока первый ждёт (скрипт `sleep 2`) → Err(AlreadyRunning), второй скрипт не запускался
   - профиль с extra_args ["--user-agent=x"] → Err(Invalid([ForbiddenArgument("--user-agent")])), файл argv не создан
   - фикстура меняет --version на 156 → профиль сохранён с engine 156 и history "engine Chrome 156"
+  - фикстура меняет --version на 155.0.9999.1 → engine.version обновлён, generation и history.len() прежние
+  - `cm identity launch` получает SIGINT, пока браузер-фикстура спит 60 с → cm завершается сам за ≤ 10 с, процесса браузера нет, state.json содержит last_exit, следующий launch → код 0 (не BypassSuspected)
   - euid 0 без test_mode → Err(RunAsRoot) (проверка, если тест запущен от root; иначе тест печатает NOT_APPLICABLE)
 
 ### E17b · BI.M3 → BI.C1 (L1)
@@ -342,7 +347,7 @@ flowchart LR
 - **Значения:**
   - Local DE Chrome 155 без предупреждений → NET Unknown, REGION Partial «страна задана вручную, выход туннеля не проверен», STATE Verified, APP Verified
   - Local DE English → REGION Partial «язык не из пресета страны»
-  - Crowd LibreWolf → REGION Partial «crowd: часовой пояс UTC и язык en-US намеренно», APP Partial (UnverifiedVersion)
+  - Crowd LibreWolf 157 → REGION Partial «crowd: часовой пояс UTC и язык en-US намеренно», APP Verified; LibreWolf 158 → APP Partial (UnverifiedVersion)
   - ZoneInvalid → STATE Blocked, APP Blocked
   - ни при каких входах REGION и NET не равны Verified
 
@@ -366,7 +371,8 @@ flowchart LR
 - **Как проверить:** `tools/bi_lab.py` (роль 2, по образцу `tools/i15r_lab.py`): `unshare -rn`, сервер лаборатории на 127.0.0.1:18765, `CM_IDENTITY_ROOT` во временном каталоге, `CM_IDENTITY_LAB=1`, `cm identity create/launch ... --lab`. Два прогона подряд должны совпасть.
 - **Значения:**
   - Chrome 155, `create lab --strategy local --country DE`: первый запрос `Accept-Language` начинается с "de-DE,de;q=0.9"; UA без изменений (содержит "Chrome/155", нет "CMLab"); окно, Worker, вкладка: tz "Europe/Berlin", offset −60 (январь), `Intl` locale "de", languages [de-DE, de, en-US, en], webdriver false
-  - Brave 154, то же: tz Europe/Berlin, `Intl` de, languages [de-DE], webdriver false
+  - Brave 154, то же: tz Europe/Berlin, `Intl` de, languages [de-DE], webdriver false; `Accept-Language` начинается с "de-DE" (q Brave меняет сам, от запуска к запуску — не проверяется)
+  - во всех четырёх личностях новая вкладка (`window.open`) даёт те же значения, что окно
   - LibreWolf 157 crowd: UA содержит "Firefox/157.0"; tz "Atlantic/Reykjavik" или "UTC"; languages [en-US, en]; webdriver false
   - LibreWolf 157 local DE: UA без изменений; tz Europe/Berlin; `Intl` locale "de"; Accept-Language начинается с "de-DE"
   - голый запуск браузера с `--user-data-dir=<profile>` (Chrome) или `--profile` (LibreWolf) мимо CM, затем `cm identity launch lab --lab` → код 3 [BypassSuspected]

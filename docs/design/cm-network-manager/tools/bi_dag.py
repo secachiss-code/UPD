@@ -129,9 +129,11 @@ vertex("BI.E2", "E", "Вести реестр проверенных лабор�
        """\
 `data/identity-verified.json` встраивается через `include_str!`. Формат: `[{"brand":"Chrome","major":155,"strategy":"local","evidence":"docs/design/cm-network-manager/i15r-evidence/2026-10-08","note":""}]`.
 
-Начальные строки — только то, что проверено тем же механизмом, что строит BI.L1:
+Строки — только пары, прошедшие приёмку E20 через `cm identity` (evidence `bi-evidence/2026-10-10`):
 - `Chrome 155 local`;
-- `Brave 154 local`, note `"farbling: navigator.languages сокращается до одного языка"`.
+- `Brave 154 local`, note `"farbling: navigator.languages сокращается до одного языка"`;
+- `LibreWolf 157 local`;
+- `LibreWolf 157 crowd`, note `"RFP: часовой пояс Atlantic/Reykjavik, языки en-US"`.
 
 `pub enum Strategy { Local, Crowd }` объявлен в `model.rs` (BI.M1); здесь используется.
 
@@ -203,7 +205,7 @@ vertex("BI.M3", "M", "Проверить согласованность личн
 | 2 | `CrowdWithRegion` | error | `Crowd` и `environment.is_some()` |
 | 3 | `LocalNeedsEnvironment` | error | `Local` и `environment.is_none()` |
 | 4 | `ZoneInvalid` | error | `Local` и `verify_zone(tzdir, country, timezone)` не Ok |
-| 5 | `ForbiddenArgument(String)` | error | в `extra_args` аргумент, начинающийся с одного из: `--user-agent`, `--remote-debugging-port`, `--remote-debugging-pipe`, `--enable-automation`, `--headless`, `--lang`, `--accept-lang`, `--user-data-dir`, `--profile`, `-profile`, `--no-sandbox`, `--marionette`, `--remote-allow`; в `String` — только имя флага до `=` |
+| 5 | `ForbiddenArgument(String)` | error | в `extra_args` аргумент, начинающийся с одного из: `--user-agent`, `--remote-debugging-port`, `--remote-debugging-pipe`, `--enable-automation`, `--headless`, `--lang`, `--accept-lang`, `--user-data-dir`, `--profile`, `-profile`, `--no-sandbox`, `--marionette`, `--remote-allow`, `--time-zone-for-testing` (перекрывает `TZ`), `--profile-directory`, `--ProfileManager`, `-ProfileManager` (другой профиль вне отпечатка охраны); точное совпадение — `-P` (префикс задел бы `-private-window`); в `String` — самый длинный совпавший флаг |
 | 6 | `EngineChanged` | warning | brand или major `engine` отличаются от `p.engine` |
 | 7 | `UnverifiedVersion` | warning | `verified::status(engine, strategy) == Unverified` |
 | 8 | `LanguageNotRegional` | warning | `Local` и `!environment.matches_country` |
@@ -225,7 +227,7 @@ vertex("BI.L1", "L", "Построить план запуска Chromium-бра
 3. `--accept-lang=<accept_language()>`
 4. `--no-first-run`
 5. `--no-default-browser-check`
-6. при `lab`: `--headless=new`, `--no-sandbox`
+6. при `lab`: `--headless=new`, `--no-sandbox`, `--disable-popup-blocking` (страница лаборатории открывает вкладку скриптом, без жеста пользователя)
 7. `extra_args` по порядку
 8. `url`, если есть
 
@@ -255,6 +257,8 @@ vertex("BI.L2", "L", "Построить план запуска Gecko-брау�
   - `user_pref("intl.accept_languages", "en-US, en");`
   - `user_pref("intl.locale.requested", "en-US");`
   - `user_pref("privacy.resistFingerprinting", true);`
+
+При `lab` в конец добавляется `user_pref("dom.disable_open_during_load", false);` — по той же причине, что `--disable-popup-blocking` у Chromium. Без `lab` блокировщик окон не трогается.
 
 Строки завершаются `\\n`. UA-prefs (`general.useragent.override`) не пишутся никогда.""")
 
@@ -317,7 +321,7 @@ vertex("BI.L3", "L", "Запустить браузер по плану и со�
 Шаги:
 1. Отказ `RunAsRoot`, если euid == 0 и не `test_mode()`.
 2. `run.lock` через `flock(LOCK_EX|LOCK_NB)` → `AlreadyRunning`.
-3. `load` и `engine::detect(browser)`. Если версия изменилась — обновить `p.engine`, `p.record(now, "engine <brand> <major>")`, сохранить.
+3. `load` и `engine::detect(browser)`. Если снимок отличается — обновить `p.engine` и сохранить. `p.record(now, "engine <brand> <major>")` — только при смене brand или major: патч-релиз не тратит поколение и запись истории.
 4. `validate` (errors → `Invalid(Vec<Violation>)`).
 5. `guard::check_before_launch` (ошибка → `Guard(GuardError)`).
 6. План по семейству (Chromium → `chromium_plan`, Gecko → `gecko_plan`); записать `files` 0600 атомарно.
@@ -325,7 +329,7 @@ vertex("BI.L3", "L", "Запустить браузер по плану и со�
    - `Command::new(program)`, `args`, `env_clear()` + `env`;
    - stdin null, stdout и stderr → `browser.log` (0600, перезапись);
    - `pre_exec(setsid)` с комментарием `// SAFETY:`.
-8. `record_launch(generation, pid, now)`; ожидать завершения.
+8. `record_launch(generation, pid, now)`; ожидать завершения опросом `try_wait`. На время ожидания установлены обработчики `SIGINT`, `SIGTERM`, `SIGHUP`: при сигнале CM один раз шлёт `SIGTERM` сессии браузера (`kill(-pid)`) и продолжает ждать. Иначе Ctrl+C или закрытый терминал оставили бы браузер без CM, и следующий запуск принял бы это за обход.
 9. `record_exit(...)`. Вернуть код выхода (сигнал → 128 + номер).
 
 Ошибки `LaunchError: RunAsRoot, AlreadyRunning, Store(StoreError), Engine(EngineError), Invalid(Vec<Violation>), Guard(GuardError), Spawn` — `Display` через `t!`, без argv и env.""")
@@ -461,9 +465,10 @@ edge("E05", "BI.E2", "BI.M3",
      "Реестр отвечает `Verified` только для строк, за которыми стоит evidence того же механизма.",
      "`tests/audit_bi_engine.rs`.",
      [
-         "(Chrome 155, Local) → Verified, evidence \"docs/design/cm-network-manager/i15r-evidence/2026-10-08\"",
+         "(Chrome 155, Local) → Verified, evidence \"docs/design/cm-network-manager/bi-evidence/2026-10-10\"",
          "(Brave 154, Local) → Verified, note содержит \"farbling\"",
-         "(Chrome 156, Local), (Chromium 155, Local), (Firefox 157, Local), (LibreWolf 157, Crowd) → Unverified",
+         "(LibreWolf 157, Local) → Verified; (LibreWolf 157, Crowd) → Verified, note содержит \"RFP\"",
+         "(Chrome 156, Local), (Chromium 155, Local), (Firefox 157, Local), (LibreWolf 158, Crowd), (Chrome 155, Crowd) → Unverified",
          "каждая строка JSON: каталог evidence существует в репозитории",
      ])
 edge("E06", "BI.M1", "BI.M2",
@@ -493,11 +498,12 @@ edge("E08", "BI.M1", "BI.M3",
      [
          "Local + DE + Chrome 155 (профиль и движок совпадают) → errors [], warnings []",
          "Crowd + Chrome 155 + environment None → errors [StrategyEngineUnsupported]",
-         "Crowd + LibreWolf 157 + environment DE → errors [CrowdWithRegion], warnings [UnverifiedVersion]",
+         "Crowd + LibreWolf 157 + environment DE → errors [CrowdWithRegion], warnings []",
          "Local + environment None → errors [LocalNeedsEnvironment]",
          "Local + DE с timezone \"Europe/Amsterdam\" (подложено вручную) → errors [ZoneInvalid]",
          "extra_args [\"--user-agent=x\"] → errors [ForbiddenArgument(\"--user-agent\")]; [\"--remote-debugging-pipe\"], [\"--headless=new\"], [\"--lang=ru\"], [\"--profile\"] — по одному коду каждый",
-         "extra_args [\"--ozone-platform=wayland\"] → errors []",
+         "[\"--time-zone-for-testing=Asia/Tokyo\"], [\"--profile-directory=Other\"], [\"--ProfileManager\"], [\"-P\"] → по одному ForbiddenArgument с этим флагом",
+         "extra_args [\"--ozone-platform=wayland\"] и [\"-private-window\"] → errors []",
          "профиль Chrome 155, движок Chrome 156 → warnings [EngineChanged, UnverifiedVersion]",
          "Local + DE + English → warnings [LanguageNotRegional]",
          "Local + DE + Brave 154 → warnings [BraveFarblesLanguages]",
@@ -512,7 +518,7 @@ edge("E09", "BI.M3", "BI.L1",
          "env == {DBUS_SESSION_BUS_ADDRESS, DISPLAY, HOME=/h, LANG=de_DE.UTF-8, PATH=/usr/bin, TZ=Europe/Berlin, WAYLAND_DISPLAY, XAUTHORITY, XDG_RUNTIME_DIR} — ровно 9 ключей; нет LC_TIME, LANGUAGE, SECRET_TOKEN",
          "parent_env без PATH → PATH=/usr/bin:/bin",
          "url \"http://127.0.0.1:18765/\" — последний аргумент; extra_args [\"--ozone-platform=wayland\"] — сразу перед url",
-         "lab=true → после `--no-default-browser-check` идут \"--headless=new\", \"--no-sandbox\"",
+         "lab=true → после `--no-default-browser-check` идут ровно \"--headless=new\", \"--no-sandbox\", \"--disable-popup-blocking\"; без lab `--disable-popup-blocking` нет",
          "в argv нет `--user-agent`, `--remote-debugging-*`, `--enable-automation`; files == []",
      ])
 edge("E10", "BI.M3", "BI.L2",
@@ -523,6 +529,7 @@ edge("E10", "BI.M3", "BI.L2",
          "Crowd: user.js == \"// Managed by cm identity. Changes here are overwritten at launch.\\nuser_pref(\\\"intl.accept_languages\\\", \\\"en-US, en\\\");\\nuser_pref(\\\"intl.locale.requested\\\", \\\"en-US\\\");\\nuser_pref(\\\"privacy.resistFingerprinting\\\", true);\\n\"",
          "Local env: TZ=Europe/Berlin, LANG=de_DE.UTF-8; Crowd env: LANG=en_US.UTF-8 и нет TZ",
          "args == [\"--profile\", \"/r/work/profile\", \"--no-remote\"]; lab=true → + \"--headless\"",
+         "lab=true: user.js == строка Local DE + \"user_pref(\\\"dom.disable_open_during_load\\\", false);\\n\"; без lab этой строки нет",
          "ни одна строка user.js не содержит \"useragent\"",
      ])
 edge("E11", "BI.G1", "BI.G2",
@@ -589,6 +596,8 @@ edge("E17", "BI.L3", "BI.C2",
          "второй launch той же личности, пока первый ждёт (скрипт `sleep 2`) → Err(AlreadyRunning), второй скрипт не запускался",
          "профиль с extra_args [\"--user-agent=x\"] → Err(Invalid([ForbiddenArgument(\"--user-agent\")])), файл argv не создан",
          "фикстура меняет --version на 156 → профиль сохранён с engine 156 и history \"engine Chrome 156\"",
+         "фикстура меняет --version на 155.0.9999.1 → engine.version обновлён, generation и history.len() прежние",
+         "`cm identity launch` получает SIGINT, пока браузер-фикстура спит 60 с → cm завершается сам за ≤ 10 с, процесса браузера нет, state.json содержит last_exit, следующий launch → код 0 (не BypassSuspected)",
          "euid 0 без test_mode → Err(RunAsRoot) (проверка, если тест запущен от root; иначе тест печатает NOT_APPLICABLE)",
      ], level="L2")
 edge("E17b", "BI.M3", "BI.C1",
@@ -604,7 +613,7 @@ edge("E18", "BI.C1", "BI.C2",
      [
          "Local DE Chrome 155 без предупреждений → NET Unknown, REGION Partial «страна задана вручную, выход туннеля не проверен», STATE Verified, APP Verified",
          "Local DE English → REGION Partial «язык не из пресета страны»",
-         "Crowd LibreWolf → REGION Partial «crowd: часовой пояс UTC и язык en-US намеренно», APP Partial (UnverifiedVersion)",
+         "Crowd LibreWolf 157 → REGION Partial «crowd: часовой пояс UTC и язык en-US намеренно», APP Verified; LibreWolf 158 → APP Partial (UnverifiedVersion)",
          "ZoneInvalid → STATE Blocked, APP Blocked",
          "ни при каких входах REGION и NET не равны Verified",
      ])
@@ -626,7 +635,8 @@ edge("E20", "BI.C3", "BI.Z",
      "`tools/bi_lab.py` (роль 2, по образцу `tools/i15r_lab.py`): `unshare -rn`, сервер лаборатории на 127.0.0.1:18765, `CM_IDENTITY_ROOT` во временном каталоге, `CM_IDENTITY_LAB=1`, `cm identity create/launch ... --lab`. Два прогона подряд должны совпасть.",
      [
          "Chrome 155, `create lab --strategy local --country DE`: первый запрос `Accept-Language` начинается с \"de-DE,de;q=0.9\"; UA без изменений (содержит \"Chrome/155\", нет \"CMLab\"); окно, Worker, вкладка: tz \"Europe/Berlin\", offset −60 (январь), `Intl` locale \"de\", languages [de-DE, de, en-US, en], webdriver false",
-         "Brave 154, то же: tz Europe/Berlin, `Intl` de, languages [de-DE], webdriver false",
+         "Brave 154, то же: tz Europe/Berlin, `Intl` de, languages [de-DE], webdriver false; `Accept-Language` начинается с \"de-DE\" (q Brave меняет сам, от запуска к запуску — не проверяется)",
+         "во всех четырёх личностях новая вкладка (`window.open`) даёт те же значения, что окно",
          "LibreWolf 157 crowd: UA содержит \"Firefox/157.0\"; tz \"Atlantic/Reykjavik\" или \"UTC\"; languages [en-US, en]; webdriver false",
          "LibreWolf 157 local DE: UA без изменений; tz Europe/Berlin; `Intl` locale \"de\"; Accept-Language начинается с \"de-DE\"",
          "голый запуск браузера с `--user-data-dir=<profile>` (Chrome) или `--profile` (LibreWolf) мимо CM, затем `cm identity launch lab --lab` → код 3 [BypassSuspected]",

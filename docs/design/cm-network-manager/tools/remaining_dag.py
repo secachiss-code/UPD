@@ -68,6 +68,10 @@ DONE = [
     # Хвост этапа 2 (координатор, 2026-10-08): ADR-WORKER-TOPOLOGY, I04-REPORT, I15R-LAB,
     # макет туннелей в TUI, иконки апплета и snapshot-тесты.
     "I04.T04.e", "I04.T05.c", "I15-R.T03.a", "I17-D.T03.a", "I17-D.T04.a", "I17-D.T05.a",
+    # Направление BI (роль 1 — код, роль 2 — тесты, ревью координатора): REVIEW-2026-10-10-BI.md,
+    # приёмка E20 — bi-evidence/2026-10-10.
+    "BI.R1", "BI.R2", "BI.R3", "BI.E1", "BI.E2", "BI.M1", "BI.M2", "BI.M3", "BI.L1", "BI.L2",
+    "BI.G1", "BI.G2", "BI.G3", "BI.L3", "BI.C1", "BI.C2", "BI.C3", "BI.Z",
 ]
 
 MILESTONES = []  # (id, title, priority, lane, deps_text, goal, questions, gate)
