@@ -51,7 +51,7 @@ pub fn verify_zone(tzdir: &Path, country: &str, zone: &str) -> Result<(), ZoneEr
     Ok(())
 }
 
-fn valid_zone_name(zone: &str) -> bool {
+pub fn valid_zone_name(zone: &str) -> bool {
     if zone.is_empty() || zone.len() > 64 || zone.starts_with('/') {
         return false;
     }

@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 
 const MANAGED_HEADER: &str = "// Managed by cm identity. Changes here are overwritten at launch.\n";
 
-const PARENT_ENV_KEYS: &[&str] = &[
+pub const PARENT_ENV_KEYS: &[&str] = &[
     "DISPLAY",
     "WAYLAND_DISPLAY",
     "XAUTHORITY",
@@ -123,11 +123,7 @@ pub fn gecko_plan(
     }
 }
 
-fn plan_env(
-    parent: &BTreeMap<String, String>,
-    timezone: Option<&str>,
-    lang: &str,
-) -> BTreeMap<String, String> {
+pub fn allowlisted_env(parent: &BTreeMap<String, String>) -> BTreeMap<String, String> {
     let mut env = BTreeMap::new();
     for key in PARENT_ENV_KEYS {
         if let Some(value) = parent.get(*key) {
@@ -136,6 +132,15 @@ fn plan_env(
     }
     env.entry("PATH".to_string())
         .or_insert_with(|| "/usr/bin:/bin".to_string());
+    env
+}
+
+fn plan_env(
+    parent: &BTreeMap<String, String>,
+    timezone: Option<&str>,
+    lang: &str,
+) -> BTreeMap<String, String> {
+    let mut env = allowlisted_env(parent);
     if let Some(timezone) = timezone {
         env.insert("TZ".to_string(), timezone.to_string());
     }
