@@ -15,7 +15,12 @@ pub fn render_table(tunnels: &[TunnelNet]) -> String {
             tunnel.veth_host, tunnel.tun, tunnel.tun, tunnel.veth_host
         ));
     }
-    text.push_str("    iifname \"cmv*\" counter drop\n    oifname \"cmv*\" counter drop\n  }\n}\n");
+    text.push_str("    iifname \"cmv*\" counter drop\n    oifname \"cmv*\" counter drop\n  }\n");
+    // Q09: приложение не обращается к самому хосту и его службам. DNS и весь остальной
+    // трафик идут в TUN через forward, поэтому input для veth закрыт целиком.
+    text.push_str(
+        "  chain input {\n    type filter hook input priority filter; policy accept;\n    iifname \"cmv*\" counter drop\n  }\n}\n",
+    );
     text
 }
 

@@ -111,23 +111,21 @@ pub fn create(
     Ok(())
 }
 
+/// Удаление идемпотентно: каждая команда выполняется, даже если предыдущая отказала.
+/// Отказ команды удаления значит, что части сети уже нет (TUN убрали руками, обрыв
+/// посреди прошлого удаления), и ошибкой не считается: иначе такую сеть нельзя было бы
+/// ни снять, ни создать заново. Оставшийся после настоящего отказа интерфейс найдёт
+/// сверка (`OrphanVeth`), а до тех пор он закрыт запретами таблицы.
 pub fn destroy(
     tunnel: &TunnelNet,
     remaining: &[TunnelNet],
     exec: &mut dyn NetExec,
 ) -> Result<(), NetError> {
-    let mut failed = false;
     for cmd in destroy_commands(tunnel) {
-        if exec.run(&cmd).is_err() {
-            failed = true;
-        }
+        let _ = exec.run(&cmd);
     }
     for cmd in replace_commands(remaining) {
         exec.run(&cmd)?;
     }
-    if failed {
-        Err(NetError::CommandFailed)
-    } else {
-        Ok(())
-    }
+    Ok(())
 }
