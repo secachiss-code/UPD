@@ -296,6 +296,12 @@ pub fn secret_fd(bytes: &[u8]) -> Result<OwnedFd, ControlError>
 3. `prctl(PR_SET_NO_NEW_PRIVS, 1)`;
 4. сбрасывает ambient-набор (`PR_CAP_AMBIENT_CLEAR_ALL`) и bounding-набор (`PR_CAPBSET_DROP` для 0..=CAP_LAST_CAP, ошибки EINVAL для несуществующих номеров игнорировать).
 
+При смене uid (I06.I3) bounding-набор сбрасывается **до** `setresuid`: после неё у процесса уже нет `CAP_SETPCAP`, и набор остался бы полным.
+
+Два режима потомка. Ядро и служебные процессы — строгий: всё перечисленное. Приложение пользователя (`drop_into_netns_pre_exec`) — как процесс его обычной сессии: дескрипторы закрыты, ambient пуст, наборы привилегий пусты после смены uid, но `NO_NEW_PRIVS` не ставится и bounding-набор не трогается. Иначе не работали бы setuid-помощники системы внутри приложения: `fusermount` для AppImage, `sudo` в терминале.
+
+Кодек: слишком длинный кадр вычитывается в поисках перевода строки не дальше `4 * MAX_FRAME_BYTES`; потом — `TooLarge` и закрытие соединения. Поток без `\n` не держит соединение бесконечно.
+
 В `pre_exec` — только async-signal-safe вызовы, без выделения памяти.
 
 `secret_fd`: `memfd_create("cm-secret", MFD_CLOEXEC | MFD_ALLOW_SEALING)`, запись всех байтов, `lseek` в начало, печати `F_SEAL_WRITE | F_SEAL_GROW | F_SEAL_SHRINK | F_SEAL_SEAL`. Секрет не попадает ни в argv, ни в env.
@@ -936,10 +942,15 @@ table inet cm {
     iifname "cmv*" counter drop
     oifname "cmv*" counter drop
   }
+  chain input {
+    type filter hook input priority filter; policy accept;
+    iifname "cmv*" counter drop
+  }
 }
 ```
+- Цепочка `input` — решение по Q09 (строгий вариант по умолчанию): приложение не обращается к самому хосту и его службам ни по адресу veth, ни по другим адресам хоста. DNS и весь остальной трафик идут в TUN через `forward`, поэтому `input` для veth закрыт целиком. Исключений пока нет.
 - Политика цепочки `accept`: чужой forwarding (docker, libvirt) не затрагивается. Запрещается только трафик интерфейсов CM мимо своего TUN.
-- Два последних правила есть всегда, даже при пустом списке туннелей.
+- Оба запрета `forward` и запрет `input` есть всегда, даже при пустом списке туннелей.
 - `pub fn replace_commands(tunnels: &[TunnelNet]) -> Vec<Cmd>`: одна команда `nft -f -` со stdin `"table inet cm\ndelete table inet cm\n" + render_table(...)` — атомарная замена таблицы одной транзакцией nft.
 - Имя цепочки `forward`: `fwd` — зарезервированное слово nft.
 
@@ -968,7 +979,7 @@ pub fn destroy(t: &TunnelNet, remaining: &[TunnelNet], exec: &mut dyn NetExec) -
 2. `create_commands` по порядку;
 3. отказ команды → выполнить `destroy_commands` (ошибки отката игнорировать, кроме последней — её вернуть как `CommandFailed`) и вернуть `CommandFailed`.
 
-`destroy`: `destroy_commands` — каждая команда выполняется, даже если предыдущая отказала (объект мог не существовать); затем `replace_commands(remaining)`.
+`destroy`: `destroy_commands` — каждая команда выполняется, даже если предыдущая отказала; отказ команды удаления ошибкой не считается (объекта уже нет: TUN убрали руками либо прошлое удаление оборвалось), иначе такую сеть нельзя было бы ни снять, ни создать заново. Затем `replace_commands(remaining)`; ошибку возвращает только она.
 
 `SystemExec`: программа — только по фиксированному абсолютному пути; код ≠ 0 → `CommandFailed`; вывод команды в ошибку не попадает; `stdin` передаётся через pipe.
 
@@ -1226,7 +1237,7 @@ pub fn plan(spec: &LaunchSpec, netns: &str, run_as: RunAs, preset: &EnvironmentP
   - удаление cmtun0 (`ip link del`) → запрос по-прежнему не проходит: в таблице 100 остаётся `blackhole default metric 200`
   - контроль: без правила iif и без таблицы cm (и с NAT наружу) тот же запрос даёт 200 — блокируют именно правила CM
   - DNS: `getent hosts example.test` внутри netns уходит на 198.18.0.2 (пакеты на cmtun0, порт 53), на «интернет»-интерфейсе нет DNS-пакетов с адреса 10.213.0.2
-  - net_revert → нет cmv0h, cmtun0, netns cm-0, правила priority 1000 и таблицы 100; таблица cm содержит только два запрета
+  - net_revert → нет cmv0h, cmtun0, netns cm-0, правила priority 1000 и таблицы 100; таблица cm содержит только запреты (два в forward и один в input)
   - curl вызывается с `-q`: `~/.curlrc` пользователя может задавать прокси
 
 ### I11.A4 — Сгенерировать ярлык приложения с верным экранированием.

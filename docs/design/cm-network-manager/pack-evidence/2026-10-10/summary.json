@@ -1,0 +1,211 @@
+{
+ "date": "2026-10-10",
+ "base_rev": "e7bc4be",
+ "note": "rev — коммит, поверх которого лежат тесты и правки этой итерации; они входят в следующие коммиты",
+ "rustc": "1.98.1",
+ "mihomo": "v1.19.32",
+ "xray": "v26.3.27",
+ "gate": {
+  "command": "CARGO_TARGET_DIR=$HOME/.cache/cm-grok-target CM_TEST_MIHOMO=$HOME/.cache/cm-cores/mihomo/mihomo CM_TEST_XRAY=$HOME/.cache/cm-cores/xray/xray sh tests/check_audit.sh",
+  "exit": 0,
+  "tests": 650,
+  "skipped": 0
+ },
+ "stand": {
+  "script": "tests/pack_stand.py",
+  "runner": "tests/audit_pack_e2e.rs",
+  "namespace": "unshare -U --map-root-user --map-auto -n -m",
+  "checks": 81,
+  "failed": 0
+ },
+ "edges": {
+  "K01": {
+   "result": "PASS",
+   "test": "audit_pack_delivery::k01_*"
+  },
+  "K02": {
+   "result": "PASS",
+   "test": "audit_pack_delivery::k02_* (20000 мутаций zip); настоящие архивы релизов проверены при CM_TEST_XRAY_ZIP и CM_TEST_MIHOMO_GZ"
+  },
+  "K03": {
+   "result": "PASS",
+   "test": "audit_pack_delivery::k03_only_a_twice_verified_binary_leaves"
+  },
+  "K04": {
+   "result": "PASS",
+   "test": "audit_pack_delivery::k04_install_and_rollback"
+  },
+  "K05": {
+   "result": "PASS",
+   "test": "audit_pack_xray::k05_* (xray run -test для пяти видов узлов)"
+  },
+  "K06": {
+   "result": "PASS",
+   "test": "audit_pack_xray::k06_xray_lifecycle (unshare -rn)"
+  },
+  "K07": {
+   "result": "PASS",
+   "test": "audit_pack_net::k07_names_and_addresses"
+  },
+  "K08": {
+   "result": "PASS",
+   "test": "audit_pack_net::k08_command_order"
+  },
+  "K09": {
+   "result": "PASS",
+   "test": "audit_pack_net::k09_table_text, k09_nft_accepts_the_table_twice"
+  },
+  "K10": {
+   "result": "PASS",
+   "test": "audit_pack_net::k10_firewall_first_and_rollback"
+  },
+  "K11": {
+   "result": "PASS",
+   "test": "audit_pack_net::k11_tun_config, k11_pinned_mihomo_accepts_the_tun_config"
+  },
+  "K12": {
+   "result": "PASS",
+   "test": "audit_pack_net::k12_k13_*"
+  },
+  "K13": {
+   "result": "PASS",
+   "test": "audit_pack_net::k12_k13_*"
+  },
+  "K14": {
+   "result": "PASS",
+   "test": "audit_pack_net_ops::k14_*; стенд: K14 (настоящие ip и nft), обрыв — стенд C16"
+  },
+  "K15": {
+   "result": "PASS",
+   "test": "audit_pack_net::k15_drift_is_named_and_only_safe_drift_is_repaired (фикстуры ip -j)"
+  },
+  "K16": {
+   "result": "PASS",
+   "test": "audit_pack_net::k16_state_machine (6×9 пар)"
+  },
+  "K17": {
+   "result": "PASS",
+   "test": "audit_pack_net::k17_*"
+  },
+  "M01": {
+   "result": "PASS",
+   "test": "audit_pack_app::m01_*"
+  },
+  "M02": {
+   "result": "PASS",
+   "test": "audit_pack_app::m02_x06_plan_environment"
+  },
+  "M03": {
+   "result": "PASS",
+   "test": "стенд: проверки M03; audit_pack_app::m03_stored_command_*"
+  },
+  "M04": {
+   "result": "PASS",
+   "test": "audit_pack_app::m04_desktop_entry"
+  },
+  "M05": {
+   "result": "PASS",
+   "test": "audit_pack_app::m05_command_prints_the_entry"
+  },
+  "M06": {
+   "result": "PASS",
+   "test": "audit_pack_app::m06_usage_refusal_and_unavailable_are_different_exit_codes"
+  },
+  "M07": {
+   "result": "PASS",
+   "test": "audit_pack_app::m07_shared_tunnel_reference_counting"
+  },
+  "M08": {
+   "result": "PASS",
+   "test": "audit_pack_app::m08_*"
+  },
+  "M09": {
+   "result": "PASS",
+   "test": "audit_pack_env::m09_* (11 случаев fixtures/pack/region.json)"
+  },
+  "M10": {
+   "result": "PASS",
+   "test": "audit_pack_env::m10_preset_check_names_every_problem"
+  },
+  "M11": {
+   "result": "PASS",
+   "test": "audit_pack_env::m09_m11_*"
+  },
+  "M12": {
+   "result": "PASS",
+   "test": "audit_pack_env::m12_region_functions_are_pure"
+  },
+  "M13": {
+   "result": "PASS",
+   "test": "audit_pack_quality::m13_*"
+  },
+  "M14": {
+   "result": "PASS",
+   "test": "audit_pack_quality::m14_no_switch_on_noise"
+  },
+  "M15": {
+   "result": "PASS",
+   "test": "audit_pack_status::m15_*; src/tui/mock_tunnels.rs snapshots_per_size_and_language (24 снимка без перезаписи)"
+  },
+  "M16": {
+   "result": "PASS",
+   "test": "cosmic/src/tunnel_icons.rs::badge_reflects_the_worst_condition"
+  },
+  "X01": {
+   "result": "PASS",
+   "test": "audit_pack_xray::x01_xray_runs_as_the_caller (userns, uid 1)"
+  },
+  "X02": {
+   "result": "PASS",
+   "test": "audit_pack_net_ops::x02_*"
+  },
+  "X03": {
+   "result": "PASS",
+   "test": "audit_i06_dispatch::c15_* (действие io.github.cm.app, отказ denied)"
+  },
+  "X04": {
+   "result": "PASS",
+   "test": "стенд: проверки X04"
+  },
+  "X05": {
+   "result": "PASS",
+   "test": "audit_pack_app::x05_client_speaks_the_protocol_frame; m06 (код 4)"
+  },
+  "X06": {
+   "result": "PASS",
+   "test": "audit_pack_app::m02_x06_plan_environment"
+  },
+  "Z01": {
+   "result": "PASS",
+   "test": "i06-evidence/2026-10-10/summary.json: C01–C16 PASS, обходов нет"
+  },
+  "Z02": {
+   "result": "PASS",
+   "test": "audit_pack_e2e::z02_*; стенд: проверки Z02 и Q09"
+  }
+ },
+ "passed": 41,
+ "failed": 0,
+ "defects_found_and_fixed": [
+  "D1 (P1) K?/C07: ядро с TUN не запускалось — готовность по /sys и IFF_UP; исправлено (ioctl, IFF_RUNNING)",
+  "D2 (P1) M03: приложение читало resolv.conf хоста; исправлено (mount namespace)",
+  "D3 M03: утечка дескриптора netns; исправлено",
+  "D4 (P0-класс) M03: env.json читался от root без проверок; исправлено",
+  "D5 (P0-класс) C14: остановка по pid-файлу без проверки владельца; исправлено",
+  "D7 M03: запуск приложения при мёртвом ядре; исправлено",
+  "D8 K15: сиротой считалось чужое правило маршрутизации; исправлено",
+  "T1 M10: normalize_locale ломал кодировку (UTF-8 → UTF_8), установленная локаль считалась отсутствующей; найдено тестом, исправлено",
+  "T2 C16: кадр без перевода строки держал соединение до тайм-аута чтения; найдено стендом, исправлено (предел вычитывания)",
+  "T3 K14: net_revert отказывал, если часть сети уже удалена; найдено стендом, исправлено (идемпотентное удаление)",
+  "T4 C08/C09: bounding set оставался полным после смены uid; найдено тестом, исправлено (сброс до setresuid)"
+ ],
+ "open": [
+  "C02: cargo-fuzz на час не выполнялся (нужна сеть для установки); заменён детерминированной мутацией",
+  "C14: запуск экземпляра второго uid в L1 не проверяется (файл чужого владельца создать нельзя); покрыт стендом с двумя uid",
+  "Z02: путь IPv6 через туннель не проверялся — в netns он выключен",
+  "cm app run ID с настоящим хранилищем не прогонялся: проверена сборка команды (stored_command)",
+  "setuid-помощники внутри приложения в стенде не проверить: владелец программ не отображён в userns; проверено, что NO_NEW_PRIVS не стоит и bounding set не пуст",
+  "установка службы cm-controller.socket на хост не выполнялась: проверен текст юнитов"
+ ],
+ "bypasses": []
+}

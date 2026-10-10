@@ -1,0 +1,111 @@
+{
+ "date": "2026-10-10",
+ "base_rev": "e7bc4be",
+ "note": "rev — коммит, поверх которого лежат тесты и правки этой итерации; они входят в следующие коммиты",
+ "rustc": "1.98.1",
+ "mihomo": "v1.19.32",
+ "xray": "v26.3.27",
+ "gate": {
+  "command": "CARGO_TARGET_DIR=$HOME/.cache/cm-grok-target CM_TEST_MIHOMO=$HOME/.cache/cm-cores/mihomo/mihomo CM_TEST_XRAY=$HOME/.cache/cm-cores/xray/xray sh tests/check_audit.sh",
+  "exit": 0,
+  "tests": 650,
+  "skipped": 0
+ },
+ "stand": {
+  "script": "tests/pack_stand.py",
+  "runner": "tests/audit_pack_e2e.rs",
+  "namespace": "unshare -U --map-root-user --map-auto -n -m",
+  "checks": 81,
+  "failed": 0
+ },
+ "edges": {
+  "C01": {
+   "result": "PASS",
+   "test": "audit_i06_protocol::c01_*"
+  },
+  "C02": {
+   "result": "PASS",
+   "test": "audit_i06_protocol::c02_* (100000 мутаций, seed 1)"
+  },
+  "C03": {
+   "result": "PASS",
+   "test": "audit_i06_protocol::c03_actions_per_class_and_policy; src/main.rs install04_*"
+  },
+  "C04": {
+   "result": "PASS",
+   "test": "audit_i06_authorizer::c04_pkcheck_subject_comes_from_the_peer; audit_i06_protocol::c04_one_pkcheck_implementation"
+  },
+  "C05": {
+   "result": "PASS",
+   "test": "audit_i06_peer::c05_*"
+  },
+  "C06": {
+   "result": "PASS",
+   "test": "audit_i06_dispatch::c06_identity_is_checked_before_every_operation"
+  },
+  "C07": {
+   "result": "PASS",
+   "test": "audit_i06_owner::c07_*; стенд: проверки C07 (два uid)"
+  },
+  "C08": {
+   "result": "PASS",
+   "test": "audit_i06_harden::c08_*"
+  },
+  "C09": {
+   "result": "PASS",
+   "test": "audit_i06_drop::c09_child_runs_as_the_caller_and_cannot_return (userns); стенд: C09"
+  },
+  "C10": {
+   "result": "PASS",
+   "test": "audit_i06_journal::c10_*"
+  },
+  "C11": {
+   "result": "PASS",
+   "test": "audit_i06_txn::c11_*"
+  },
+  "C12": {
+   "result": "PASS",
+   "test": "audit_i06_txn::c12_*"
+  },
+  "C13": {
+   "result": "PASS",
+   "test": "audit_i06_txn::c13_generations"
+  },
+  "C14": {
+   "result": "PASS",
+   "test": "audit_i06_core_ops::c14_*"
+  },
+  "C15": {
+   "result": "PASS",
+   "test": "audit_i06_dispatch::c15_*; стенд: C15"
+  },
+  "C16": {
+   "result": "PASS",
+   "test": "стенд: проверки C16 (настоящий сервис, обрыв на record_generation, 33 соединения, SIGTERM, чужой uid)"
+  }
+ },
+ "passed": 16,
+ "failed": 0,
+ "defects_found_and_fixed": [
+  "D1 (P1) K?/C07: ядро с TUN не запускалось — готовность по /sys и IFF_UP; исправлено (ioctl, IFF_RUNNING)",
+  "D2 (P1) M03: приложение читало resolv.conf хоста; исправлено (mount namespace)",
+  "D3 M03: утечка дескриптора netns; исправлено",
+  "D4 (P0-класс) M03: env.json читался от root без проверок; исправлено",
+  "D5 (P0-класс) C14: остановка по pid-файлу без проверки владельца; исправлено",
+  "D7 M03: запуск приложения при мёртвом ядре; исправлено",
+  "D8 K15: сиротой считалось чужое правило маршрутизации; исправлено",
+  "T1 M10: normalize_locale ломал кодировку (UTF-8 → UTF_8), установленная локаль считалась отсутствующей; найдено тестом, исправлено",
+  "T2 C16: кадр без перевода строки держал соединение до тайм-аута чтения; найдено стендом, исправлено (предел вычитывания)",
+  "T3 K14: net_revert отказывал, если часть сети уже удалена; найдено стендом, исправлено (идемпотентное удаление)",
+  "T4 C08/C09: bounding set оставался полным после смены uid; найдено тестом, исправлено (сброс до setresuid)"
+ ],
+ "open": [
+  "C02: cargo-fuzz на час не выполнялся (нужна сеть для установки); заменён детерминированной мутацией",
+  "C14: запуск экземпляра второго uid в L1 не проверяется (файл чужого владельца создать нельзя); покрыт стендом с двумя uid",
+  "Z02: путь IPv6 через туннель не проверялся — в netns он выключен",
+  "cm app run ID с настоящим хранилищем не прогонялся: проверена сборка команды (stored_command)",
+  "setuid-помощники внутри приложения в стенде не проверить: владелец программ не отображён в userns; проверено, что NO_NEW_PRIVS не стоит и bounding set не пуст",
+  "установка службы cm-controller.socket на хост не выполнялась: проверен текст юнитов"
+ ],
+ "bypasses": []
+}

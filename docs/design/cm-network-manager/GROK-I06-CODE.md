@@ -294,6 +294,12 @@ pub fn secret_fd(bytes: &[u8]) -> Result<OwnedFd, ControlError>
 3. `prctl(PR_SET_NO_NEW_PRIVS, 1)`;
 4. сбрасывает ambient-набор (`PR_CAP_AMBIENT_CLEAR_ALL`) и bounding-набор (`PR_CAPBSET_DROP` для 0..=CAP_LAST_CAP, ошибки EINVAL для несуществующих номеров игнорировать).
 
+При смене uid (I06.I3) bounding-набор сбрасывается **до** `setresuid`: после неё у процесса уже нет `CAP_SETPCAP`, и набор остался бы полным.
+
+Два режима потомка. Ядро и служебные процессы — строгий: всё перечисленное. Приложение пользователя (`drop_into_netns_pre_exec`) — как процесс его обычной сессии: дескрипторы закрыты, ambient пуст, наборы привилегий пусты после смены uid, но `NO_NEW_PRIVS` не ставится и bounding-набор не трогается. Иначе не работали бы setuid-помощники системы внутри приложения: `fusermount` для AppImage, `sudo` в терминале.
+
+Кодек: слишком длинный кадр вычитывается в поисках перевода строки не дальше `4 * MAX_FRAME_BYTES`; потом — `TooLarge` и закрытие соединения. Поток без `\n` не держит соединение бесконечно.
+
 В `pre_exec` — только async-signal-safe вызовы, без выделения памяти.
 
 `secret_fd`: `memfd_create("cm-secret", MFD_CLOEXEC | MFD_ALLOW_SEALING)`, запись всех байтов, `lseek` в начало, печати `F_SEAL_WRITE | F_SEAL_GROW | F_SEAL_SHRINK | F_SEAL_SEAL`. Секрет не попадает ни в argv, ни в env.

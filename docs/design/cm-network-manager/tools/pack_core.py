@@ -267,10 +267,15 @@ table inet cm {
     iifname "cmv*" counter drop
     oifname "cmv*" counter drop
   }
+  chain input {
+    type filter hook input priority filter; policy accept;
+    iifname "cmv*" counter drop
+  }
 }
 ```
+- Цепочка `input` — решение по Q09 (строгий вариант по умолчанию): приложение не обращается к самому хосту и его службам ни по адресу veth, ни по другим адресам хоста. DNS и весь остальной трафик идут в TUN через `forward`, поэтому `input` для veth закрыт целиком. Исключений пока нет.
 - Политика цепочки `accept`: чужой forwarding (docker, libvirt) не затрагивается. Запрещается только трафик интерфейсов CM мимо своего TUN.
-- Два последних правила есть всегда, даже при пустом списке туннелей.
+- Оба запрета `forward` и запрет `input` есть всегда, даже при пустом списке туннелей.
 - `pub fn replace_commands(tunnels: &[TunnelNet]) -> Vec<Cmd>`: одна команда `nft -f -` со stdin `"table inet cm\\ndelete table inet cm\\n" + render_table(...)` — атомарная замена таблицы одной транзакцией nft.
 - Имя цепочки `forward`: `fwd` — зарезервированное слово nft.""",
        covers=["I08.T03.a", "I09.T02.a"])
@@ -290,7 +295,7 @@ pub fn destroy(t: &TunnelNet, remaining: &[TunnelNet], exec: &mut dyn NetExec) -
 2. `create_commands` по порядку;
 3. отказ команды → выполнить `destroy_commands` (ошибки отката игнорировать, кроме последней — её вернуть как `CommandFailed`) и вернуть `CommandFailed`.
 
-`destroy`: `destroy_commands` — каждая команда выполняется, даже если предыдущая отказала (объект мог не существовать); затем `replace_commands(remaining)`.
+`destroy`: `destroy_commands` — каждая команда выполняется, даже если предыдущая отказала; отказ команды удаления ошибкой не считается (объекта уже нет: TUN убрали руками либо прошлое удаление оборвалось), иначе такую сеть нельзя было бы ни снять, ни создать заново. Затем `replace_commands(remaining)`; ошибку возвращает только она.
 
 `SystemExec`: программа — только по фиксированному абсолютному пути; код ≠ 0 → `CommandFailed`; вывод команды в ошибку не попадает; `stdin` передаётся через pipe.""",
        covers=["I08.T02.a"])
