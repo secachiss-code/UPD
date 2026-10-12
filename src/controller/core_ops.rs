@@ -1,6 +1,6 @@
 //! Жизненный цикл worker как транзакции журнала владельца.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs::{self, OpenOptions};
 use std::io::Write;
 use std::os::unix::fs::OpenOptionsExt;
@@ -85,6 +85,8 @@ pub struct Workers {
     slots: Slots,
     lease_dir: Option<PathBuf>,
     net: Mutex<Option<Arc<super::net_ops::NetCtx>>>,
+    watch: Mutex<Option<Arc<Mutex<super::watch::Watch>>>>,
+    busy: Mutex<HashSet<Key>>,
 }
 
 impl Workers {
@@ -95,7 +97,163 @@ impl Workers {
             slots: Arc::new(Mutex::new(HashMap::new())),
             lease_dir,
             net: Mutex::new(None),
+            watch: Mutex::new(None),
+            busy: Mutex::new(HashSet::new()),
         }
+    }
+
+    pub fn set_watch(&self, watch: Arc<Mutex<super::watch::Watch>>) {
+        *self.watch.lock().unwrap_or_else(|error| error.into_inner()) = Some(watch);
+    }
+
+    pub fn watch_handle(&self) -> Option<Arc<Mutex<super::watch::Watch>>> {
+        self.watch
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .clone()
+    }
+
+    pub fn try_begin(&self, uid: u32, instance: &str) -> bool {
+        let mut busy = self.busy.lock().unwrap_or_else(|error| error.into_inner());
+        let key = (uid, instance.to_owned());
+        if busy.contains(&key) {
+            return false;
+        }
+        busy.insert(key);
+        true
+    }
+
+    pub fn end(&self, uid: u32, instance: &str) {
+        self.busy
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .remove(&(uid, instance.to_owned()));
+    }
+
+    pub fn running(&self) -> Vec<(u32, String)> {
+        self.slots
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .iter()
+            .filter_map(|(key, slot)| match slot {
+                Slot::Ready(_) => Some(key.clone()),
+                Slot::Pending => None,
+            })
+            .collect()
+    }
+
+    /// Экземпляры, которые сейчас держит операция клиента.
+    pub fn busy_instances(&self) -> Vec<(u32, String)> {
+        let busy = self.busy.lock().unwrap_or_else(|error| error.into_inner());
+        let mut keys: Vec<(u32, String)> = busy.iter().cloned().collect();
+        keys.sort();
+        keys
+    }
+
+    /// Остановить ядро, которое контроллер держит в памяти. `Ok(false)` — записи не было.
+    pub fn stop_memory(&self, uid: u32, instance: &str) -> Result<bool, ControlError> {
+        let mut slots = self.slots.lock().unwrap_or_else(|error| error.into_inner());
+        match slots.remove(&(uid, instance.to_owned())) {
+            Some(Slot::Ready(mut running)) => {
+                drop(slots);
+                running.adapter.stop().map_err(map_core)?;
+                Ok(true)
+            }
+            Some(Slot::Pending) | None => Ok(false),
+        }
+    }
+
+    /// Pid ядра, если запись есть и процесс жив.
+    pub fn core_pid(&self, uid: u32, instance: &str) -> Option<u32> {
+        let mut slots = self.slots.lock().unwrap_or_else(|error| error.into_inner());
+        let Slot::Ready(running) = slots.get_mut(&(uid, instance.to_owned()))? else {
+            return None;
+        };
+        if !running.adapter.alive() {
+            return None;
+        }
+        running.adapter.core_pid()
+    }
+
+    /// `Some(true)` when the process is alive and its API answers.
+    pub fn core_ready(&self, uid: u32, instance: &str) -> Option<bool> {
+        let mut slots = self.slots.lock().unwrap_or_else(|error| error.into_inner());
+        let Slot::Ready(running) = slots.get_mut(&(uid, instance.to_owned()))? else {
+            return Some(false);
+        };
+        if !running.adapter.alive() {
+            return Some(false);
+        }
+        Some(
+            running
+                .adapter
+                .health()
+                .is_ok_and(|ready| ready.api == ApiState::ApiReady),
+        )
+    }
+
+    pub fn note_started(&self, uid: u32, instance: &str) {
+        self.with_watch(|watch| watch.note_start(uid, instance));
+    }
+
+    pub fn note_stopped(&self, uid: u32, instance: &str) {
+        self.with_watch(|watch| watch.note_stop(uid, instance));
+    }
+
+    pub fn note_launch(&self, uid: u32, instance: &str) {
+        self.with_watch(|watch| watch.note_launch(uid, instance));
+    }
+
+    fn with_watch(&self, body: impl FnOnce(&mut super::watch::Watch)) {
+        let guard = self.watch.lock().unwrap_or_else(|error| error.into_inner());
+        let Some(watch) = guard.as_ref() else {
+            return;
+        };
+        // Tick holds this mutex. A note from inside it must not wait.
+        let Ok(mut watch) = watch.try_lock() else {
+            return;
+        };
+        body(&mut watch);
+    }
+
+    /// Same start path as `worker_start`, without a new generation record.
+    pub fn restart(&self, owned: &Owned) -> Result<(), ControlError> {
+        let generations = Generations::load(&owned.generations_path())?;
+        let generation = generations
+            .current(owned.instance.as_str())
+            .ok_or(ControlError::NotRunning)?;
+        let config = read_owned_config(owned, generation)?;
+        let tunnel = self.tunnel_for(owned)?;
+        let dns = dns_for(owned, tunnel.as_ref())?;
+        let gid = primary_gid(owned.uid).ok_or(ControlError::Failed)?;
+        let run_as = super::drop::run_as_for(owned.uid, gid)?;
+        {
+            let mut slots = self.slots.lock().unwrap_or_else(|error| error.into_inner());
+            slots.remove(&key(owned));
+        }
+        let mut adapter = self.factory.make(owned, &run_as, tunnel.as_ref());
+        if let Some(tunnel) = &tunnel {
+            adapter.set_tunnel_net(tunnel.clone());
+        }
+        if let Some(dns) = dns {
+            adapter.set_dns_runtime(dns);
+        }
+        adapter.start(&config).map_err(map_core)?;
+        if let Some(pid) = adapter.core_pid() {
+            let _ = write_pid(&pid_path(owned), pid);
+        }
+        self.slots
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .insert(
+                key(owned),
+                Slot::Ready(Running {
+                    adapter,
+                    generation,
+                    config,
+                }),
+            );
+        Ok(())
     }
 
     pub fn set_net(&self, ctx: Arc<super::net_ops::NetCtx>) {
@@ -119,6 +277,8 @@ impl Workers {
         registry::check_start(generations.current(owned.instance.as_str()), generation)?;
         self.ensure_free(owned)?;
         let config = read_owned_config(owned, generation)?;
+        let tunnel = self.tunnel_for(owned)?;
+        let dns = dns_for(owned, tunnel.as_ref())?;
         self.reserve(owned)?;
         let held = Arc::new(Mutex::new(None));
         let pid_path = pid_path(owned);
@@ -130,10 +290,8 @@ impl Workers {
                 config: config.clone(),
                 held: Arc::clone(&held),
                 pid_path: pid_path.clone(),
-                tunnel: self
-                    .lease_dir
-                    .as_deref()
-                    .and_then(|dir| leased_tunnel(dir, owned)),
+                tunnel,
+                dns,
             }),
             Box::new(RecordGeneration {
                 path: owned.generations_path(),
@@ -177,6 +335,7 @@ impl Workers {
             self.clear_slot(owned);
         }
         result?;
+        self.note_started(owned.uid, owned.instance.as_str());
         Ok(reply)
     }
 
@@ -196,6 +355,8 @@ impl Workers {
         }
         registry::check_running(generations.current(owned.instance.as_str()), generation)?;
         let config = read_owned_config(owned, next)?;
+        let tunnel = self.tunnel_for(owned)?;
+        let dns = dns_for(owned, tunnel.as_ref())?;
         let previous = self.take_ready(owned)?;
         let held = Arc::new(Mutex::new(Some(previous.adapter)));
         let mut steps: Vec<Box<dyn Step + '_>> = vec![
@@ -203,6 +364,7 @@ impl Workers {
                 held: Arc::clone(&held),
                 next: config.clone(),
                 previous: previous.config.clone(),
+                dns,
             }),
             Box::new(RecordGeneration {
                 path: owned.generations_path(),
@@ -312,6 +474,8 @@ impl Workers {
             return Err(error);
         }
         slots.remove(&key(owned));
+        drop(slots);
+        self.note_stopped(owned.uid, owned.instance.as_str());
         Ok(reply)
     }
 
@@ -465,6 +629,7 @@ struct AdapterStart {
     held: Arc<Mutex<Option<Box<dyn CoreAdapter + Send>>>>,
     pid_path: PathBuf,
     tunnel: Option<crate::net::TunnelNet>,
+    dns: Option<crate::net::dns::DnsRuntime>,
 }
 
 impl Step for AdapterStart {
@@ -477,6 +642,9 @@ impl Step for AdapterStart {
             .make(&self.owned, &self.run_as, self.tunnel.as_ref());
         if let Some(tunnel) = &self.tunnel {
             adapter.set_tunnel_net(tunnel.clone());
+        }
+        if let Some(dns) = &self.dns {
+            adapter.set_dns_runtime(dns.clone());
         }
         adapter.start(&self.config).map_err(map_core)?;
         if let Some(pid) = adapter.core_pid() {
@@ -501,6 +669,7 @@ struct AdapterReload {
     held: Arc<Mutex<Option<Box<dyn CoreAdapter + Send>>>>,
     next: CoreConfig,
     previous: CoreConfig,
+    dns: Option<crate::net::dns::DnsRuntime>,
 }
 
 impl Step for AdapterReload {
@@ -510,6 +679,9 @@ impl Step for AdapterReload {
     fn apply(&mut self) -> Result<(), ControlError> {
         let mut guard = self.held.lock().unwrap_or_else(|error| error.into_inner());
         let adapter = guard.as_mut().ok_or(ControlError::NotRunning)?;
+        if let Some(dns) = &self.dns {
+            adapter.set_dns_runtime(dns.clone());
+        }
         adapter.reload(&self.next).map(|_| ()).map_err(map_core)
     }
     fn compensate(&mut self) -> Result<(), ControlError> {
@@ -672,6 +844,18 @@ impl Step for Noop {
     }
 }
 
+impl Workers {
+    fn tunnel_for(&self, owned: &Owned) -> Result<Option<crate::net::TunnelNet>, ControlError> {
+        if owned.instance.as_str() == crate::net::host_plan::HOST_INSTANCE {
+            return super::host_ops::required_tunnel(owned);
+        }
+        Ok(self
+            .lease_dir
+            .as_deref()
+            .and_then(|dir| leased_tunnel(dir, owned)))
+    }
+}
+
 fn leased_tunnel(dir: &Path, owned: &Owned) -> Option<crate::net::TunnelNet> {
     let registry = LeaseRegistry::open(dir).ok()?;
     let holder = format!("u{}-{}", owned.uid, owned.instance.as_str());
@@ -801,23 +985,57 @@ fn write_pid(path: &Path, pid: u32) -> Result<(), ()> {
 /// Сигнал уходит только группе, чей лидер стартовал в записанный момент и принадлежит
 /// владельцу экземпляра. Файл лежит в каталоге владельца, поэтому его содержимому
 /// контроллер не доверяет: чужой процесс по подложенному pid остановить нельзя.
-fn kill_pidfile(path: &Path, uid: u32) {
+fn primary_gid(uid: u32) -> Option<u32> {
+    // SAFETY: passwd is a plain C struct; the all-zero bit pattern is valid.
+    let mut pw: libc::passwd = unsafe { std::mem::zeroed() };
+    let mut buf = vec![0u8; 16 * 1024];
+    let mut result: *mut libc::passwd = std::ptr::null_mut();
+    // SAFETY: passwd and the buffer outlive the call; on success pw_gid is filled in.
+    let rc = unsafe {
+        libc::getpwuid_r(
+            uid,
+            &mut pw,
+            buf.as_mut_ptr().cast(),
+            buf.len(),
+            &mut result,
+        )
+    };
+    if rc != 0 || result.is_null() {
+        return None;
+    }
+    Some(pw.pw_gid)
+}
+
+fn dns_for(
+    owned: &Owned,
+    tunnel: Option<&crate::net::TunnelNet>,
+) -> Result<Option<crate::net::dns::DnsRuntime>, ControlError> {
+    let Some(tunnel) = tunnel else {
+        return Ok(None);
+    };
+    let policy = super::owner::read_policy(owned)?;
+    crate::net::dns::dns_runtime(&policy, tunnel)
+        .map(Some)
+        .map_err(|_| ControlError::Unsupported)
+}
+
+pub(crate) fn kill_pidfile(path: &Path, uid: u32) -> bool {
     if path.as_os_str().is_empty() {
-        return;
+        return false;
     }
     let Some(text) = read_pidfile(path) else {
-        return;
+        return false;
     };
     let mut parts = text.split_whitespace();
     let Some(pid) = parts.next().and_then(|text| text.parse::<i32>().ok()) else {
-        return;
+        return false;
     };
     let Some(start) = parts.next().and_then(|text| text.parse::<u64>().ok()) else {
-        return;
+        return false;
     };
     if pid <= 1 {
         let _ = fs::remove_file(path);
-        return;
+        return false;
     }
     let current = fs::read_to_string(format!("/proc/{pid}/stat"))
         .ok()
@@ -827,7 +1045,7 @@ fn kill_pidfile(path: &Path, uid: u32) {
         .map(|meta| std::os::unix::fs::MetadataExt::uid(&meta));
     if current != Some(start) || owner != Some(uid) {
         let _ = fs::remove_file(path);
-        return;
+        return false;
     }
     signal_group(pid, libc::SIGTERM);
     let deadline = Instant::now() + Duration::from_secs(2);
@@ -838,6 +1056,7 @@ fn kill_pidfile(path: &Path, uid: u32) {
         signal_group(pid, libc::SIGKILL);
     }
     let _ = fs::remove_file(path);
+    true
 }
 
 fn read_pidfile(path: &Path) -> Option<String> {

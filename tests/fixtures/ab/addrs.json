@@ -1,0 +1,1 @@
+[{"ifname":"up0","addr_info":[{"local":"192.0.2.2","scope":"global"}]},{"ifname":"wlan0","addr_info":[{"local":"10.0.0.5","scope":"global"}]}]

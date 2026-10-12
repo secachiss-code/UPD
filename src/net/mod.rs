@@ -1,12 +1,22 @@
 //! Сеть приложения: свой netns, veth и таблица, в которой единственный путь — TUN worker-а.
 
+pub mod cli;
 pub mod commands;
 pub mod dns;
 pub mod exec;
+pub mod failure;
 pub mod firewall;
+pub mod host;
+pub mod host_audit;
+pub mod host_commands;
+pub mod host_firewall;
+pub mod host_plan;
 pub mod observe;
 pub mod plan;
+pub mod policy;
+pub mod query;
 pub mod state;
+pub mod uplink;
 
 pub use commands::{Cmd, Program, create_commands, destroy_commands};
 pub use exec::{NetExec, RecordingExec, SystemExec, create, destroy};

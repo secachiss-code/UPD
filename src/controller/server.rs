@@ -25,6 +25,12 @@ static STOP: AtomicBool = AtomicBool::new(false);
 static LIVE: AtomicUsize = AtomicUsize::new(0);
 
 pub fn dispatch(args: &[String]) -> i32 {
+    if args.first().map(String::as_str) == Some("reconcile") {
+        return reconcile_command(&args[1..]);
+    }
+    if args.first().map(String::as_str) == Some("teardown") {
+        return teardown_command(&args[1..]);
+    }
     if args.first().map(String::as_str) != Some("serve") {
         usage();
         return 2;
@@ -79,6 +85,54 @@ pub fn dispatch(args: &[String]) -> i32 {
     }
 }
 
+fn reconcile_command(args: &[String]) -> i32 {
+    let mut base = None;
+    let mut boot = false;
+    let mut rest = args.iter();
+    while let Some(arg) = rest.next() {
+        match arg.as_str() {
+            "--boot" => boot = true,
+            "--base" => {
+                let Some(value) = rest.next().filter(|value| !value.starts_with('-')) else {
+                    return 2;
+                };
+                base = Some(PathBuf::from(value));
+            }
+            _ => return 2,
+        }
+    }
+    if !boot {
+        return 2;
+    }
+    let base = match super::boot::command_base(base) {
+        Ok(base) => base,
+        Err(code) => return code,
+    };
+    let lease_dir = base.join("leases");
+    let workers = Arc::new(Workers::new(Arc::new(MihomoFactory {
+        binary: core_binary(),
+        lease_dir: lease_dir.clone(),
+    })));
+    let nets = Arc::new(super::net_ops::NetCtx {
+        exec: Arc::new(Mutex::new(crate::net::SystemExec)),
+        query: Arc::new(Mutex::new(crate::net::query::SystemQuery)),
+        lease_dir,
+        etc_root: if test_mode() {
+            base.join("etc-netns")
+        } else {
+            PathBuf::from("/etc/netns")
+        },
+    });
+    workers.set_net(Arc::clone(&nets));
+    match super::boot::reconcile_all(&base, &workers, &nets, unix_now()) {
+        Ok(report) => {
+            super::boot::print_report(&report);
+            0
+        }
+        Err(_) => 4,
+    }
+}
+
 fn serve(socket: &Path, base: &Path) -> Result<i32, i32> {
     STOP.store(false, Ordering::SeqCst);
     install_signals();
@@ -92,6 +146,7 @@ fn serve(socket: &Path, base: &Path) -> Result<i32, i32> {
     })));
     let nets = Arc::new(super::net_ops::NetCtx {
         exec: Arc::new(Mutex::new(crate::net::SystemExec)),
+        query: Arc::new(Mutex::new(crate::net::query::SystemQuery)),
         lease_dir,
         etc_root: if test_mode() {
             base.join("etc-netns")
@@ -100,6 +155,27 @@ fn serve(socket: &Path, base: &Path) -> Result<i32, i32> {
         },
     });
     workers.set_net(Arc::clone(&nets));
+    let _ = super::boot::reconcile_all(base, &workers, &nets, unix_now());
+    let watch = Arc::new(Mutex::new(super::watch::Watch::new()));
+    workers.set_watch(Arc::clone(&watch));
+    let watch_base = base.to_owned();
+    let watch_workers = Arc::clone(&workers);
+    let watch_nets = Arc::clone(&nets);
+    std::thread::spawn(move || {
+        while !STOP.load(Ordering::SeqCst) {
+            let now = unix_now().saturating_mul(1000);
+            {
+                let mut guard = watch.lock().unwrap_or_else(|error| error.into_inner());
+                guard.tick(&watch_base, &watch_workers, &watch_nets, now);
+            }
+            let mut left = super::watch::WATCH_INTERVAL_MS;
+            while left > 0 && !STOP.load(Ordering::SeqCst) {
+                let step = left.min(200);
+                std::thread::sleep(Duration::from_millis(step));
+                left -= step;
+            }
+        }
+    });
     let deps = Arc::new(Deps {
         base: base.to_owned(),
         authorizer: Arc::new(PolkitAuthorizer),
@@ -255,8 +331,134 @@ extern "C" fn on_stop(_signal: i32) {
     STOP.store(true, Ordering::SeqCst);
 }
 
+fn teardown_command(args: &[String]) -> i32 {
+    let mut offline = false;
+    let mut base = None;
+    let mut rest = args.iter();
+    while let Some(arg) = rest.next() {
+        match arg.as_str() {
+            "--offline" => offline = true,
+            "--base" => {
+                let Some(value) = rest.next().filter(|value| !value.starts_with('-')) else {
+                    return 2;
+                };
+                base = Some(PathBuf::from(value));
+            }
+            _ => return 2,
+        }
+    }
+    if offline {
+        return teardown_offline(base);
+    }
+    if base.is_some() {
+        return 2;
+    }
+    match super::client::call(&super::client::socket_path(), super::protocol::Op::Teardown) {
+        Ok(reply) if reply.ok => match reply.data {
+            Some(super::protocol::ReplyData::Teardown {
+                cores,
+                nets,
+                host,
+                errors,
+            }) => {
+                print_teardown(&super::teardown::TeardownReport {
+                    cores,
+                    nets,
+                    host,
+                    errors,
+                });
+                0
+            }
+            _ => 3,
+        },
+        Ok(reply) => {
+            eprintln!("[{}]", reply.code);
+            3
+        }
+        Err(_) => 4,
+    }
+}
+
+fn teardown_offline(base: Option<PathBuf>) -> i32 {
+    let base = match super::boot::command_base(base) {
+        Ok(base) => base,
+        Err(code) => return code,
+    };
+    if !test_mode()
+        && matches!(
+            crate::common::unit_state("cm-controller.service").as_str(),
+            "active" | "activating"
+        )
+    {
+        eprintln!("[controller_running]");
+        return 3;
+    }
+    let report = offline_teardown(&base);
+    print_teardown(&report);
+    0
+}
+
+fn offline_teardown(base: &Path) -> super::teardown::TeardownReport {
+    let lease_dir = base.join("leases");
+    let workers = Arc::new(super::core_ops::Workers::new(Arc::new(
+        super::core_ops::MihomoFactory {
+            binary: core_binary(),
+            lease_dir: lease_dir.clone(),
+        },
+    )));
+    let nets = Arc::new(super::net_ops::NetCtx {
+        exec: Arc::new(Mutex::new(crate::net::SystemExec)),
+        query: Arc::new(Mutex::new(crate::net::query::SystemQuery)),
+        lease_dir,
+        etc_root: if test_mode() {
+            base.join("etc-netns")
+        } else {
+            PathBuf::from("/etc/netns")
+        },
+    });
+    workers.set_net(Arc::clone(&nets));
+    super::teardown::teardown_all(base, &workers, &nets)
+}
+
+fn print_teardown(report: &super::teardown::TeardownReport) {
+    if let Ok(text) = serde_json::to_string(report) {
+        println!("{text}");
+    }
+}
+
+/// Кадр снятия, если сокет контроллера есть. Неудача не мешает удалению пакета.
+pub fn uninstall_controller_frame() {
+    let socket = super::client::socket_path();
+    let Ok(meta) = fs::symlink_metadata(&socket) else {
+        return;
+    };
+    if !meta.file_type().is_socket() {
+        return;
+    }
+    let Ok(exe) = std::env::current_exe() else {
+        return;
+    };
+    let _ = std::process::Command::new(exe)
+        .args(["controller", "teardown"])
+        .status();
+}
+
+/// То же, что `cm controller teardown --offline`, уже после остановки служб.
+pub fn uninstall_teardown_offline() {
+    let base = if test_mode() {
+        std::env::var("CM_CONTROLLER_BASE")
+            .map(PathBuf::from)
+            .unwrap_or_else(|_| PathBuf::from(super::owner::SYSTEM_BASE))
+    } else {
+        PathBuf::from(super::owner::SYSTEM_BASE)
+    };
+    let _ = offline_teardown(&base);
+}
+
 fn usage() {
-    eprintln!("cm controller serve --socket PATH [--base DIR]");
+    eprintln!(
+        "cm controller serve --socket PATH [--base DIR]\ncm controller teardown [--offline] [--base DIR]"
+    );
 }
 
 struct ConnectionGuard;

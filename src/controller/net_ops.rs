@@ -18,6 +18,7 @@ use super::txn::{self, Step, TxnMeta};
 
 pub struct NetCtx {
     pub exec: Arc<Mutex<dyn NetExec + Send>>,
+    pub query: Arc<Mutex<dyn crate::net::query::NetQuery + Send>>,
     pub lease_dir: PathBuf,
     pub etc_root: PathBuf,
 }
@@ -30,6 +31,9 @@ pub fn apply(
     now: i64,
     ctx: &Arc<NetCtx>,
 ) -> Result<Reply, ControlError> {
+    if owned.instance.as_str() == crate::net::host_plan::HOST_INSTANCE {
+        return Err(ControlError::BadInstance);
+    }
     let mut journal = Journal::open(&owned.journal_path())?;
     let generations = Generations::load(&owned.generations_path())?;
     if let Replay::Stored(text) = registry::replay_or_fresh(&journal, txn, digest)? {
@@ -39,6 +43,10 @@ pub fn apply(
     registry::check_start(generations.current(&key), generation)?;
     if find_index(ctx, owned)?.is_some() {
         return Err(ControlError::Conflict);
+    }
+    let policy = super::owner::read_policy(owned)?;
+    if policy.ipv6 == Ipv6Policy::Pass {
+        return Err(ControlError::Unsupported);
     }
     let shared = Arc::new(Mutex::new(None::<u8>));
     let mut steps: Vec<Box<dyn Step + '_>> = vec![
@@ -57,6 +65,7 @@ pub fn apply(
             ctx: Arc::clone(ctx),
             owned: owned.clone(),
             shared: Arc::clone(&shared),
+            ipv6: policy.ipv6,
         }),
         Box::new(RecordNet {
             path: owned.generations_path(),
@@ -109,6 +118,9 @@ pub fn revert(
     now: i64,
     ctx: &Arc<NetCtx>,
 ) -> Result<Reply, ControlError> {
+    if owned.instance.as_str() == crate::net::host_plan::HOST_INSTANCE {
+        return Err(ControlError::BadInstance);
+    }
     let mut journal = Journal::open(&owned.journal_path())?;
     let generations = Generations::load(&owned.generations_path())?;
     if let Replay::Stored(text) = registry::replay_or_fresh(&journal, txn, digest)? {
@@ -271,6 +283,7 @@ struct NetCreate {
     ctx: Arc<NetCtx>,
     owned: Owned,
     shared: Arc<Mutex<Option<u8>>>,
+    ipv6: Ipv6Policy,
 }
 
 impl Step for NetCreate {
@@ -290,7 +303,7 @@ impl Step for NetCreate {
             .exec
             .lock()
             .unwrap_or_else(|error| error.into_inner());
-        net::create(&tunnel, Ipv6Policy::Block, &all, &mut *exec).map_err(|_| ControlError::Failed)
+        net::create(&tunnel, self.ipv6, &all, &mut *exec).map_err(|_| ControlError::Failed)
     }
     fn compensate(&mut self) -> Result<(), ControlError> {
         let Some(index) = *self

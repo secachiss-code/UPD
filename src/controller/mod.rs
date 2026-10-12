@@ -2,12 +2,14 @@
 
 pub mod actions;
 pub mod app_ops;
+pub mod boot;
 pub mod client;
 pub mod codec;
 pub mod core_ops;
 pub mod dispatch;
 pub mod drop;
 pub mod harden;
+pub mod host_ops;
 pub mod journal;
 pub mod net_ops;
 pub mod owner;
@@ -15,4 +17,6 @@ pub mod peer;
 pub mod protocol;
 pub mod registry;
 pub mod server;
+pub mod teardown;
 pub mod txn;
+pub mod watch;

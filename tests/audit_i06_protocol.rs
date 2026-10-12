@@ -55,8 +55,11 @@ fn all_ops() -> Vec<Op> {
             program: "/usr/bin/true".to_owned(),
             args: Vec::new(),
             env: Default::default(),
+            session: None,
         },
         Op::Reconcile,
+        Op::Overview,
+        Op::Teardown,
     ]
 }
 
@@ -77,13 +80,18 @@ fn c01_frame_roundtrip_and_classes() {
     assert_eq!(serde_json::to_string(&request).unwrap(), SAMPLE);
     for op in all_ops() {
         let class = match &op {
-            Op::WorkerStatus { .. } => OpClass::Status,
+            Op::WorkerStatus { .. } | Op::Overview => OpClass::Status,
             Op::NetApply { .. } | Op::NetRevert { .. } => OpClass::Net,
             Op::AppLaunch { .. } => OpClass::App,
+            Op::Teardown => OpClass::Host,
             _ => OpClass::Worker,
         };
         assert_eq!(op.class(), class, "{op:?}");
-        assert_eq!(op.instance().is_none(), op == Op::Reconcile, "{op:?}");
+        assert_eq!(
+            op.instance().is_none(),
+            matches!(&op, &Op::Reconcile | &Op::Overview | &Op::Teardown),
+            "{op:?}"
+        );
     }
 }
 

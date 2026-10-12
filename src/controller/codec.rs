@@ -98,10 +98,19 @@ pub fn decode(frame: &[u8]) -> Result<Request, ControlError> {
             return Err(ControlError::BadArgument);
         }
         super::protocol::Op::AppLaunch {
-            program, args, env, ..
+            program,
+            args,
+            env,
+            session,
+            ..
         } => {
             check_launch(program, args)?;
             check_session_env(env)?;
+            if let Some(session) = session
+                && !crate::env::private::valid_name(session)
+            {
+                return Err(ControlError::BadArgument);
+            }
         }
         _ => {}
     }

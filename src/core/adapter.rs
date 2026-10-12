@@ -157,4 +157,7 @@ pub trait CoreAdapter {
 
     /// Application TUN for this worker. Cores without a TUN mode ignore it.
     fn set_tunnel_net(&mut self, _tunnel: crate::net::TunnelNet) {}
+
+    /// DNS policy for the TUN. Cores without a TUN mode ignore it.
+    fn set_dns_runtime(&mut self, _dns: crate::net::dns::DnsRuntime) {}
 }

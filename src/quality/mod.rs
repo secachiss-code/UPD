@@ -1,6 +1,8 @@
 //! Выбор узла: сначала ограничения, потом оценка, без переключения от шума.
 
+pub mod metrics;
 pub mod score;
+pub mod select;
 pub mod switch;
 
 pub use score::{Candidate, Constraints, Outcome, Ranked, Rejection, evaluate, score};

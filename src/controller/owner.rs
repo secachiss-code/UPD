@@ -49,6 +49,36 @@ impl Owned {
     }
 }
 
+pub fn policy_path(owned: &Owned) -> PathBuf {
+    owned
+        .root
+        .join("instances")
+        .join(owned.instance.as_str())
+        .join("config")
+        .join("net.json")
+}
+
+/// Политика туннеля. Нет файла — значения по умолчанию. Длиннее предела — `too_large`.
+pub fn read_policy(owned: &Owned) -> Result<crate::net::policy::TunnelPolicy, ControlError> {
+    let path = policy_path(owned);
+    match fs::symlink_metadata(&path) {
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            return Ok(crate::net::policy::TunnelPolicy::default());
+        }
+        Err(_) => return Err(ControlError::InvalidConfig),
+        Ok(meta) => {
+            if meta.file_type().is_symlink() {
+                return Err(ControlError::InvalidConfig);
+            }
+            if meta.len() > crate::net::policy::MAX_POLICY_BYTES as u64 {
+                return Err(ControlError::TooLarge);
+            }
+        }
+    }
+    let bytes = read_owned_file(owned, &path, crate::net::policy::MAX_POLICY_BYTES)?;
+    crate::net::policy::parse(&bytes).map_err(|_| ControlError::InvalidConfig)
+}
+
 pub fn read_owned_config(owned: &Owned, generation: u64) -> Result<CoreConfig, ControlError> {
     let bytes = read_owned_file(owned, &owned.config_path(generation), MAX_CONFIG_BYTES)?;
     CoreConfig::from_bytes(bytes).map_err(|_| ControlError::InvalidConfig)

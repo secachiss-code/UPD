@@ -270,7 +270,7 @@ fn k11_tun_config() {
     assert_eq!(
         config["tun"],
         json!({"enable":true,"device":"cmtun0","stack":"gvisor","auto-route":false,
-            "auto-redirect":false,"auto-detect-interface":false,"mtu":1400,
+            "auto-redirect":false,"auto-detect-interface":true,"mtu":1400,
             "inet4-address":["198.18.0.1/30"],"dns-hijack":["any:53","tcp://any:53"]})
     );
     assert!(config.get("listeners").is_none());

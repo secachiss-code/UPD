@@ -96,23 +96,44 @@ pub fn drop_into_netns_pre_exec(
     keep_fds: &[RawFd],
     limits: ChildLimits,
 ) -> Result<(), ControlError> {
-    let resolv = match resolv {
-        Some(path) => Some(
-            CString::new(std::os::unix::ffi::OsStrExt::as_bytes(path.as_os_str()))
-                .map_err(|_| ControlError::BadArgument)?,
-        ),
-        None => None,
-    };
+    drop_into_netns_region_pre_exec(command, netns, resolv, None, run_as, keep_fds, limits)
+}
+
+pub fn drop_into_netns_region_pre_exec(
+    command: &mut Command,
+    netns: RawFd,
+    resolv: Option<&Path>,
+    localtime: Option<&Path>,
+    run_as: RunAs,
+    keep_fds: &[RawFd],
+    limits: ChildLimits,
+) -> Result<(), ControlError> {
+    let resolv = c_path(resolv)?;
+    let localtime = c_path(localtime)?;
     install(
         command,
         run_as,
         keep_fds,
         limits,
         false,
-        Some(Netns { fd: netns, resolv }),
+        Some(Netns {
+            fd: netns,
+            resolv,
+            localtime,
+        }),
         Seal::Session,
     );
     Ok(())
+}
+
+fn c_path(path: Option<&Path>) -> Result<Option<CString>, ControlError> {
+    match path {
+        Some(path) => Ok(Some(
+            CString::new(std::os::unix::ffi::OsStrExt::as_bytes(path.as_os_str()))
+                .map_err(|_| ControlError::BadArgument)?,
+        )),
+        None => Ok(None),
+    }
 }
 
 /// Что остаётся потомку после смены uid.
@@ -130,6 +151,7 @@ enum Seal {
 struct Netns {
     fd: RawFd,
     resolv: Option<CString>,
+    localtime: Option<CString>,
 }
 
 /// Только системные вызовы: выполняется в потомке между fork и exec.
@@ -141,9 +163,9 @@ unsafe fn enter_netns(netns: &Netns) -> std::io::Result<()> {
     if unsafe { libc::setns(netns.fd, libc::CLONE_NEWNET) } != 0 {
         return Err(std::io::Error::last_os_error());
     }
-    let Some(resolv) = &netns.resolv else {
+    if netns.resolv.is_none() && netns.localtime.is_none() {
         return Ok(());
-    };
+    }
     // SAFETY: unshare takes a flag only and affects this child.
     if unsafe { libc::unshare(libc::CLONE_NEWNS) } != 0 {
         return Err(std::io::Error::last_os_error());
@@ -162,18 +184,35 @@ unsafe fn enter_netns(netns: &Netns) -> std::io::Result<()> {
     if slave != 0 {
         return Err(std::io::Error::last_os_error());
     }
-    // SAFETY: both paths are live NUL-terminated strings allocated before fork.
-    let bind = unsafe {
-        libc::mount(
-            resolv.as_ptr(),
-            c"/etc/resolv.conf".as_ptr(),
-            std::ptr::null(),
-            libc::MS_BIND,
-            std::ptr::null(),
-        )
-    };
-    if bind != 0 {
-        return Err(std::io::Error::last_os_error());
+    if let Some(resolv) = &netns.resolv {
+        // SAFETY: both paths are live NUL-terminated strings allocated before fork.
+        let bind = unsafe {
+            libc::mount(
+                resolv.as_ptr(),
+                c"/etc/resolv.conf".as_ptr(),
+                std::ptr::null(),
+                libc::MS_BIND,
+                std::ptr::null(),
+            )
+        };
+        if bind != 0 {
+            return Err(std::io::Error::last_os_error());
+        }
+    }
+    if let Some(localtime) = &netns.localtime {
+        // SAFETY: the zone path was allocated before fork; the target literal is NUL-terminated.
+        let bind = unsafe {
+            libc::mount(
+                localtime.as_ptr(),
+                c"/etc/localtime".as_ptr(),
+                std::ptr::null(),
+                libc::MS_BIND,
+                std::ptr::null(),
+            )
+        };
+        if bind != 0 {
+            return Err(std::io::Error::last_os_error());
+        }
     }
     Ok(())
 }

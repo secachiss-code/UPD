@@ -135,6 +135,7 @@ fn run(args: &[String]) -> i32 {
             program,
             args: rest,
             env: session_env(),
+            session: None,
         },
     ) {
         Ok(reply) if reply.ok => {

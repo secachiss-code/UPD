@@ -152,15 +152,14 @@ pub fn attach_worker_listeners(document: &Value, leased_port: u16) -> Result<Vec
 /// `NodeSelection::Pinned` uses that node and rejects a different source id.
 /// `NodeSelection::Policy` uses every `current_node_ids` entry. Store failures
 /// become [`ConfigError::Empty`] or [`ConfigError::InvalidNode`] with no payload.
-pub fn generate_from_store(
+pub fn document_from_store(
     store: &Store,
     source_id: &Id,
     selection: NodeSelection,
     dns: &DnsPolicy,
-    leased_port: u16,
     user_rules: &[&str],
     auto_group: bool,
-) -> Result<Vec<u8>, ConfigError> {
+) -> Result<Value, ConfigError> {
     let artifact = read_source_artifact(store, source_id).map_err(artifact_error)?;
     let snapshot = store
         .read_snapshot()
@@ -192,6 +191,19 @@ pub fn generate_from_store(
     if !policy.is_empty() {
         super::policy::merge_worker(&mut document, &policy)?;
     }
+    Ok(document)
+}
+
+pub fn generate_from_store(
+    store: &Store,
+    source_id: &Id,
+    selection: NodeSelection,
+    dns: &DnsPolicy,
+    leased_port: u16,
+    user_rules: &[&str],
+    auto_group: bool,
+) -> Result<Vec<u8>, ConfigError> {
+    let document = document_from_store(store, source_id, selection, dns, user_rules, auto_group)?;
     attach_worker_listeners(&document, leased_port)
 }
 
@@ -286,13 +298,28 @@ pub fn reject_geo_document(document: &Value) -> Result<(), ConfigError> {
 }
 
 /// TUN mode for one application network. The input is refused when it already carries `tun`,
-/// `dns`, a host listener, or a GEO rule. Listeners are not added here.
+/// `dns`, `profile`, a host listener, or a GEO rule. Listeners are not added here.
 pub fn attach_tun(
     document: &Value,
     tunnel: &crate::net::TunnelNet,
 ) -> Result<Vec<u8>, ConfigError> {
+    let policy = crate::net::policy::TunnelPolicy::default();
+    let runtime =
+        crate::net::dns::dns_runtime(&policy, tunnel).map_err(|_| ConfigError::Forbidden)?;
+    attach_tun_dns(document, tunnel, &runtime)
+}
+
+/// Same as [`attach_tun`] with the tunnel's DNS policy applied.
+pub fn attach_tun_dns(
+    document: &Value,
+    tunnel: &crate::net::TunnelNet,
+    dns: &crate::net::dns::DnsRuntime,
+) -> Result<Vec<u8>, ConfigError> {
     reject_geo_document(document)?;
-    if document.get("dns").is_some() || document.get("tun").is_some() {
+    if document.get("dns").is_some()
+        || document.get("tun").is_some()
+        || document.get("profile").is_some()
+    {
         return Err(ConfigError::Forbidden);
     }
     crate::core::worker::generate(document, 1).map_err(|_| ConfigError::Forbidden)?;
@@ -306,21 +333,26 @@ pub fn attach_tun(
             "stack": "gvisor",
             "auto-route": false,
             "auto-redirect": false,
-            "auto-detect-interface": false,
+            "auto-detect-interface": true,
             "mtu": tunnel.mtu,
             "inet4-address": [tunnel.tun_addr],
             "dns-hijack": ["any:53", "tcp://any:53"]
         }),
     );
+    let mut dns_object = serde_json::json!({
+        "enable": true,
+        "ipv6": false,
+        "enhanced-mode": dns.enhanced_mode,
+        "nameserver": dns.nameservers,
+        "default-nameserver": dns.bootstrap,
+    });
+    if let Some(range) = &dns.fake_ip_range {
+        dns_object["fake-ip-range"] = Value::String(range.clone());
+    }
+    object.insert("dns".to_owned(), dns_object);
     object.insert(
-        "dns".to_owned(),
-        serde_json::json!({
-            "enable": true,
-            "ipv6": false,
-            "enhanced-mode": "redir-host",
-            "nameserver": ["https://1.1.1.1/dns-query", "https://dns.google/dns-query"],
-            "default-nameserver": ["1.1.1.1", "8.8.8.8"]
-        }),
+        "profile".to_owned(),
+        serde_json::json!({"store-fake-ip": false}),
     );
     object.remove("listeners");
     serde_json::to_vec(&out).map_err(|_| ConfigError::Forbidden)

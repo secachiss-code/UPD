@@ -68,8 +68,28 @@ pub enum Op {
         /// Переменные сессии клиента. Принимаются только имена из [`SESSION_ENV_KEYS`].
         #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
         env: BTreeMap<String, String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        session: Option<String>,
+    },
+    AppList {
+        instance: String,
+    },
+    HostApply {
+        generation: u64,
+        mode: String,
+    },
+    HostRevert {
+        generation: u64,
+    },
+    HostStatus,
+    TunnelState {
+        instance: String,
     },
     Reconcile,
+    /// Состояние хоста и туннелей владельца сокета. Экземпляр в кадре не передаётся.
+    Overview,
+    /// Снять всё, что поставил CM. Принимается только от uid 0, до авторизатора.
+    Teardown,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -78,12 +98,17 @@ pub enum OpClass {
     Worker,
     Net,
     App,
+    Host,
 }
 
 impl Op {
     pub fn class(&self) -> OpClass {
         match self {
-            Self::WorkerStatus { .. } => OpClass::Status,
+            Self::WorkerStatus { .. }
+            | Self::HostStatus
+            | Self::TunnelState { .. }
+            | Self::AppList { .. }
+            | Self::Overview => OpClass::Status,
             Self::InstancePrepare { .. }
             | Self::WorkerStart { .. }
             | Self::WorkerReload { .. }
@@ -91,6 +116,7 @@ impl Op {
             | Self::Reconcile => OpClass::Worker,
             Self::NetApply { .. } | Self::NetRevert { .. } => OpClass::Net,
             Self::AppLaunch { .. } => OpClass::App,
+            Self::HostApply { .. } | Self::HostRevert { .. } | Self::Teardown => OpClass::Host,
         }
     }
 
@@ -103,8 +129,13 @@ impl Op {
             | Self::WorkerStatus { instance }
             | Self::NetApply { instance, .. }
             | Self::NetRevert { instance, .. }
-            | Self::AppLaunch { instance, .. } => Some(instance),
-            Self::Reconcile => None,
+            | Self::AppLaunch { instance, .. }
+            | Self::TunnelState { instance }
+            | Self::AppList { instance } => Some(instance),
+            Self::HostApply { .. } | Self::HostRevert { .. } | Self::HostStatus => {
+                Some(crate::net::host_plan::HOST_INSTANCE)
+            }
+            Self::Reconcile | Self::Overview | Self::Teardown => None,
         }
     }
 }
@@ -142,6 +173,56 @@ pub enum ReplyData {
     Launched {
         pid: u32,
     },
+    Apps {
+        netns: String,
+        pids: Vec<u32>,
+    },
+    Host {
+        mode: String,
+        generation: Option<u64>,
+        uplinks: Vec<String>,
+    },
+    Tunnel {
+        state: String,
+        restarts: u32,
+        holders: u32,
+    },
+    Overview {
+        host: HostRow,
+        tunnels: Vec<TunnelRow>,
+    },
+    Teardown {
+        cores: u32,
+        nets: u32,
+        host: bool,
+        errors: u32,
+    },
+}
+
+pub const MAX_OVERVIEW_ROWS: usize = 64;
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct HostRow {
+    pub mode: String,
+    pub generation: Option<u64>,
+    pub uplinks: Vec<String>,
+    pub state: String,
+    pub restarts: u32,
+    pub core_pid: Option<u32>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct TunnelRow {
+    pub instance: String,
+    pub state: String,
+    pub restarts: u32,
+    pub holders: u32,
+    pub worker_generation: Option<u64>,
+    pub net_generation: Option<u64>,
+    pub netns: Option<String>,
+    pub core_pid: Option<u32>,
 }
 
 impl Reply {

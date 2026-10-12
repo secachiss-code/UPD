@@ -73,6 +73,15 @@ fn main() {
     if args.first().is_some_and(|arg| arg == "app") {
         std::process::exit(cm::app::cli::dispatch(&args[1..]));
     }
+    if args.first().is_some_and(|arg| arg == "host") {
+        std::process::exit(cm::net::cli::dispatch(&args[1..]));
+    }
+    if args.first().is_some_and(|arg| arg == "tunnel") {
+        std::process::exit(cm::app::tunnel::dispatch(&args[1..]));
+    }
+    if args.first().is_some_and(|arg| arg == "env") {
+        std::process::exit(cm::env::collect::probe_main(&args[1..]));
+    }
     let pause = args.iter().any(|a| a == "--pause");
     let no_download = args.iter().any(|a| a == "--no-download");
     let all = args.iter().any(|a| a == "--all");
@@ -1407,6 +1416,10 @@ fn system_units(bin: &str, watch: Option<&str>) -> Vec<(&'static str, String)> {
         "cm-controller.service",
         format!("[Unit]\nDescription=cm: privileged controller for application tunnels\nRequires=cm-controller.socket\nAfter=cm-controller.socket\n\n[Service]\nType=simple\nExecStart={bin} controller serve --socket /run/cm/controller.sock\nStateDirectory=cm/users\nStateDirectoryMode=0711\nKillMode=process\n"),
     ));
+    u.push((
+        "cm-reconcile.service",
+        format!("[Unit]\nDescription=CM network state reconcile\nDefaultDependencies=no\nAfter=local-fs.target\nBefore=network-pre.target\nWants=network-pre.target\n\n[Service]\nType=oneshot\nRemainAfterExit=yes\nExecStart={bin} controller reconcile --boot\n\n[Install]\nWantedBy=multi-user.target\n"),
+    ));
     if let Some(w) = watch {
         u.push((
             "cm-mirrors.path",
@@ -1471,6 +1484,11 @@ fn polkit_policy() -> String {
             cm::controller::actions::ACTION_APP,
             "yes",
             msg("Launch an application in its own network", &[("ru", "Запуск приложения в его собственной сети"), ("de", "Anwendung im eigenen Netz starten"), ("it", "Avviare un'applicazione nella propria rete"), ("zh", "在应用自己的网络中启动应用"), ("ar", "تشغيل تطبيق في شبكته الخاصة")]),
+        ),
+        (
+            cm::controller::actions::ACTION_HOST,
+            "auth_admin_keep",
+            msg("Change the host tunnel and its routes", &[("ru", "Изменение туннеля хоста и его маршрутов"), ("de", "Host-Tunnel und seine Routen aendern"), ("it", "Modificare il tunnel dell'host e le sue rotte"), ("zh", "更改主机隧道及其路由"), ("ar", "تغيير نفق المضيف ومساراته")]),
         ),
     ];
     let mut s = String::from("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<!DOCTYPE policyconfig PUBLIC \"-//freedesktop//DTD PolicyKit Policy Configuration 1.0//EN\"\n \"http://www.freedesktop.org/standards/PolicyKit/1/policyconfig.dtd\">\n<!-- Managed by cm -->\n<policyconfig>\n  <vendor>cm</vendor>\n  <icon_name>system-software-update</icon_name>\n");
@@ -1714,7 +1732,7 @@ fn logged_in_users() -> Vec<String> {
 
 fn enable_units(b: &dyn Backend, c: &Config, ok: &dyn Fn(String)) -> Result<(), String> {
     let _ = run(true, &[], "systemctl", &["daemon-reload"]);
-    let mut enable = vec!["cm-auto.timer", "cm-net.timer", "cm-helper.socket", "cm-controller.socket"];
+    let mut enable = vec!["cm-auto.timer", "cm-net.timer", "cm-helper.socket", "cm-controller.socket", "cm-reconcile.service"];
     if b.mirrors_managed() && b.watch_path().is_some() {
         enable.push("cm-mirrors.path");
     }
@@ -1906,6 +1924,7 @@ fn cmd_uninstall(b: &dyn Backend, pkg: bool) -> i32 {
             return 1;
         }
     }
+    cm::controller::server::uninstall_controller_frame();
     let c = match Config::load(b.default_mirrors()) {
         Ok(c) => c,
         Err(e) => return err_code(Err(e)),
@@ -1915,7 +1934,7 @@ fn cmd_uninstall(b: &dyn Backend, pkg: bool) -> i32 {
     }
     if systemd() {
         let mut names: Vec<&str> = system_units(PKG_BIN, Some("-")).iter().map(|x| x.0).collect();
-        names.retain(|n| !n.ends_with(".service") || *n == vpn::SERVICE || *n == "cm-helper.service" || *n == "cm-controller.service");
+        names.retain(|n| !n.ends_with(".service") || *n == vpn::SERVICE || *n == "cm-helper.service" || *n == "cm-controller.service" || *n == "cm-reconcile.service");
         let _ = run(true, &[], "systemctl", &["--global", "disable", "cm-notify.timer"]);
         for user in logged_in_users() {
             let _ = run(true, &[], "systemctl", &["--user", "-M", &format!("{user}@"), "stop", "cm-notify.timer"]);
@@ -1925,12 +1944,14 @@ fn cmd_uninstall(b: &dyn Backend, pkg: bool) -> i32 {
         let _ = run(true, &[], "systemctl", &args);
         if !pkg {
             if let Err(e) = remove_manual_files() {
+                cm::controller::server::uninstall_teardown_offline();
                 return err_code(Err(e));
             }
             let _ = fs::remove_file(MANUAL.apt_hook);
         }
         let _ = run(true, &[], "systemctl", &["daemon-reload"]);
     }
+    cm::controller::server::uninstall_teardown_offline();
     if !pkg {
         remove_gui();
     }

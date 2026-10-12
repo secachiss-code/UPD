@@ -1,0 +1,73 @@
+{
+  "rev": "c543ca0",
+  "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)",
+  "date": "2026-10-10",
+  "rustc_target": "x86_64-unknown-linux-musl",
+  "commands": [
+    "python3 -m py_compile tests/ab_stand.py",
+    "CM_TEST_MIHOMO=<mihomo> CM_BIN=<cm> cargo test --target x86_64-unknown-linux-musl --test audit_ab_e2e",
+    "unshare -U --map-root-user --map-auto -n -m sh -c 'mount -t tmpfs tmpfs /run && ip link set lo up && python3 tests/ab_stand.py'"
+  ],
+  "rust_tests": {
+    "audit_ab_crates": 35,
+    "passed": 31,
+    "ignored": 4,
+    "failed": 0,
+    "audit_ab_e2e": "pass with CM_TEST_MIHOMO"
+  },
+  "ab_stand": {
+    "mode": "l2",
+    "topology": "host_flow_lab.sh + pack_stand controller/mihomo",
+    "ok_checks": 97,
+    "sections": [
+      "host",
+      "tunnels",
+      "dns",
+      "tunnel",
+      "apps",
+      "region",
+      "private",
+      "groups",
+      "faults",
+      "journey"
+    ],
+    "note": "HTTP/data path via ip netns exec; cm host set tunnel; F03 kill-9 + reconcile --boot"
+  },
+  "defects": [
+    {
+      "edge": "D01",
+      "summary": "policy::parse(b\"[]\") returns Ok(default) instead of Err"
+    },
+    {
+      "edge": "U02",
+      "summary": "cm app run with systemd-run reaches controller (exit 4) before launcher rejection"
+    },
+    {
+      "edge": "F01",
+      "summary": "LeaseRegistry::create Io in musl rig tests"
+    },
+    {
+      "edge": "F02",
+      "summary": "depends on F01 lease fixture"
+    }
+  ],
+  "stand_edges": [
+    "H12",
+    "D04",
+    "F03",
+    "F05",
+    "T07",
+    "T10",
+    "T11",
+    "T13",
+    "T14",
+    "R03",
+    "X02",
+    "Z01",
+    "Z02",
+    "Z03",
+    "Z05",
+    "Z06",
+    "Z07"
+  ]
+}

@@ -44,6 +44,7 @@ pub struct MihomoWorker {
     readiness: CoreReadiness,
     run_as: Option<crate::controller::drop::RunAs>,
     tunnel: Option<crate::net::TunnelNet>,
+    dns: Option<crate::net::dns::DnsRuntime>,
     state_dir: Option<PathBuf>,
 }
 
@@ -69,6 +70,7 @@ impl MihomoWorker {
             readiness: CoreReadiness::DOWN,
             run_as: None,
             tunnel: None,
+            dns: None,
             state_dir: None,
         }
     }
@@ -80,6 +82,10 @@ impl MihomoWorker {
 
     pub fn set_tunnel_net(&mut self, tunnel: crate::net::TunnelNet) {
         self.tunnel = Some(tunnel);
+    }
+
+    pub fn set_dns_runtime(&mut self, dns: crate::net::dns::DnsRuntime) {
+        self.dns = Some(dns);
     }
 
     fn owner(&self) -> Option<InstanceOwner> {
@@ -379,7 +385,13 @@ impl CoreAdapter for MihomoWorker {
             None => return self.abort_start(CoreError::Failed),
         };
         let socket_path = dirs.run.join(format!("{socket_name}.sock"));
-        let bytes = match render_start(&document, tun.as_ref(), self.port.as_ref(), &socket_path) {
+        let bytes = match render_start(
+            &document,
+            tun.as_ref(),
+            self.dns.as_ref(),
+            self.port.as_ref(),
+            &socket_path,
+        ) {
             Ok(bytes) => bytes,
             Err(_) => return self.abort_start(CoreError::InvalidConfig),
         };
@@ -482,6 +494,7 @@ impl CoreAdapter for MihomoWorker {
         let bytes = render_start(
             &document,
             self.tunnel.as_ref(),
+            self.dns.as_ref(),
             self.port.as_ref(),
             &socket_path,
         )
@@ -513,6 +526,17 @@ impl CoreAdapter for MihomoWorker {
             process::write_for(&config_path, &previous, self.owner())
                 .map_err(|_| CoreError::Failed)?;
             return Err(CoreError::InvalidConfig);
+        }
+        // A failed flush keeps the reload: the new config is already in effect.
+        for path in ["/cache/fakeip/flush", "/cache/dns/flush"] {
+            let _ = api::request(
+                &socket_path,
+                self.api_uid(),
+                "POST",
+                path,
+                None,
+                Duration::from_secs(2),
+            );
         }
         // PUT /configs rebinds listeners; the route is ready once the port or TUN answers again.
         if self.tunnel.is_some() {
@@ -573,6 +597,10 @@ impl CoreAdapter for MihomoWorker {
     fn set_tunnel_net(&mut self, tunnel: crate::net::TunnelNet) {
         self.tunnel = Some(tunnel);
     }
+
+    fn set_dns_runtime(&mut self, dns: crate::net::dns::DnsRuntime) {
+        self.dns = Some(dns);
+    }
 }
 
 fn first_proxy(document: &Value) -> Option<String> {
@@ -600,12 +628,21 @@ impl Drop for MihomoWorker {
 fn render_start(
     document: &Value,
     tunnel: Option<&crate::net::TunnelNet>,
+    dns: Option<&crate::net::dns::DnsRuntime>,
     port: Option<&Lease>,
     socket_path: &Path,
 ) -> Result<Vec<u8>, CoreError> {
     if let Some(tunnel) = tunnel {
-        let tun_bytes =
-            config::attach_tun(document, tunnel).map_err(|_| CoreError::InvalidConfig)?;
+        let runtime = match dns {
+            Some(dns) => dns.clone(),
+            None => {
+                let policy = crate::net::policy::TunnelPolicy::default();
+                crate::net::dns::dns_runtime(&policy, tunnel)
+                    .map_err(|_| CoreError::InvalidConfig)?
+            }
+        };
+        let tun_bytes = config::attach_tun_dns(document, tunnel, &runtime)
+            .map_err(|_| CoreError::InvalidConfig)?;
         let value: Value =
             serde_json::from_slice(&tun_bytes).map_err(|_| CoreError::InvalidConfig)?;
         return config::attach_unix_controller(&value, socket_path)

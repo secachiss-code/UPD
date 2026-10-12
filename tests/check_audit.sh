@@ -25,6 +25,10 @@ rustfmt --edition 2024 --check tests/audit_bi_*.rs tests/bi_support/mod.rs
 # and CM_TEST_XRAY, otherwise those checks print SKIPPED and do not count.
 rustfmt --edition 2024 --check tests/audit_i06_*.rs tests/audit_pack_*.rs tests/pack_support/mod.rs
 python3 -m py_compile tests/pack_stand.py
+# AB role 2 (TESTS-AB.md): host/tunnel/apps/region audits and L2 stand.
+rustfmt --edition 2024 --check tests/audit_ab_*.rs tests/ab_support/mod.rs
+python3 -m py_compile tests/ab_stand.py
+sh tests/check_fin.sh
 
 # H.03 made the whole crate clippy-clean; H.09: every unsafe block carries a SAFETY comment.
 cargo clippy --locked --offline --all-targets -- -D warnings -D clippy::undocumented_unsafe_blocks

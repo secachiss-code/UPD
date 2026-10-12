@@ -224,6 +224,7 @@ pub fn rig(base: &Path, deny: bool, gate: Option<Gate>) -> Rig {
     let exec = Arc::new(Mutex::new(RecordingExec::default()));
     let nets = Arc::new(NetCtx {
         exec: exec.clone(),
+        query: Arc::new(Mutex::new(cm::net::query::FixedQuery::default())),
         lease_dir,
         etc_root: base.join("etc-netns"),
     });

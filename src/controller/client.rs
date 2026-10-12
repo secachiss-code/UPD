@@ -6,12 +6,34 @@ use std::path::Path;
 use std::time::Duration;
 
 use super::codec::read_frame;
+use super::owner::SYSTEM_BASE;
 use super::protocol::{CONTROL_VERSION, Op, Reply};
+use crate::common::{sys, test_mode};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ClientError {
     Unavailable,
     BadReply,
+}
+
+pub fn owner_config_dir(instance: &str) -> std::path::PathBuf {
+    let base = if test_mode() {
+        std::env::var("CM_CONTROLLER_BASE").unwrap_or_else(|_| SYSTEM_BASE.to_owned())
+    } else {
+        SYSTEM_BASE.to_owned()
+    };
+    std::path::PathBuf::from(base)
+        .join(format!("u{}", sys::euid()))
+        .join("instances")
+        .join(instance)
+        .join("config")
+}
+
+pub fn socket_path() -> std::path::PathBuf {
+    std::path::PathBuf::from(
+        std::env::var("CM_CONTROLLER_SOCKET")
+            .unwrap_or_else(|_| "/run/cm/controller.sock".to_owned()),
+    )
 }
 
 pub fn call(socket: &Path, op: Op) -> Result<Reply, ClientError> {

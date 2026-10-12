@@ -1,0 +1,28 @@
+{
+  "date": "2026-10-11",
+  "rev": "c543ca0943f33fed556e88e719b04d1ffe0de38d",
+  "defects": [
+    {
+      "edge": "RW02",
+      "values": [1, 4],
+      "severity": "P1",
+      "owner": "role1",
+      "expected": "Watch::tick must create restart adapters at 2000, 4000, 10000, 40000, and 160000 ms; a third successful start must restore Up with restarts=3.",
+      "observed": "The factory count stayed at its initial value across every due tick. Workers::restart returned Failed before AdapterFactory::make; in the same fixture, the purported third recovery ended Up with restarts=4.",
+      "reproduction": "CM_CONF=/nonexistent/cm.conf cargo test --offline --locked --test audit_fin_edges rw02_tick_restarts_on_backoff_and_gives_up_after_five_attempts -- --ignored --nocapture; repeat with rw02_third_restart_recovers_before_failed_limit.",
+      "test": "tests/audit_fin_edges.rs",
+      "note": "The test is retained and ignored with the defect ID. Product code was not changed."
+    }
+  ],
+  "environment_limits": [
+    {
+      "edge": "CO02",
+      "value": 5,
+      "reason": "The sandbox returns EPERM for AF_UNIX bind in the child peer fixture, so the dispatch denial assertion cannot run here."
+    },
+    {
+      "edges": ["RT01", "RA01", "RZ01.4", "IT03"],
+      "reason": "The L2 stand command fails before execution: newuidmap: Could not set caps. No stand result is counted as PASS."
+    }
+  ]
+}

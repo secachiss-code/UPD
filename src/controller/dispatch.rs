@@ -54,6 +54,18 @@ impl Drop for SlotGuard<'_> {
     }
 }
 
+struct BusyGuard<'a> {
+    workers: &'a Workers,
+    uid: u32,
+    instance: &'a str,
+}
+
+impl Drop for BusyGuard<'_> {
+    fn drop(&mut self) {
+        self.workers.end(self.uid, self.instance);
+    }
+}
+
 impl Default for OpSlots {
     fn default() -> Self {
         Self::new()
@@ -81,6 +93,13 @@ fn execute(request: &super::protocol::Request, peer: &PeerIdentity, deps: &Deps)
     if let Err(error) = peer.verify() {
         return Reply::error(&request.id, error);
     }
+    // uid сокета проверяется раньше авторизатора: чужой кадр не доходит до pkcheck и до сети.
+    if matches!(request.op, super::protocol::Op::Teardown) {
+        if peer.uid != 0 {
+            return Reply::error(&request.id, ControlError::Denied);
+        }
+        return teardown_reply(request, deps);
+    }
     let action = action_for(request.op.class());
     if let Err(error) = deps.authorizer.authorize(peer, action) {
         return Reply::error(&request.id, error);
@@ -96,6 +115,18 @@ fn execute(request: &super::protocol::Request, peer: &PeerIdentity, deps: &Deps)
     };
     let now = (deps.now)();
     let digest = codec::request_digest(request);
+    let _busy = if request.op.instance().is_some() {
+        if !deps.workers.try_begin(peer.uid, instance) {
+            return Reply::error(&request.id, ControlError::Busy);
+        }
+        Some(BusyGuard {
+            workers: &deps.workers,
+            uid: peer.uid,
+            instance,
+        })
+    } else {
+        None
+    };
     let result = match &request.op {
         Op::InstancePrepare { .. } => InstanceRoot::new(&owned.root)
             .create_owned(
@@ -144,6 +175,7 @@ fn execute(request: &super::protocol::Request, peer: &PeerIdentity, deps: &Deps)
             program,
             args,
             env,
+            session,
             ..
         } => super::app_ops::launch(
             &owned,
@@ -152,14 +184,71 @@ fn execute(request: &super::protocol::Request, peer: &PeerIdentity, deps: &Deps)
             program,
             args,
             env,
+            session.as_deref(),
             peer,
             &deps.workers,
             &deps.nets,
             &deps.base,
         ),
+        Op::AppList { .. } => {
+            super::app_ops::list(&owned, &request.id, peer, &deps.nets, &deps.base)
+        }
+        Op::HostApply { generation, mode } => super::host_ops::apply(
+            &owned,
+            *generation,
+            mode,
+            &request.id,
+            &digest,
+            now,
+            &deps.nets,
+        ),
+        Op::HostRevert { generation } => super::host_ops::revert(
+            &owned,
+            *generation,
+            &request.id,
+            &digest,
+            now,
+            &deps.nets,
+            &deps.workers,
+        ),
+        Op::HostStatus => Ok(super::host_ops::status(&owned, &request.id)),
+        Op::Overview => {
+            super::watch::overview(&deps.base, peer.uid, &deps.workers, &deps.nets, &request.id)
+        }
+        Op::Teardown => Ok(teardown_reply(request, deps)),
+        Op::TunnelState { instance } => {
+            let watch = deps.workers.watch_handle();
+            Ok(match watch {
+                Some(watch) => {
+                    let guard = watch.lock().unwrap_or_else(|error| error.into_inner());
+                    super::watch::tunnel_reply(&guard, peer.uid, instance, &request.id)
+                }
+                None => super::protocol::Reply::ok(
+                    &request.id,
+                    Some(super::protocol::ReplyData::Tunnel {
+                        state: "stopped".to_owned(),
+                        restarts: 0,
+                        holders: 0,
+                    }),
+                ),
+            })
+        }
     };
     match result {
         Ok(reply) => reply,
         Err(error) => Reply::error(&request.id, error),
     }
+}
+
+fn teardown_reply(request: &super::protocol::Request, deps: &Deps) -> Reply {
+    let report = super::teardown::teardown_all(&deps.base, &deps.workers, &deps.nets);
+    Reply::ok(
+        &request.id,
+        Some(super::protocol::ReplyData::Teardown {
+            cores: report.cores,
+            nets: report.nets,
+            host: report.host,
+            errors: report.errors,
+        }),
+    )
 }

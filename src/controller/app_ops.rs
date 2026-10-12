@@ -27,6 +27,7 @@ pub fn launch(
     program: &str,
     args: &[String],
     session_env: &std::collections::BTreeMap<String, String>,
+    session: Option<&str>,
     peer: &PeerIdentity,
     workers: &Workers,
     nets: &NetCtx,
@@ -64,7 +65,10 @@ pub fn launch(
         return Err(ControlError::BadArgument);
     }
     let run_as = run_as_for(peer.uid, peer.gid)?;
-    let env = env_of(owned, peer.uid, session_env)?;
+    let session_file = read_session(owned, session)?;
+    let mut env = env_of(owned, peer.uid, session_env, session_file.as_ref())?;
+    apply_private(&mut env, peer.uid, session, session_file.as_ref())?;
+    let localtime = zone_file(&env)?;
     let netns_path = netns_root(base).join(format!("cm-{index}"));
     let file = OpenOptions::new()
         .read(true)
@@ -94,10 +98,11 @@ pub fn launch(
     } else {
         command.current_dir("/");
     }
-    drop::drop_into_netns_pre_exec(
+    drop::drop_into_netns_region_pre_exec(
         &mut command,
         file.as_raw_fd(),
         Some(&resolv),
+        localtime.as_deref(),
         run_as,
         &[],
         ChildLimits::default(),
@@ -110,13 +115,41 @@ pub fn launch(
         let mut child = child;
         let _ = child.wait();
     });
+    workers.note_launch(owned.uid, owned.instance.as_str());
     Ok(Reply::ok(id, Some(ReplyData::Launched { pid })))
+}
+
+pub fn list(
+    owned: &Owned,
+    id: &str,
+    peer: &PeerIdentity,
+    nets: &NetCtx,
+    base: &Path,
+) -> Result<Reply, ControlError> {
+    if peer.uid != owned.uid {
+        return Err(ControlError::NotRunning);
+    }
+    let Some(index) = super::net_ops::current_index(nets, owned)? else {
+        return Err(ControlError::NotRunning);
+    };
+    let netns = format!("cm-{index}");
+    let inode = crate::app::instance::netns_of_path(&netns_root(base).join(&netns));
+    let mut pids = match inode {
+        Some(inode) => {
+            let procs = crate::app::instance::scan(Path::new("/proc"));
+            crate::app::instance::holders(&procs, inode, peer.uid)
+        }
+        None => Vec::new(),
+    };
+    pids.truncate(256);
+    Ok(Reply::ok(id, Some(ReplyData::Apps { netns, pids })))
 }
 
 pub fn env_of(
     owned: &Owned,
     uid: u32,
     session_env: &std::collections::BTreeMap<String, String>,
+    session: Option<&crate::app::env::SessionFile>,
 ) -> Result<std::collections::BTreeMap<String, String>, ControlError> {
     // Имена уже проверил декодер; регион ниже перекрывает всё, что пришло от клиента.
     let mut env = session_env.clone();
@@ -125,11 +158,124 @@ pub fn env_of(
         env.insert("HOME".to_owned(), home);
     }
     env.insert("XDG_RUNTIME_DIR".to_owned(), format!("/run/user/{uid}"));
-    if let Some((timezone, locale)) = read_env_preset(owned)? {
+    if let Some(file) = session {
+        env.insert("TZ".to_owned(), file.timezone.clone());
+        env.insert("LANG".to_owned(), file.locale.clone());
+    } else if let Some((timezone, locale)) = read_env_preset(owned)? {
         env.insert("TZ".to_owned(), timezone);
         env.insert("LANG".to_owned(), locale);
     }
     Ok(env)
+}
+
+fn read_session(
+    owned: &Owned,
+    session: Option<&str>,
+) -> Result<Option<crate::app::env::SessionFile>, ControlError> {
+    let Some(session) = session else {
+        return Ok(None);
+    };
+    let path = owned
+        .root
+        .join("instances")
+        .join(owned.instance.as_str())
+        .join("config")
+        .join(format!("session-{session}.json"));
+    match std::fs::symlink_metadata(&path) {
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            return Err(ControlError::InvalidConfig);
+        }
+        Err(_) => return Err(ControlError::InvalidConfig),
+        Ok(meta) => {
+            if meta.file_type().is_symlink() {
+                return Err(ControlError::InvalidConfig);
+            }
+            if meta.len() > crate::app::env::MAX_SESSION_BYTES as u64 {
+                return Err(ControlError::TooLarge);
+            }
+        }
+    }
+    let bytes = super::owner::read_owned_file(owned, &path, crate::app::env::MAX_SESSION_BYTES)?;
+    crate::app::env::parse_session(&bytes)
+        .map(Some)
+        .map_err(|_| ControlError::InvalidConfig)
+}
+
+fn apply_private(
+    env: &mut std::collections::BTreeMap<String, String>,
+    uid: u32,
+    session: Option<&str>,
+    file: Option<&crate::app::env::SessionFile>,
+) -> Result<(), ControlError> {
+    for key in ["SSH_AUTH_SOCK", "GNOME_KEYRING_CONTROL", "GPG_AGENT_INFO"] {
+        env.remove(key);
+    }
+    let (Some(session), Some(file)) = (session, file) else {
+        return Ok(());
+    };
+    if let Some(data) = &file.data
+        && data.state != crate::env::private::DataState::Existing
+    {
+        let home = env.get("HOME").ok_or(ControlError::InvalidConfig)?;
+        let dirs =
+            crate::env::private::data_dirs(Path::new(home), &data.profile, data.state, session)
+                .ok_or(ControlError::InvalidConfig)?;
+        for path in [
+            &dirs.root,
+            &dirs.config,
+            &dirs.data,
+            &dirs.cache,
+            &dirs.state,
+        ] {
+            if !crate::env::private::check_dir(path, uid) {
+                return Err(ControlError::InvalidConfig);
+            }
+        }
+        env.extend(crate::env::private::env_overrides(&dirs));
+    }
+    if file.ipc == crate::env::private::IpcPolicy::Private {
+        let runtime = PathBuf::from(format!("/run/user/{uid}"));
+        let dir = crate::env::private::runtime_dir(&runtime, session);
+        if !crate::env::private::check_dir(&dir, uid) {
+            return Err(ControlError::InvalidConfig);
+        }
+        env.insert(
+            "XDG_RUNTIME_DIR".to_owned(),
+            dir.to_string_lossy().into_owned(),
+        );
+        env.remove("DBUS_SESSION_BUS_ADDRESS");
+        if let Some(display) = env.get("WAYLAND_DISPLAY").cloned()
+            && !display.starts_with('/')
+        {
+            env.insert(
+                "WAYLAND_DISPLAY".to_owned(),
+                format!("{}/{display}", runtime.display()),
+            );
+        }
+        if !env.contains_key("PULSE_SERVER") {
+            env.insert(
+                "PULSE_SERVER".to_owned(),
+                format!("unix:{}/pulse/native", runtime.display()),
+            );
+        }
+    }
+    Ok(())
+}
+
+fn zone_file(
+    env: &std::collections::BTreeMap<String, String>,
+) -> Result<Option<PathBuf>, ControlError> {
+    let Some(zone) = env.get("TZ") else {
+        return Ok(None);
+    };
+    if zone.contains('\0') {
+        return Err(ControlError::BadArgument);
+    }
+    let path = Path::new("/usr/share/zoneinfo").join(zone);
+    if !path.is_file() {
+        return Err(ControlError::InvalidConfig);
+    }
+    Ok(Some(path))
 }
 
 fn netns_root(base: &Path) -> PathBuf {

@@ -12,6 +12,7 @@ use crate::helper::ACTION_STATUS;
 pub const ACTION_WORKER: &str = "io.github.cm.worker";
 pub const ACTION_NET: &str = "io.github.cm.net";
 pub const ACTION_APP: &str = "io.github.cm.app";
+pub const ACTION_HOST: &str = "io.github.cm.host";
 
 pub fn action_for(class: OpClass) -> &'static str {
     match class {
@@ -19,6 +20,7 @@ pub fn action_for(class: OpClass) -> &'static str {
         OpClass::Worker => ACTION_WORKER,
         OpClass::Net => ACTION_NET,
         OpClass::App => ACTION_APP,
+        OpClass::Host => ACTION_HOST,
     }
 }
 

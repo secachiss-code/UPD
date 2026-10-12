@@ -1,0 +1,583 @@
+{
+  "date": "2026-10-12",
+  "rev": "c543ca0943f33fed556e88e719b04d1ffe0de38d",
+  "workspace_rev": "60b3fbb05e6e0e9ebb3679c8b185674fe85009c4",
+  "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)",
+  "scope": {
+    "vertex": "FIN.Z",
+    "edges": [
+      "XQ",
+      "PD",
+      "PT",
+      "ZZ"
+    ],
+    "selected_values": 74
+  },
+  "passes": [
+    {
+      "pass": 1,
+      "name": "search",
+      "result": "BLOCKERS FOUND",
+      "checks": [
+        {
+          "command": "python3 docs/design/cm-network-manager/tools/test_lint.py --dags FIN --report",
+          "exit": 1,
+          "summary": "227 values; 49 checked; 0 blocked; 178 missing; 0 warnings. XQ01–XQ10, PD01, PT01, ZZ01–ZZ02: all selected values missing."
+        },
+        {
+          "command": "python3 docs/design/cm-network-manager/tools/test_lint.py --dags AB,FIN --report",
+          "exit": 1,
+          "summary": "553 values; 49 checked; 0 blocked; 504 missing; 97 warnings."
+        },
+        {
+          "command": "python3 docs/design/cm-network-manager/tools/test_lint.py --dags AB,FIN --strict",
+          "exit": 1,
+          "summary": "553 values; 49 checked; 0 blocked; 504 missing; 106 warnings/errors."
+        },
+        {
+          "check": "target artifact inventory",
+          "summary": "Missing audit_fin_hostq.rs, audit_fin_docs.rs, fin_stand.py, audit_fin_e2e.rs, fin_support/mod.rs, check_fin_tests.sh, fixtures/fin/accept/, and tools/accept.py."
+        }
+      ]
+    },
+    {
+      "pass": 2,
+      "name": "expansion",
+      "result": "PARTIAL; PACKAGE NOT ACCEPTED",
+      "checks": [
+        {
+          "command": "CARGO_TARGET_DIR=/home/somovas/.codex/worktrees/283e/upd/target CM_CONF=/nonexistent/cm.conf cargo test --offline --locked --manifest-path /home/somovas/Проекты/upd/Cargo.toml --test audit_fin_edges -- --nocapture",
+          "exit": 0,
+          "summary": "16 passed; 0 failed; 5 ignored. Existing coverage is for prior edges, not the selected 74 values."
+        },
+        {
+          "command": "CARGO_TARGET_DIR=/home/somovas/.codex/worktrees/283e/upd/target CM_TEST_MIHOMO=... CM_TEST_XRAY=... CM_CONF=/nonexistent/cm.conf sh tests/check_audit.sh",
+          "exit": 101,
+          "summary": "194 passed; 18 failed in lib tests; gate stopped before remaining checks. Failures include sandbox EPERM/UnsafeFilesystem and timing failures."
+        },
+        {
+          "command": "unshare -U --map-root-user --map-auto -n -m true",
+          "exit": 1,
+          "summary": "newuidmap: Could not set caps; no namespace stand started."
+        },
+        {
+          "command": "ad hoc hostq probes in the writable worktree",
+          "exit": 0,
+          "summary": "19/19 direct function probes passed; transient probes are not labeled audit tests and do not count as edge PASS."
+        },
+        {
+          "command": "ad hoc document/acceptance-model probes in the writable worktree",
+          "exit": 0,
+          "summary": "18/18 structural and synthetic-state probes passed; not permanent audit_fin_docs tests."
+        },
+        {
+          "command": "python3 docs/design/cm-network-manager/tools/accept.py --check (writable worktree)",
+          "exit": 1,
+          "summary": "blocked; reports unresolved gate, test_lint, missing defects/evidence, edges, tasks and host-step evidence."
+        }
+      ]
+    }
+  ],
+  "selected_edge_results": {
+    "XQ01": {
+      "source": "X.Q0",
+      "target": "X.Q1",
+      "level": "L2",
+      "status_note": "Нет audit_fin_hostq.rs; команды plan/run/list и UID guard не имеют постоянных размеченных тестов.",
+      "values": [
+        {
+          "n": 1,
+          "status": "UNVERIFIED"
+        },
+        {
+          "n": 2,
+          "status": "UNVERIFIED"
+        },
+        {
+          "n": 3,
+          "status": "UNVERIFIED"
+        },
+        {
+          "n": 4,
+          "status": "UNVERIFIED"
+        },
+        {
+          "n": 5,
+          "status": "UNVERIFIED"
+        },
+        {
+          "n": 6,
+          "status": "UNVERIFIED"
+        }
+      ]
+    },
+    "XQ02": {
+      "source": "X.Q0",
+      "target": "X.Q2",
+      "level": "L2",
+      "status_note": "Нет размеченных тестов на safe_check/record/compare; в более новой рабочей копии прямые пробы сериализации прошли.",
+      "values": [
+        {
+          "n": 1,
+          "status": "UNVERIFIED"
+        },
+        {
+          "n": 2,
+          "status": "UNVERIFIED"
+        },
+        {
+          "n": 3,
+          "status": "UNVERIFIED"
+        },
+        {
+          "n": 4,
+          "status": "UNVERIFIED"
+        }
+      ]
+    },
+    "XQ03": {
+      "source": "X.Q0",
+      "target": "X.Q3",
+      "level": "L2",
+      "status_note": "Нет тестов execute/rollback и L2 стенда. XQ03.4 допускает два исхода и требует раздельных состояний.",
+      "values": [
+        {
+          "n": 1,
+          "status": "UNVERIFIED"
+        },
+        {
+          "n": 2,
+          "status": "UNVERIFIED"
+        },
+        {
+          "n": 3,
+          "status": "UNVERIFIED"
+        },
+        {
+          "n": 4,
+          "status": "UNVERIFIED"
+        },
+        {
+          "n": 5,
+          "status": "UNVERIFIED"
+        }
+      ]
+    },
+    "XQ04": {
+      "source": "X.Q0",
+      "target": "X.Q4",
+      "level": "L2",
+      "status_note": "Нет тестов ask и очистки; прямые пробы закрытого stdin и ответа n прошли, стенд отсутствует.",
+      "values": [
+        {
+          "n": 1,
+          "status": "UNVERIFIED"
+        },
+        {
+          "n": 2,
+          "status": "UNVERIFIED"
+        },
+        {
+          "n": 3,
+          "status": "UNVERIFIED"
+        },
+        {
+          "n": 4,
+          "status": "UNVERIFIED"
+        }
+      ]
+    },
+    "XQ05": {
+      "source": "X.Q0",
+      "target": "X.Q5",
+      "level": "L1",
+      "status_note": "Нет постоянных тестов агрегации/preflight/all; три прямые пробы статусной функции прошли.",
+      "values": [
+        {
+          "n": 1,
+          "status": "UNVERIFIED"
+        },
+        {
+          "n": 2,
+          "status": "UNVERIFIED"
+        },
+        {
+          "n": 3,
+          "status": "UNVERIFIED"
+        },
+        {
+          "n": 4,
+          "status": "UNVERIFIED"
+        }
+      ]
+    },
+    "XQ06": {
+      "source": "X.Q1",
+      "target": "P.T1",
+      "level": "L2",
+      "status_note": "Нет audit-тестов проверки install manifest, legacy VPN, source и package uninstall; отдельные fake-context пробы прошли.",
+      "values": [
+        {
+          "n": 1,
+          "status": "UNVERIFIED"
+        },
+        {
+          "n": 2,
+          "status": "UNVERIFIED"
+        },
+        {
+          "n": 3,
+          "status": "UNVERIFIED"
+        },
+        {
+          "n": 4,
+          "status": "UNVERIFIED"
+        },
+        {
+          "n": 5,
+          "status": "UNVERIFIED"
+        },
+        {
+          "n": 6,
+          "status": "UNVERIFIED"
+        }
+      ]
+    },
+    "XQ07": {
+      "source": "X.Q2",
+      "target": "P.T1",
+      "level": "L2",
+      "status_note": "Нет постоянных тестов parity и восстановления; сравнение нестабильной A и TLS-отличия прошло прямые пробы.",
+      "values": [
+        {
+          "n": 1,
+          "status": "UNVERIFIED"
+        },
+        {
+          "n": 2,
+          "status": "UNVERIFIED"
+        },
+        {
+          "n": 3,
+          "status": "UNVERIFIED"
+        },
+        {
+          "n": 4,
+          "status": "UNVERIFIED"
+        }
+      ]
+    },
+    "XQ08": {
+      "source": "X.Q3",
+      "target": "P.T1",
+      "level": "L2",
+      "status_note": "Нет тестов полного host run и L2 стенда; прямая проверка resolved_unsupported вернула SKIP.",
+      "values": [
+        {
+          "n": 1,
+          "status": "UNVERIFIED"
+        },
+        {
+          "n": 2,
+          "status": "UNVERIFIED"
+        },
+        {
+          "n": 3,
+          "status": "UNVERIFIED"
+        },
+        {
+          "n": 4,
+          "status": "UNVERIFIED"
+        },
+        {
+          "n": 5,
+          "status": "UNVERIFIED"
+        }
+      ]
+    },
+    "XQ09": {
+      "source": "X.Q4",
+      "target": "P.T1",
+      "level": "L2",
+      "status_note": "Нет тестов A01–A20 и матрицы исполнителя; доказательств стенда нет.",
+      "values": [
+        {
+          "n": 1,
+          "status": "UNVERIFIED"
+        },
+        {
+          "n": 2,
+          "status": "UNVERIFIED"
+        },
+        {
+          "n": 3,
+          "status": "UNVERIFIED"
+        },
+        {
+          "n": 4,
+          "status": "UNVERIFIED"
+        },
+        {
+          "n": 5,
+          "status": "UNVERIFIED"
+        }
+      ]
+    },
+    "XQ10": {
+      "source": "X.Q5",
+      "target": "P.T1",
+      "level": "L1",
+      "status_note": "Нет permanent property tests. Пять граничных серий summarize прошли прямые пробы, 10 000 случаев и seed не зафиксированы.",
+      "values": [
+        {
+          "n": 1,
+          "status": "UNVERIFIED"
+        },
+        {
+          "n": 2,
+          "status": "UNVERIFIED"
+        },
+        {
+          "n": 3,
+          "status": "UNVERIFIED"
+        },
+        {
+          "n": 4,
+          "status": "UNVERIFIED"
+        },
+        {
+          "n": 5,
+          "status": "UNVERIFIED"
+        }
+      ]
+    },
+    "PD01": {
+      "source": "P.D1",
+      "target": "P.T1",
+      "level": "L0",
+      "status_note": "В точном target checkout отсутствуют новые документы решений и audit_fin_docs.rs; копии документов в рабочей копии прошли структурные пробы.",
+      "values": [
+        {
+          "n": 1,
+          "status": "BLOCKED_ROLE1_DELIVERY"
+        },
+        {
+          "n": 2,
+          "status": "BLOCKED_ROLE1_DELIVERY"
+        },
+        {
+          "n": 3,
+          "status": "BLOCKED_ROLE1_DELIVERY"
+        },
+        {
+          "n": 4,
+          "status": "BLOCKED_ROLE1_DELIVERY"
+        },
+        {
+          "n": 5,
+          "status": "BLOCKED_ROLE1_DELIVERY"
+        }
+      ]
+    },
+    "PT01": {
+      "source": "P.T1",
+      "target": "FIN.Z",
+      "level": "L0",
+      "status_note": "В target checkout отсутствуют accept.py, fixtures/fin/accept и audit_fin_docs.rs; синтетические проверки модели в рабочей копии прошли, реальный --check blocked.",
+      "values": [
+        {
+          "n": 1,
+          "status": "BLOCKED_ROLE1_DELIVERY"
+        },
+        {
+          "n": 2,
+          "status": "BLOCKED_ROLE1_DELIVERY"
+        },
+        {
+          "n": 3,
+          "status": "BLOCKED_ROLE1_DELIVERY"
+        },
+        {
+          "n": 4,
+          "status": "BLOCKED_ROLE1_DELIVERY"
+        },
+        {
+          "n": 5,
+          "status": "BLOCKED_ROLE1_DELIVERY"
+        },
+        {
+          "n": 6,
+          "status": "BLOCKED_ROLE1_DELIVERY"
+        },
+        {
+          "n": 7,
+          "status": "BLOCKED_ROLE1_DELIVERY"
+        },
+        {
+          "n": 8,
+          "status": "BLOCKED_ROLE1_DELIVERY"
+        },
+        {
+          "n": 9,
+          "status": "BLOCKED_ROLE1_DELIVERY"
+        }
+      ]
+    },
+    "ZZ01": {
+      "source": "C.E1",
+      "target": "FIN.Z",
+      "level": "L2",
+      "status_note": "Нет fin_stand.py/audit_fin_e2e.rs; путь пользователя и счётчик прямых пакетов не проверялись.",
+      "values": [
+        {
+          "n": 1,
+          "status": "BLOCKED_ROLE1_DELIVERY"
+        },
+        {
+          "n": 2,
+          "status": "BLOCKED_ROLE1_DELIVERY"
+        },
+        {
+          "n": 3,
+          "status": "BLOCKED_ROLE1_DELIVERY"
+        },
+        {
+          "n": 4,
+          "status": "BLOCKED_ROLE1_DELIVERY"
+        },
+        {
+          "n": 5,
+          "status": "BLOCKED_ROLE1_DELIVERY"
+        },
+        {
+          "n": 6,
+          "status": "BLOCKED_ROLE1_DELIVERY"
+        },
+        {
+          "n": 7,
+          "status": "BLOCKED_ROLE1_DELIVERY"
+        },
+        {
+          "n": 8,
+          "status": "BLOCKED_ROLE1_DELIVERY"
+        }
+      ]
+    },
+    "ZZ02": {
+      "source": "C.O1",
+      "target": "FIN.Z",
+      "level": "L2",
+      "status_note": "Gate дал EXIT 101; итоговое число тестов не зафиксировано. Стенд отсутствует, strict lint дал EXIT 1.",
+      "values": [
+        {
+          "n": 1,
+          "status": "BLOCKED_ENV"
+        },
+        {
+          "n": 2,
+          "status": "UNVERIFIED"
+        },
+        {
+          "n": 3,
+          "status": "BLOCKED_ROLE1_DELIVERY"
+        },
+        {
+          "n": 4,
+          "status": "FAIL"
+        }
+      ]
+    }
+  },
+  "status_counts": {
+    "PASS": 0,
+    "FAIL": 1,
+    "UNVERIFIED": 49,
+    "BLOCKED_ROLE1_DELIVERY": 23,
+    "BLOCKED_ENV": 1
+  },
+  "vertex_result": {
+    "FIN.Z": {
+      "status": "BLOCKED",
+      "reasons": [
+        "74 selected values have no permanent marked checks",
+        "strict test_lint exits 1",
+        "check_audit exits 101",
+        "fin_stand.py and audit_fin_e2e.rs are absent",
+        "accept.py --check returns blocked",
+        "prior P1 RW02 remains open"
+      ]
+    }
+  },
+  "direct_probes": {
+    "hostq": {
+      "passed": 19,
+      "failed": 0,
+      "scope": [
+        "safe_check rejects URL/uppercase details",
+        "record emits required evidence fields and omits output streams",
+        "status precedence PASS/UNKNOWN/FAIL/SKIP",
+        "A/B/A stability and TLS stage",
+        "pilot noise/margin/b_differs/min_probes/unstable",
+        "empty source UNKNOWN",
+        "resolved_unsupported SKIP",
+        "manual n and closed stdin",
+        "package uninstall UNKNOWN when not requested",
+        "install plan retains rollback"
+      ]
+    },
+    "docs_and_acceptance_model": {
+      "passed": 18,
+      "failed": 0,
+      "scope": [
+        "PD01 document structure/content",
+        "PT01 synthetic verdict/blocker/task states",
+        "I18-TRACE W01–W11",
+        "X-RUNTIME-REPORT rows",
+        "--check read-only behavior"
+      ]
+    },
+    "counted_as_edge_pass": false
+  },
+  "interpretations": [
+    "XQ03.4 states PASS or UNKNOWN for one value; per exact-result rule this needs two scenarios and separate assertions. Neither outcome is accepted as a generic alternative.",
+    "The target project checkout is c543ca0; the writable worktree is 60b3fbb. Direct probes from the latter are informative only and are not evidence for the target tree."
+  ],
+  "environment_limits": [
+    {
+      "reason": "unshare failed before the stand with newuidmap: Could not set caps.",
+      "effects": [
+        "XQ03.4",
+        "XQ03.5",
+        "XQ04.3",
+        "XQ04.4",
+        "ZZ01.1-ZZ01.8",
+        "ZZ02.3"
+      ]
+    },
+    {
+      "reason": "The full audit gate had 18 test failures, including EPERM on AF_UNIX binding, UnsafeFilesystem in profile-store fault fixtures, and timing failures.",
+      "effects": [
+        "ZZ02.1"
+      ]
+    }
+  ],
+  "artifacts_missing_target": [
+    "docs/design/cm-network-manager/ADR-APP-ADAPTER.md",
+    "docs/design/cm-network-manager/ADR-FINGERPRINT.md",
+    "docs/design/cm-network-manager/I15R-CATALOG.md",
+    "docs/design/cm-network-manager/I18-ACCEPTANCE.md",
+    "docs/design/cm-network-manager/I18-TRACE.md",
+    "docs/design/cm-network-manager/RELEASE-SCOPE.md",
+    "docs/design/cm-network-manager/X-RUNTIME-REPORT.md",
+    "docs/design/cm-network-manager/tools/accept.py",
+    "tests/audit_fin_docs.rs",
+    "tests/audit_fin_e2e.rs",
+    "tests/audit_fin_hostq.rs",
+    "tests/check_fin_tests.sh",
+    "tests/fin_stand.py",
+    "tests/fin_support/mod.rs",
+    "tests/fixtures/fin/accept/"
+  ],
+  "defects": "See defects.json; no new product defect was confirmed in this scope.",
+  "working_tree_dirty": true
+}

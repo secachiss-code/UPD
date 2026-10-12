@@ -1,0 +1,1327 @@
+{
+  "schema_version": 1,
+  "date": "2026-10-11",
+  "directions": [
+    {
+      "id": "R",
+      "title": "Доводка пакетов A и B",
+      "goal": "Закрыть дефекты ревью и заново принять все 55 рёбер AB с проверкой каждого значения."
+    },
+    {
+      "id": "C",
+      "title": "Интерфейс и наблюдаемость",
+      "goal": "Пользователь заводит туннели и приложения командами, видит их настоящее состояние по осям и управляет ими из TUI и апплета."
+    },
+    {
+      "id": "I",
+      "title": "Установка и возврат",
+      "goal": "Проверка готовности машины, туннель хоста из хранилища, гарантированное снятие всего, что поставил CM."
+    },
+    {
+      "id": "X",
+      "title": "Очередь хоста",
+      "goal": "Проверки на настоящей машине — одной командой каждая, с планом, защитой от потери сети и откатом."
+    },
+    {
+      "id": "P",
+      "title": "Приёмка",
+      "goal": "Решения по открытым вопросам записаны; итог «готово или нет» выводится из evidence программой, а не оценкой."
+    },
+    {
+      "id": "Z",
+      "title": "Итог",
+      "goal": "Сквозной путь пользователя на стенде и evidence пакета."
+    }
+  ],
+  "vertices": [
+    {
+      "id": "R.P1",
+      "direction": "R",
+      "title": "Отклонять политику туннеля, которая не является объектом JSON.",
+      "size": "S",
+      "level": "L1",
+      "deps": [],
+      "files": [
+        "src/net/policy.rs"
+      ],
+      "covers": [],
+      "external": [],
+      "spec": "Дефект D01: `parse(b\"[]\")` возвращает политику по умолчанию. Причина — serde разбирает структуру и из массива.\n\n```rust\npub fn parse(bytes: &[u8]) -> Result<TunnelPolicy, NetError>;\n```\n\nПорядок:\n1. `bytes.len() > MAX_POLICY_BYTES` → `NetError::Unsupported`;\n2. разбор в `serde_json::Value`; ошибка или не объект → `NetError::Unsupported`;\n3. разбор объекта в `TunnelPolicy` (как сейчас: неизвестное поле — отказ, отсутствующее — значение по умолчанию).\n\nСигнатура и остальные типы файла не меняются."
+    },
+    {
+      "id": "R.W1",
+      "direction": "R",
+      "title": "Давать каждой автоматической остановке туннеля свой ключ операции.",
+      "size": "S",
+      "level": "L1",
+      "deps": [],
+      "files": [
+        "src/controller/watch.rs"
+      ],
+      "covers": [
+        "I12.T05.a"
+      ],
+      "external": [],
+      "spec": "Дефект: `stop_instance` вызывает `workers.stop` и `net_ops::revert` с постоянными ключами `watch-stop` и `watch-revert`. Вторая автоматическая остановка того же экземпляра находит в журнале завершённую операцию с этим ключом и возвращает её сохранённый ответ: ядро и сеть остаются.\n\n```rust\n/// \"auto-<kind>-<now_ms>-<seq>\"; kind — \"stop\" или \"revert\".\nfn auto_txn(kind: &str, now_ms: i64, seq: u32) -> String;\n```\n\n- В `Watch` — поле `seq: u32`; перед каждым использованием увеличивается (`wrapping_add(1)`).\n- В `Watch` — поле `proc_root: PathBuf` (по умолчанию `/proc`) и конструктор `Watch::with_proc_root(PathBuf)`: подсчёт держателей читает его вместо постоянного `/proc`. Нужен, чтобы роль 2 проверяла срок жизни на дереве-фикстуре.\n- Ключ и дайджест операции — одна и та же строка `auto_txn(...)`. Отрицательное `now_ms` заменяется нулём. Длина при любых значениях ≤ 64, алфавит `a-z0-9-` (правило `valid_id` в `codec.rs`).\n- Время операции, которое уходит в журнал, — `now_ms / 1000` (сейчас передаётся 0).\n- Порядок в `stop_instance` не меняется: сначала ядро, потом сеть.\n- Ядро не остановилось (ошибка, кроме `NotRunning`) → сеть **не снимается**. Состояние экземпляра — `Blocked`, `empty_since_ms = None`: следующая попытка — через новый срок ожидания.\n- Обе операции прошли → как сейчас: `Stopped`, признаки сброшены."
+    },
+    {
+      "id": "R.W2",
+      "direction": "R",
+      "title": "Повторять перезапуск ядра по расписанию, пока не исчерпан лимит.",
+      "size": "M",
+      "level": "L1",
+      "deps": [],
+      "files": [
+        "src/controller/watch.rs",
+        "src/controller/core_ops.rs"
+      ],
+      "covers": [
+        "I09.T03.a"
+      ],
+      "external": [],
+      "spec": "Дефект: `Workers::restart` убирает запись ядра до запуска. Если запуск не удался, экземпляра больше нет в `workers.running()`, сторож к нему не возвращается: вторая и следующие попытки не выполняются, состояние не становится `failed`.\n\nИзменения:\n- Шаг «ядра» в `Watch::tick` обходит объединение `workers.running()` и экземпляров, у которых `restart_at_ms` задан. Без повторов, в порядке сортировки по `(uid, instance)`.\n- Срок перезапуска наступил:\n  - `workers.restart` → `Ok`: `restart_at_ms = None`. Состояние меняет следующий проход, когда ядро ответит (`Blocked` + `CoreReady` → `Up`).\n  - `Err`: это новый отказ. `failure::decide(Failure::CoreDown, …)`:\n    - `RestartCore { delay_ms }` → `restart_at_ms = now_ms + delay_ms`;\n    - `GiveUp` → состояние `Failed`, `restart_at_ms = None`.\n- У экземпляра нет записи ядра и нет назначенного перезапуска → шаг его пропускает.\n- `Workers::restart` при ошибке запись не восстанавливает (как сейчас). Сеть при этом не трогается: TUN постоянный, трафик приложения в нём пропадает.\n- Команда клиента `worker_start` для экземпляра в `Failed` работает как сейчас и через `note_start` обнуляет счётчики.\n\nРасписание при проходах каждые 2000 мс и ядре, которое не запускается (задержки `RESTART_DELAYS_MS`):\n\n| Проход, мс | Событие | Следующая попытка, мс |\n|---|---|---|\n| 0 | ядро не отвечает: `Up` → `Blocked`, restarts = 1 | 0 |\n| 2000 | попытка 1 не удалась, restarts = 2 | 3000 |\n| 4000 | попытка 2 не удалась, restarts = 3 | 9000 |\n| 10000 | попытка 3 не удалась, restarts = 4 | 40000 |\n| 40000 | попытка 4 не удалась, restarts = 5 | 160000 |\n| 160000 | попытка 5 не удалась → `Failed` | — |\n\nОкно `WINDOW_MS` и лимиты в `failure.rs` не меняются."
+    },
+    {
+      "id": "R.W3",
+      "direction": "R",
+      "title": "Сверять и чинить сеть туннеля хоста на каждом проходе сторожа.",
+      "size": "M",
+      "level": "L1",
+      "deps": [],
+      "files": [
+        "src/net/host_audit.rs",
+        "src/net/mod.rs",
+        "src/controller/watch.rs",
+        "src/controller/boot.rs"
+      ],
+      "covers": [
+        "I07.T04.a",
+        "I09.T04.a"
+      ],
+      "external": [],
+      "spec": "Сейчас сторож следит только за сменой внешних интерфейсов. Если правило 2000 или 2001, приёмник или таблица `ip cm_host` пропали, хост в режиме туннеля выходит напрямую, и этого никто не замечает.\n\n```rust\n#[derive(Clone, Debug, PartialEq, Eq)]\npub enum HostDrift {\n    MissingSink,\n    MissingSinkRoute { v6: bool },\n    MissingTun,\n    MissingTunRoute,\n    MissingRule { v6: bool, priority: u32 },\n    MissingFirewall,\n}\n\npub fn host_audit(\n    host: &HostNet,\n    uplinks: &[Uplink],\n    observed: &Observed,          // links и routes для таблиц 90 и 91, правила IPv4\n    rules6: &[ObservedRule],      // `ip -j -6 rule`\n    routes6_sink: &[ObservedRoute], // `ip -j -6 route show table 91`\n    firewall_present: bool,       // `nft list table ip cm_host` завершился успешно\n) -> Vec<HostDrift>;\n\npub fn host_repair_commands(host: &HostNet, uplinks: &[Uplink], drift: &[HostDrift]) -> Vec<Cmd>;\n```\n\nОжидаемое состояние — ровно то, что ставит `host_create_commands`:\n- интерфейсы `cmsink`, `cmtunh`;\n- таблица 91: `default dev cmsink` (IPv4 и IPv6); таблица 90: `default dev cmtunh`;\n- правила IPv4: `1900+k` и `1950+j` → `main`, `1990` → `main`, `2000` → `90`, `2001` → `91`;\n- правила IPv6: `1900+k` → `main`, `1990` → `main`, `2001` → `91`;\n- таблица `ip cm_host`.\n\nПравило считается найденным по паре (приоритет, таблица). Порядок элементов результата `host_audit` — порядок перечисления выше.\n\n`host_repair_commands` — подпоследовательность `host_create_commands` в её же порядке, только для недостающего; `route add` заменяется на `route replace`; последней идёт команда `host_firewall_commands(Some(host))`, если есть `MissingFirewall`. Приёмник и его правило чинятся раньше туннеля — как при создании.\n\nСторож (`Watch::tick`), шаг «внешние интерфейсы», при `host.json` с режимом `tunnel`:\n1. смена внешних интерфейсов — как сейчас;\n2. наблюдение: `query::observe(query, &[90, 91])` и три запроса из сигнатуры;\n3. `host_audit`; расхождений нет → конец;\n4. команды починки выполняются по порядку; первая ошибка прерывает починку до следующего прохода;\n5. был `MissingTun` и починка прошла → ядру `host` назначается перезапуск (`restart_at_ms = now_ms`): старое ядро держит удалённое устройство.\n\nСверка при старте (`boot::reconcile_host`), когда `cmtunh` есть: те же шаги 2–4.\n\nОшибка любого запроса наблюдения → шаг пропускается (как сейчас при ошибке `observe_uplinks`). Экземпляры приложений этим шагом не затрагиваются.\n\nВесь шаг хоста в стороже (смена внешних интерфейсов, сверка, починка) идёт под блокировкой экземпляра `host` его владельца (`workers.try_begin`). Экземпляр занят операцией клиента (`host_apply`, `host_revert`) → шаг пропускается целиком. Без этого сторож восстанавливает правила, которые в этот момент снимает `cm host set off`."
+    },
+    {
+      "id": "R.T1",
+      "direction": "R",
+      "title": "Снимать туннель по фактическим поколениям ядра и сети.",
+      "size": "M",
+      "level": "L2",
+      "deps": [
+        "C.O1"
+      ],
+      "files": [
+        "src/app/tunnel.rs"
+      ],
+      "covers": [
+        "I12.T02.a"
+      ],
+      "external": [],
+      "spec": "Дефект: `cm tunnel down` передаёт в `net_revert` поколение ядра. Сеть записана с поколением первого `up`. После `up` → `down --keep-net` → `up` поколения расходятся, `net_revert` отвечает `generation_mismatch`, сеть остаётся. Если ядра нет, подставляется поколение 1.\n\n`down ID [--keep-net] [--force]`:\n1. хранилище → имя экземпляра (как сейчас); нет → `[unknown_tunnel]`, код 2;\n2. `overview` (вершина `C.O1`) → строка экземпляра. Контроллер недоступен → код 4;\n3. строки нет либо оба поколения пусты → код 0, действий нет;\n4. `holders > 0` и нет `--force` → `[in_use]`, код 5;\n5. `worker_generation` задано → `worker_stop` с ним; ответы `ok` и `not_running` — успех, иной → `[<код>]`, код 3;\n6. нет `--keep-net` и `net_generation` задано → `net_revert` с ним; правила те же.\n\n`up ID …`, уточнения к нынешнему порядку:\n- состояние `starting`, `degraded` или `blocked` → `[busy]`, код 3: экземпляр восстанавливает сторож;\n- состояние `stopped` или `failed`, а `worker_generation` в `overview` задано → сначала `worker_stop` с ним (`ok` и `not_running` — успех);\n- новое поколение ядра = max(`worker_generation`, `net_generation`, 0) + 1;\n- ответ `conflict` на `net_apply` — успех, только если в `overview` у экземпляра есть `net_generation`; иначе `[conflict]`, код 3.\n\nОстальное в `up`, `status`, `verify` не меняется (формат файла региона — вершина `C.M1`)."
+    },
+    {
+      "id": "R.A9",
+      "direction": "R",
+      "title": "Реализовать `cm app run` с проверками упаковки, региона, чужого экземпляра и передачи управления.",
+      "size": "L",
+      "level": "L2",
+      "deps": [],
+      "files": [
+        "src/app/cli.rs",
+        "src/i18n_table.rs"
+      ],
+      "covers": [
+        "I11.T04.a",
+        "I13.T04.a",
+        "I14.T03.a"
+      ],
+      "external": [],
+      "spec": "Вершина `I11.A9` пакета AB не выполнена: в `src/app/cli.rs` добавлено только поле `session: None`. Модули, на которые она опирается, готовы: `app::assign`, `app::packaging`, `app::instance`, `app::env`, `env::private`, `env::apply::check_preset`.\n\nСпецификация — прежняя, дословно:\n\n```\ncm app run [--allow-running] [--allow-missing-locale] [--data existing|isolated|fresh] [--ipc shared|private] ID\ncm app run ЭКЗЕМПЛЯР -- ПРОГРАММА [АРГУМЕНТЫ]\n```\n\n**Запуск по `ID`**, по порядку:\n1. Хранилище → `assign::application` (вместо нынешнего разбора назначения в `stored_launch`). Ошибка → код 2.\n2. `spec::check` — как сейчас.\n3. Упаковка: `packaging::detect` и `packaging::support`. `Unsupported` → `[<reason_token>]`, код 2. `Partial` → по строке `[<limit_token>]` в `stderr`, запуск продолжается.\n4. Регион: `env::check_preset(preset, \"/usr/share/zoneinfo\", <вывод locale -a>)`. `ZoneMissing` → `[zone_missing]`, код 2. `LocaleNotInstalled` без `--allow-missing-locale` → `[locale_not_installed]`, код 2. Остальные замечания запуск не останавливают.\n5. `app_list{экземпляр}` → имя netns и список процессов «до».\n6. Чужой экземпляр: `instance::elsewhere(scan(\"/proc\"), euid, <канонический путь программы>, netns_of_path(\"/run/netns/<netns>\"))` не пуст и нет `--allow-running` → `[running_elsewhere]`, код 5. Второй запуск такой программы обычно передаёт запрос первому экземпляру, а тот работает вне туннеля.\n7. Сессия: имя `s` + 12 шестнадцатеричных цифр из `/dev/urandom`. `private::prepare` для каталогов данных (если `--data` не `existing`) и `prepare_runtime` (если `--ipc private`). Файл `config/session-<имя>.json` из `app::env::session_file` (0600, временный файл и `rename`).\n8. `worker_status` → поколение; `app_launch{…, session}`.\n9. Передача управления: через 2000 мс — `app_list` «после». Если запущенный процесс уже завершился и среди процессов «после» нет ни одного, которого не было «до» → `[handed_off]`, код 6: программа отдала запрос кому-то вне сети туннеля.\n10. Иначе печать pid, код 0.\n\n**Запуск с `--`**: шаги 3, 5, 8, 9, 10; сессии нет, чужой экземпляр не ищется.\n\nКоды выхода: 0; 2 — использование, описание, упаковка, регион; 3 — отказ контроллера; 4 — контроллер недоступен; 5 — программа уже работает вне туннеля; 6 — управление передано.\n\nПоиск чужого экземпляра выполняет клиент, а не контроллер: это защита пользователя от собственной ошибки, а не граница прав. По пути исполняемого файла он не различает программы на общем интерпретаторе — для них есть `--allow-running`.\n\nДополнения:\n- путь сокета — `client::socket_path()` (как в `cm tunnel`), а не разбор переменной в этом файле;\n- упаковка проверяется раньше любого обращения к контроллеру: отказ по упаковке даёт код 2 и при недоступном контроллере;\n- сообщение справки `cm app` дополняется новыми флагами;\n- уборка: перед созданием файла сессии, если `app_list` показал пустой список процессов, удаляются все файлы `config/session-*.json` этого экземпляра (живых сессий нет). Каталоги данных сессий команда не удаляет никогда."
+    },
+    {
+      "id": "R.Z",
+      "direction": "R",
+      "title": "Заново принять пакеты A и B: проверка у каждого значения каждого ребра.",
+      "size": "L",
+      "level": "L2",
+      "deps": [
+        "R.P1",
+        "R.W1",
+        "R.W2",
+        "R.W3",
+        "R.T1",
+        "R.A9"
+      ],
+      "files": [
+        "tests/audit_ab_*.rs",
+        "tests/ab_stand.py",
+        "tests/fixtures/ab/blocked.json",
+        "docs/design/cm-network-manager/fin-evidence/<дата>/ab.json"
+      ],
+      "covers": [
+        "I07.T05.a",
+        "I08.T05.a",
+        "I09.T05.a",
+        "I10.T05.a",
+        "I11.T05.a",
+        "I12.T05.a",
+        "I13.T02.a",
+        "I14.T04.a",
+        "I16.T05.a"
+      ],
+      "external": [],
+      "spec": "Вершина роли 2, кода продукта нет. Ревью показало: стенд и часть тестов AB проверяют не значения рёбер, а константы и заведомо истинные условия. Работа — привести проверки всех 55 рёбер `AB-DAG.json` к правилам раздела «Рамки прохождения» и пройти `tools/test_lint.py --dags AB`."
+    },
+    {
+      "id": "I.H1",
+      "direction": "I",
+      "title": "Показать без изменений системы, можно ли на этой машине включить туннель хоста.",
+      "size": "S",
+      "level": "L1",
+      "deps": [],
+      "files": [
+        "src/net/cli.rs",
+        "src/net/host.rs",
+        "src/i18n_table.rs"
+      ],
+      "covers": [
+        "I07.T01.b"
+      ],
+      "external": [],
+      "spec": "```\ncm host check [--json]\n```\n\nТолько чтение, без контроллера и без привилегий: запросы через `SystemQuery`, файлы `/run` и `/proc`.\n\n```rust\n#[derive(Clone, Copy, Debug, PartialEq, Eq)]\npub enum Verdict { Ok, Warn, Block }\n#[derive(Clone, Debug, PartialEq, Eq)]\npub struct CheckLine { pub name: &'static str, pub verdict: Verdict, pub token: Option<&'static str> }\n\npub struct HostFacts {\n    pub nft: bool, pub links: Vec<String>, pub rules: Vec<ObservedRule>, pub integration: Integration,\n    pub uplinks: usize, pub legacy_unit_active: bool, pub controller_socket: bool, pub host_mode: String,\n    pub rp_filter_all: Option<u8>, pub rp_filter_default: Option<u8>,\n}\npub fn check_lines(facts: &HostFacts) -> Vec<CheckLine>;   // чистая функция, порядок строк фиксирован\n```\n\n| № | name | Условие | Результат |\n|---|---|---|---|\n| 1 | `nft` | команда `nft` не найдена | Block `nft_missing` |\n| 2 | `legacy_vpn` | есть интерфейс `cm-vpn` или активна служба VPN хоста | Block `legacy_vpn_active` |\n| 3 | `foreign_autoroute` | есть правило с таблицей `2022` | Block `foreign_autoroute` |\n| 4 | `resolved` | `integration.resolved` | Block `resolved_unsupported` |\n| 5 | `firewalld` | `integration.firewalld` | Warn `firewalld_unverified` |\n| 6 | `network_manager` | `integration.network_manager` | Warn `network_manager_unverified` |\n| 7 | `uplinks` | 0 → Block `no_uplink`; больше `MAX_UPLINKS` → Block `too_many_uplinks` | |\n| 8 | `controller` | сокета контроллера нет | Block `controller_unavailable` |\n| 9 | `stale_net` | режим хоста `off`, а `cmtunh` или `cmsink` существует | Block `stale_host_net` |\n| 10 | `rp_filter` | всегда Ok; значение печатается | |\n\nСтрока без условия — `Ok` без токена. Вывод: `check=<name> result=<ok|warn|block>[ [<token>]]`, для строки 10 — ещё ` all=<n> default=<n>`. `--json` — массив объектов с теми же полями.\n\nКод выхода: 0 — нет `Block`; 1 — есть. `Warn` на код не влияет.\n\nРешение о включении по-прежнему принимает контроллер (`host::preflight`). Команда ничего не обещает сверх него: это подсказка до запроса пароля."
+    },
+    {
+      "id": "I.S1",
+      "direction": "I",
+      "title": "Включать туннель хоста из хранилища, без файла конфига.",
+      "size": "S",
+      "level": "L2",
+      "deps": [
+        "C.E1"
+      ],
+      "files": [
+        "src/net/cli.rs",
+        "src/app/assign.rs",
+        "src/i18n_table.rs"
+      ],
+      "covers": [
+        "I07.T02.a"
+      ],
+      "external": [],
+      "spec": "```\ncm host set tunnel (--config ФАЙЛ | --stored)\ncm host set proxy --config ФАЙЛ\ncm host set off\n```\n\n```rust\n// src/app/assign.rs\n#[derive(Clone, Debug, PartialEq, Eq)]\npub struct ResolvedHost { pub connection_profile_id: Id, pub source_id: Id, pub selection: NodeSelection, pub dns: DnsPolicy }\npub fn host(snapshot: &GraphSnapshot) -> Result<ResolvedHost, AssignError>;\n```\n\n- `assign::host`: политика хоста из снимка → её `connection_profile_id` → профиль подключения → источник. Политики нет или профиль в ней не задан → `UnknownProfile`; профиля нет в снимке → `UnknownProfile`; источника нет → `UnknownSource`. Политику заводит `cm host define` (вершина `C.E1`).\n- `--stored`: документ строится `document_from_store` с теми же аргументами, что в `cm tunnel up`; ключ `dns` удаляется; документ пишется как поколение экземпляра `host` тем же путём, каким сейчас копируется файл `--config`. Ошибка `assign::host` → `[unknown_profile]` или `[unknown_source]`, код 2.\n- Для `tunnel` нужен ровно один из двух источников конфига; иначе — справка и код 2. `--stored` с `proxy` — код 2.\n- Поле `mode` политики хоста в хранилище команда не меняет: действующий режим — в `host.json` контроллера.\n- Переходы, откат и коды выхода `cm host set` не меняются."
+    },
+    {
+      "id": "I.T1",
+      "direction": "I",
+      "title": "Снимать всё, что поставил CM, одной командой и при удалении пакета.",
+      "size": "M",
+      "level": "L2",
+      "deps": [
+        "R.W3"
+      ],
+      "files": [
+        "src/controller/teardown.rs",
+        "src/controller/mod.rs",
+        "src/controller/protocol.rs",
+        "src/controller/dispatch.rs",
+        "src/controller/server.rs",
+        "src/main.rs"
+      ],
+      "covers": [
+        "I09.T02.a"
+      ],
+      "external": [],
+      "spec": "Сейчас `cm uninstall` выключает службу контроллера. Ядра останавливаются, а сети приложений, правила 1990–2001, приёмник и таблицы nftables остаются. При включённом туннеле хоста машина после удаления остаётся без сети до перезагрузки.\n\n```\ncm controller teardown [--offline] [--base КАТАЛОГ]\n```\n\n```rust\n// protocol.rs\nOp::Teardown                                   // класс Host, instance() → None\nReplyData::Teardown { cores: u32, nets: u32, host: bool, errors: u32 }\n\n// teardown.rs\n#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize)]\npub struct TeardownReport { pub cores: u32, pub nets: u32, pub host: bool, pub errors: u32 }\npub fn teardown_all(base: &Path, workers: &Workers, nets: &Arc<NetCtx>) -> TeardownReport;\n```\n\n`teardown_all`, по порядку; каждая команда выполняется, даже если предыдущая завершилась ошибкой (ошибки считаются в `errors`):\n1. ядра всех владельцев: остановка через `Workers` (если ядро в памяти контроллера) и по файлу pid (`kill_pidfile`); записи поколений ядер очищаются;\n2. каждая сеть приложения из реестра аренд: команды снятия (те же, что у `net_revert`), аренда освобождается, каталог `etc_root/cm-<i>` удаляется, запись `net:<экземпляр>` очищается;\n3. хост:\n   - есть `host.json` → `host_firewall_commands(None)`, `host_destroy_commands` с внешними интерфейсами из файла, файл удаляется, запись `net:host` очищается; `host = true`;\n   - файла нет, но наблюдаются `cmtunh`, `cmsink` или правила схемы CM → те же команды с внешними интерфейсами из `observe_uplinks`, плюс `ip rule del priority N` (и `-6`) для каждого наблюдаемого правила из набора ниже; `host = true`;\n4. таблица `inet cm` заменяется пустой (`firewall::replace_commands(&[])`).\n\nПравила схемы CM для шага 3: приоритет в `1900..=1907` или `1950..=1981` или равен `1990` с таблицей `main`; `2000` с таблицей `90`; `2001` с таблицей `91`. Другие правила не трогаются.\n\nПовторный вызов на чистой системе: все счётчики 0, `host = false`, `errors = 0`.\n\n**Кадр `teardown`:** принимается только от uid 0 сокета, иначе `denied`; uid проверяется раньше обращения к авторизатору. Выполняется под мьютексом сторожа: проход сторожа в это время не идёт. Экземпляр, занятый операцией клиента, ожидается до 5 с; не освободился — его шаги выполняются всё равно, а `errors` увеличивается на 1 (повторный вызов доведёт снятие). После кадра контроллер продолжает работать с пустым состоянием.\n\n**Команда:**\n- без `--offline`: кадр `teardown` контроллеру; печатает отчёт одной строкой JSON; коды 0, 3 (отказ), 4 (контроллер недоступен);\n- `--offline`: `teardown_all` в этом процессе, без контроллера; исполнитель команд, источник наблюдений и каталог аренд создаются так же, как в `cm controller reconcile --boot`. Вне тестового режима требует uid 0 и неактивную службу `cm-controller.service` (иначе `[controller_running]`, код 3); `--base` допустим только в тестовом режиме — правила те же, что у `reconcile --boot`.\n\n**`cm uninstall`** (оба режима), до выключения служб:\n1. если сокет контроллера есть — `cm controller teardown`; неудача не прерывает удаление;\n2. выключение служб — как сейчас;\n3. `teardown_all` в этом процессе (то же, что `--offline`) — всегда.\n\nКоманды сети выполняются тем же исполнителем, что у контроллера. На хосте разработки команда не запускается: проверка — только в пространствах имён."
+    },
+    {
+      "id": "C.O1",
+      "direction": "C",
+      "title": "Отдавать клиенту одним ответом состояние хоста и всех его туннелей.",
+      "size": "M",
+      "level": "L1",
+      "deps": [],
+      "files": [
+        "src/controller/protocol.rs",
+        "src/controller/dispatch.rs",
+        "src/controller/core_ops.rs",
+        "src/controller/watch.rs"
+      ],
+      "covers": [
+        "I17.T01.a"
+      ],
+      "external": [],
+      "spec": "Сейчас клиент может спросить состояние только экземпляра с известным именем. Списка нет, поколения сети не видно.\n\n```rust\n// protocol.rs\nOp::Overview                                   // класс Status, instance() → None\nReplyData::Overview { host: HostRow, tunnels: Vec<TunnelRow> }\n\n#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]\n#[serde(deny_unknown_fields)]\npub struct HostRow {\n    pub mode: String,                 // off | proxy | tunnel\n    pub generation: Option<u64>,\n    pub uplinks: Vec<String>,\n    pub state: String,                // как в tunnel_state; при mode off — \"stopped\"\n    pub restarts: u32,\n    pub core_pid: Option<u32>,\n}\n\n#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]\n#[serde(deny_unknown_fields)]\npub struct TunnelRow {\n    pub instance: String,\n    pub state: String,                // stopped | starting | up | degraded | blocked | failed\n    pub restarts: u32,\n    pub holders: u32,\n    pub worker_generation: Option<u64>,\n    pub net_generation: Option<u64>,\n    pub netns: Option<String>,        // \"cm-<i>\", если у экземпляра есть аренда сети\n    pub core_pid: Option<u32>,\n}\n\npub const MAX_OVERVIEW_ROWS: usize = 64;\n```\n\n- Владелец — uid сокета; чужие экземпляры в ответ не попадают.\n- Экземпляры — имена каталогов `<корень владельца>/instances`, которые проходят `InstanceId::new`, кроме `host`; по возрастанию имени; первые `MAX_OVERVIEW_ROWS`.\n- `state`, `restarts`, `holders` — из сторожа, как в `tunnel_state` (нет записи → `stopped`, 0, 0).\n- `worker_generation` — запись поколения экземпляра; `net_generation` — запись `net:<экземпляр>`.\n- `core_pid` — pid ядра, если запись ядра есть и процесс жив.\n- `host`: режим, поколение и внешние интерфейсы — как в `host_status` (чужой владелец видит `off`); `state`, `restarts`, `core_pid` — экземпляра `host` этого владельца.\n- Проверка прав — как у `worker_status`."
+    },
+    {
+      "id": "C.S1",
+      "direction": "C",
+      "title": "Держать хранилище туннелей приложений у пользователя, а не в системном каталоге.",
+      "size": "S",
+      "level": "L1",
+      "deps": [],
+      "files": [
+        "src/sources/cli.rs",
+        "src/i18n_table.rs"
+      ],
+      "covers": [
+        "I12.T01.a"
+      ],
+      "external": [],
+      "spec": "Сейчас путь хранилища один — `/var/lib/cm/profiles`, каталог с правами 0700 того, кто его создал (root). Команды `cm tunnel`, `cm app`, TUI и апплет работают от пользователя и открыть его не могут.\n\n```rust\npub fn store_root_for(euid: u32, env: &dyn Fn(&str) -> Option<String>, state_dir: &str) -> PathBuf;\npub fn store_root() -> PathBuf;                       // store_root_for с настоящими значениями\npub fn store_writes_allowed(euid: u32, system_flag: bool) -> bool;\n```\n\n`store_root_for`, первое подходящее:\n1. `CM_PROFILE_STORE` не пуст → он;\n2. `euid == 0` → `<state_dir>/profiles` (как сейчас);\n3. `XDG_DATA_HOME` не пуст → `<он>/cm/profiles`;\n4. `HOME` не пуст → `<он>/.local/share/cm/profiles`;\n5. иначе `.local/share/cm/profiles`.\n\n`store_writes_allowed`: `euid != 0` → да (пользователь пишет в своё хранилище); `euid == 0` → значение системного признака `vpn_store_source` (как сейчас).\n\nСледствия:\n- `cm source import` без `--dry-run` от пользователя пишет источник в его хранилище; `--from-legacy` остаётся только для root;\n- прежний VPN хоста (root) по-прежнему читает системное хранилище;\n- туннель хоста новой схемы (`cm host set tunnel --stored`) берёт профиль из хранилища пользователя, который его включает: ядро хоста работает под его uid.\n\nХранилище создаётся при первой записи теми же функциями (`Store::initialize`): права 0700, владелец — пользователь."
+    },
+    {
+      "id": "C.E1",
+      "direction": "C",
+      "title": "Заводить и удалять туннели, приложения, группы и профиль хоста командами.",
+      "size": "L",
+      "level": "L1",
+      "deps": [
+        "C.S1"
+      ],
+      "files": [
+        "src/profiles/edit.rs",
+        "src/profiles/mod.rs",
+        "src/app/define.rs",
+        "src/app/mod.rs",
+        "src/app/cli.rs",
+        "src/app/tunnel.rs",
+        "src/net/cli.rs",
+        "src/main.rs",
+        "src/i18n_table.rs"
+      ],
+      "covers": [
+        "I12.T01.a",
+        "I11.T01.a"
+      ],
+      "external": [],
+      "spec": "Сейчас туннель, приложение, группу и профиль подключения в хранилище создают только тесты. Команды `cm tunnel up ID` и `cm app run ID` пользователю не на чем выполнить.\n\n```\ncm group define ID --source SRC [--node УЗЕЛ] [--fake-ip]\ncm group remove ID\ncm group list\ncm app define ID --exec /ПУТЬ [--arg A]... [--cwd КАТАЛОГ] [--env ИМЯ=ЗНАЧЕНИЕ]...\n                 (--source SRC [--node УЗЕЛ] [--fake-ip] | --group GID)\n                 [--zone ПОЯС --locale ЛОКАЛЬ [--lang ТЕГ]...]\ncm app remove ID\ncm app list\ncm host define --source SRC [--node УЗЕЛ]\n```\n\nИдентификаторы. `ID` приложения или группы — 1–30 знаков `a-z0-9-`. Производные сущности:\n\n| Сущность | Идентификатор |\n|---|---|\n| туннель приложения или группы | `t-<ID>` (он же имя экземпляра контроллера) |\n| профиль подключения | `p-<ID>`; для хоста — `p-host` |\n| профиль данных | `d-<ID>` |\n| пресет окружения | `e-<ID>` |\n| политика хоста | `host-policy` |\n\n```rust\n// src/profiles/edit.rs — чистые функции: снимок → кандидат снимка\n#[derive(Clone, Copy, Debug, PartialEq, Eq)]\npub enum EditError { BadId, Exists, UnknownSource, UnknownNode, UnknownGroup, UnknownEntity, InUse, BadValue, Model }\n\npub struct LinkSpec { pub source_id: Id, pub node_id: Option<Id>, pub fake_ip: bool }\npub struct AppSpec {\n    pub id: Id, pub executable: String, pub argv: Vec<String>, pub cwd: Option<String>,\n    pub environment: Vec<(String, String)>, pub target: AppTarget,\n    pub timezone: String, pub locale: String, pub languages: Vec<String>,\n}\npub enum AppTarget { Own(LinkSpec), Group(Id) }\n\npub fn define_group(snapshot: &GraphSnapshot, id: &Id, link: &LinkSpec) -> Result<GraphSnapshot, EditError>;\npub fn define_app(snapshot: &GraphSnapshot, spec: &AppSpec) -> Result<GraphSnapshot, EditError>;\npub fn define_host(snapshot: &GraphSnapshot, link: &LinkSpec) -> Result<GraphSnapshot, EditError>;\npub fn remove_app(snapshot: &GraphSnapshot, id: &Id) -> Result<GraphSnapshot, EditError>;\npub fn remove_group(snapshot: &GraphSnapshot, id: &Id) -> Result<GraphSnapshot, EditError>;\npub fn token(error: EditError) -> &'static str;   // bad_id, exists, unknown_source, unknown_node, unknown_group, unknown_entity, in_use, bad_value, invalid_model\n```\n\nПравила:\n- Выбор узла: `--node УЗЕЛ` → `NodeSelection::Pinned` на узел с этим идентификатором, принадлежащий источнику (иначе `UnknownNode`); без флага → `NodeSelection::Policy { name: \"auto\" }` — все текущие узлы источника с автоматическим выбором ядра.\n- DNS профиля: IPv6 — `Block`; fake-ip — `Allowed` при `--fake-ip`, иначе `Forbidden`. Ядро — `Mihomo`.\n- `define_group`: группа `ID`, туннель `t-<ID>` с владельцем-группой, профиль `p-<ID>`. Одним кандидатом.\n- `define_app` с `Own`: приложение, туннель `t-<ID>` с владельцем-приложением, профиль `p-<ID>`, профиль данных `d-<ID>`, пресет `e-<ID>`. С `Group`: приложение, `d-<ID>`, `e-<ID>`; назначение — группа (нет группы → `UnknownGroup`).\n- Пресет: `--zone` и `--locale` задаются вместе; без них — пояс `UTC`, локаль `C.UTF-8`, языки пусты. Значения проверяются теми же функциями, что при запуске (`valid_zone_name`, проверки пресета); отказ → `BadValue`.\n- Описание запуска проверяется `spec::check` до записи; отказ → `BadValue`.\n- Любой из создаваемых идентификаторов уже выдавался (в том числе удалённой сущности) → `Exists`: реестр выданных идентификаторов повторного использования не допускает.\n- `define_host`: профиль `p-host` и политика `host-policy` с режимом `Off`, ссылкой на профиль, без туннеля, `autostart = false`. Повторный вызов заменяет источник и выбор узла в `p-host` (единственная команда, которая меняет существующую сущность).\n- `remove_app`: удаляет приложение и всё, что создано вместе с ним (`t-`, `p-`, `d-`, `e-`). `remove_group`: группа с приложениями → `InUse`.\n- Кандидат обязан проходить `GraphSnapshot::validate` и проверку перехода; отказ → `Model`.\n- Команда: читает снимок, строит кандидата, `Store::commit(ревизия, кандидат, [])`. Конфликт ревизии → одна повторная попытка с новым снимком.\n- `remove` перед записью спрашивает `overview`: у туннеля задано любое из двух поколений → `[in_use]`, код 5 (сначала `cm tunnel down`). Контроллер недоступен → удаление разрешено.\n\nВывод:\n- `define` и `remove` → одна строка `ok <ID>`; отказ → `[<token>]`, код 2;\n- `cm app list` → по строке `id=<ID> tunnel=<t-…> shared=<yes|no> exec=<путь>`;\n- `cm group list` → `id=<ID> tunnel=<t-…> apps=<n>`.\n\nСекретов в выводе нет: источник называется идентификатором."
+    },
+    {
+      "id": "C.M2",
+      "direction": "C",
+      "title": "Считать нагрузку процессора и память ядра по `/proc`.",
+      "size": "S",
+      "level": "L1",
+      "deps": [],
+      "files": [
+        "src/status/resources.rs",
+        "src/status.rs"
+      ],
+      "covers": [
+        "I17.T04.a"
+      ],
+      "external": [],
+      "spec": "```rust\n#[derive(Clone, Copy, Debug, PartialEq, Eq)]\npub struct Sample { pub ticks: u64, pub rss_kb: u64, pub at_ms: i64 }\n#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]\npub struct Usage { pub cpu_pct: u32, pub rss_kb: u64 }\n\npub fn parse_stat(text: &str) -> Option<u64>;                 // utime + stime\npub fn parse_statm(text: &str, page_kb: u64) -> Option<u64>;  // второе поле × page_kb\npub fn sample(proc_root: &Path, pid: u32, now_ms: i64) -> Option<Sample>;\npub fn usage(previous: &Sample, current: &Sample, ticks_per_s: u64) -> Usage;\npub fn usage_text(usage: &Usage) -> String;                   // \"cpu 3% · 41 МБ\"\n```\n\n- `parse_stat`: поля считаются после последней `)` в строке (имя процесса может содержать пробелы и скобки); `utime` и `stime` — 12-е и 13-е поля после неё.\n- `usage`: `cpu_pct = Δticks × 100 000 / (ticks_per_s × Δмс)` с округлением вниз; `Δмс ≤ 0` или счётчик уменьшился → 0. Значение может превышать 100 на многоядерной машине.\n- `usage_text`: память в мегабайтах с округлением вниз, не меньше 1.\n- Процесса нет, файл не читается, формат не тот → `None`. Трафик здесь не считается и между туннелями не суммируется."
+    },
+    {
+      "id": "C.M1",
+      "direction": "C",
+      "title": "Собирать живое состояние туннелей по четырём осям из хранилища, контроллера и проверок.",
+      "size": "L",
+      "level": "L1",
+      "deps": [
+        "C.O1",
+        "C.M2",
+        "C.E1"
+      ],
+      "files": [
+        "src/status/live.rs",
+        "src/status.rs",
+        "src/status/tunnels.rs",
+        "src/env/record.rs",
+        "src/env/mod.rs",
+        "src/app/tunnel.rs",
+        "docs/design/cm-network-manager/I17-UI-CONTRACT.md"
+      ],
+      "covers": [
+        "I17.T01.a",
+        "I17.T02.a"
+      ],
+      "external": [],
+      "spec": "```rust\n// src/env/record.rs — файл region-<экземпляр>.json\n#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]\n#[serde(deny_unknown_fields)]\npub struct RegionRecord { pub expected: Option<String>, pub generation: u64, pub decision: RegionDecision, pub at_unix_ms: i64 }\n\n// src/status/live.rs\n#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]\n#[serde(rename_all = \"snake_case\")]\npub enum ControllerState { Ok, Unavailable, Denied }\n#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]\n#[serde(rename_all = \"snake_case\")]\npub enum Action { Up, Down, Verify, Run }\n\n#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]\npub struct HostLive { pub mode: String, pub state: String, pub uplinks: Vec<String>, pub defined: bool, pub legacy_vpn: bool, pub core_pid: Option<u32>, pub usage: Option<Usage> }\n#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]\npub struct LiveRow {\n    pub view: TunnelView,            // существующий тип: оси, возраст, условие, причина\n    pub id: String,                  // идентификатор туннеля в хранилище; \"\" — туннеля в хранилище нет\n    pub instance: String,\n    pub state: String,\n    pub restarts: u32,\n    pub generation: Option<u64>,\n    pub country: Option<String>,     // страна последней проверки региона\n    pub apps: Vec<String>,           // идентификаторы приложений этого туннеля\n    pub core_pid: Option<u32>,\n    pub usage: Option<Usage>,\n    pub actions: Vec<Action>,\n}\n#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]\npub struct LiveView { pub at_unix_ms: i64, pub controller: ControllerState, pub host: HostLive, pub tunnels: Vec<LiveRow> }\n\npub struct Inputs<'a> {\n    pub snapshot: &'a GraphSnapshot,\n    pub overview: Option<(&'a HostRow, &'a [TunnelRow])>,\n    pub controller: ControllerState,\n    pub regions: &'a BTreeMap<String, RegionRecord>,      // по имени экземпляра\n    pub sessions: &'a BTreeMap<String, bool>,             // экземпляр → есть файл сессии с отделёнными данными или сокетами\n    pub usage: &'a BTreeMap<u32, Usage>,                  // по pid ядра\n    pub legacy_vpn: bool,\n    pub now_unix_ms: i64,\n}\npub fn build(inputs: &Inputs) -> LiveView;   // чистая функция\npub fn gather(previous: Option<&Gathered>) -> Gathered;   // ввод-вывод; Gathered = LiveView + выборки для следующего расчёта нагрузки\n```\n\nСтроки: все туннели хранилища, кроме туннеля хоста, по возрастанию идентификатора; затем экземпляры из обзора, которых нет в хранилище (`id = \"\"`). Имя экземпляра туннеля хранилища — его идентификатор.\n\nОси (`view.axes`, значения `unknown | partial | verified | blocked | error`) и возраст (`view.age_s`):\n\n| Ось | Значение | Возраст |\n|---|---|---|\n| `net` | `state::net_axis` по состоянию из обзора: up → verified, degraded → partial, blocked → blocked, failed → error, остальное → unknown | 0, если обзор получен; иначе нет |\n| `region` | запись региона есть, её `generation` равно `worker_generation`, `expected` задан → `geo::region_axis(decision, expected)`; иначе unknown | `now − at_unix_ms` в секундах; нет записи → нет |\n| `state` | есть держатели и запись сессии с отделёнными данными или сокетами → partial; иначе unknown | нет |\n| `app` | есть держатели → partial; иначе unknown | 0 при держателях; иначе нет |\n\nОси `state` и `app` значение `verified` не получают: связь «процесс ↔ сессия» и отсутствие обхода через шину сессии на настоящих приложениях не проверены (решение D-S1).\n\nКонтроллер недоступен или отказал → все оси unknown, возраста нет, `actions` пуст, `state = \"unknown\"`.\n\nОстальные поля `view`:\n- `name` — идентификатор туннеля (или имя экземпляра), `host` — режим хоста, `apps` — `shared` для владельца-группы, иначе `separate`, `sessions` — число держателей;\n- `condition` — как сейчас в `status::tunnels::build` (эта часть выносится в общую функцию и используется обеими);\n- `failure`: состояние failed → `core-failed`; blocked → `core-restarting`; ось региона blocked → `region-mismatch`; иначе нет. Первое подходящее.\n\n`actions`: stopped, failed → `[Up]`; up, degraded → `[Down, Verify, Run]`; starting, blocked → `[Down]`. Для строки без туннеля в хранилище — только `Down` при состояниях, отличных от stopped.\n\n`country` — страна из `RegionDecision::Agreed` записи региона текущего поколения.\n\n`host`: `mode`, `state`, `uplinks` — из обзора; `defined` — в хранилище есть политика хоста с профилем; `legacy_vpn` — активна служба VPN хоста.\n\n`gather`: хранилище (нет хранилища → пустой снимок), `overview`, файлы региона, файлы `config/session-*.json` экземпляров, выборки `/proc` для pid ядер. Ни одна ошибка не прерывает сбор: недоступная часть даёт unknown.\n\n`cm tunnel verify` пишет `RegionRecord` вместо голого решения: `expected` — значение `--country`, `generation` — поколение ядра на момент проверки. Старый файл без этих полей читается как отсутствующий.\n\n`I17-UI-CONTRACT.md` — таблица «поле интерфейса → источник → когда unknown» по этой спецификации; предварительных полей нет."
+    },
+    {
+      "id": "C.C1",
+      "direction": "C",
+      "title": "Печатать живое состояние командой для человека и для программ.",
+      "size": "S",
+      "level": "L2",
+      "deps": [
+        "C.M1"
+      ],
+      "files": [
+        "src/app/tunnel.rs",
+        "src/i18n_table.rs"
+      ],
+      "covers": [
+        "I17.T02.a"
+      ],
+      "external": [],
+      "spec": "```\ncm tunnel list [--json]\n```\n\nТекст, первая строка — хост, далее по строке на туннель:\n\n```\nhost mode=<m> state=<s> uplinks=<a,b|-> defined=<yes|no> legacy_vpn=<yes|no> core_pid=<n|->\nid=<ID|-> instance=<имя> state=<s> net=<v> region=<v> data=<v> app=<v> holders=<n> restarts=<n> generation=<g|-> country=<CC|-> core_pid=<n|->\n```\n\n`data` — ось `state` (слово `state` занято состоянием туннеля). `--json` — `LiveView` одной строкой.\n\nКод выхода: 0; 4 — контроллер недоступен (вывод всё равно печатается: туннели хранилища с unknown). Токены не переводятся."
+    },
+    {
+      "id": "C.T1",
+      "direction": "C",
+      "title": "Показать туннели в TUI по осям и управлять ими без блокировки интерфейса.",
+      "size": "L",
+      "level": "L2",
+      "deps": [
+        "C.M1",
+        "I.S1"
+      ],
+      "files": [
+        "src/status/page.rs",
+        "src/status.rs",
+        "src/tui.rs",
+        "src/tui/tunnels.rs",
+        "src/i18n_table.rs"
+      ],
+      "covers": [
+        "I17.T02.a",
+        "I17.T05.a"
+      ],
+      "external": [],
+      "spec": "Логика и отрисовка страницы — в библиотеке (`src/status/page.rs`), чтобы роль 2 проверяла их без терминала. `src/tui/tunnels.rs` — только фоновый сбор и связь с экраном. Вход — клавиша `m` на экране VPN (сейчас она работает только с макетом): при `CM_TUI_MOCK_TUNNELS=1` открывается макет (`mock_tunnels.rs` остаётся), иначе — настоящая страница. Клавиша добавляется в подсказку экрана VPN.\n\n```rust\n// src/status/page.rs\n#[derive(Clone, Debug, PartialEq, Eq)]\npub enum Confirm { Down { id: String }, HostOn, HostOff }\n#[derive(Clone, Debug, PartialEq, Eq)]\npub enum Outcome { Stay, Back, Message(String), Run(Vec<String>) }\n\npub struct Page { pub view: LiveView, pub index: usize, pub confirm: Option<Confirm> }\nimpl Page {\n    pub fn new(view: LiveView) -> Self;\n    pub fn replace(&mut self, view: LiveView);          // новые данные; выбранная строка сохраняется по instance\n    pub fn key(&mut self, key: KeyCode) -> Outcome;\n    pub fn keys(&self) -> Vec<(&'static str, &'static str)>;\n}\npub fn draw(frame: &mut Frame, area: Rect, page: &Page);\n\npub struct Poller { /* поток и приёмник канала */ }\nimpl Poller {\n    pub fn start(period_ms: u64, gather: impl FnMut() -> LiveView + Send + 'static) -> Self;\n    pub fn latest(&mut self) -> Option<LiveView>;       // последнее готовое значение, без ожидания\n}\n```\n\nКлавиши вне вопроса:\n\n| Клавиша | Действие |\n|---|---|\n| `↑` `↓` `k` `j` | выбор строки, без перехода через край |\n| `u`, `Enter` | есть `Action::Up` → `Run([\"tunnel\",\"up\",id])`; иначе `Message` с причиной |\n| `x` | есть `Action::Down` → вопрос `Confirm::Down` |\n| `v` | есть `Action::Verify` → `Run([\"tunnel\",\"verify\",id])`, с `\"--country\", CC`, если `country` известна |\n| `h` | режим хоста off и `host.defined` → вопрос `HostOn`; режим tunnel или proxy → вопрос `HostOff`; off без профиля → `Message` «сначала cm host define» |\n| `e` | `Run([\"diag\",\"export\"])` |\n| `q`, `Esc`, `Backspace` | `Back` |\n\nВопрос открыт: `y`, `Enter` — подтверждение; `n`, `Esc` — отмена с сообщением; любая другая клавиша вопрос не закрывает.\n- `Down` → `Run([\"tunnel\",\"down\",id])`. Текст вопроса называет последствие: приложения этого туннеля останутся без сети, VPN хоста этой клавишей не меняется.\n- `HostOn` → `Run([\"host\",\"set\",\"tunnel\",\"--stored\"])`. Текст: весь трафик хоста пойдёт через туннель; при `host.legacy_vpn` — отказ с сообщением «сначала остановите VPN хоста» вместо вопроса.\n- `HostOff` → `Run([\"host\",\"set\",\"off\"])`. Текст: хост выйдет в сеть напрямую, туннели приложений не затронуты.\n\n`Run` исполняется существующим экраном процесса (как команды экрана VPN); после завершения — возврат на страницу.\n\nОтрисовка:\n- первая строка — хост: режим, состояние, внешние интерфейсы;\n- таблица: имя, состояние, четыре оси (символ и слово; при ширине меньше 80 — только символ), возраст каждой оси, число процессов, нагрузка ядра;\n- возраст старше 3600 с помечается `⚠`;\n- под таблицей — причина (`failure`) и приложения выбранной строки;\n- общего «зелёного» статуса нет: ни одна ячейка не сводит оси в одно слово;\n- контроллер недоступен → строка «контроллер недоступен» и туннели хранилища с unknown.\nСимволы и подписи значений — те же, что в макете; общие функции переносятся в `page.rs`, макет их использует оттуда.\n\nФоновый сбор — `Poller`: поток вызывает `gather` сразу и далее каждые `period_ms`, кладёт результат в канал ёмкостью 1 (`try_send`) и завершается, когда `Poller` уничтожен (ожидание периода — отрезками не длиннее 100 мс). `latest` забирает всё накопленное и возвращает последнее. `src/tui/tunnels.rs` создаёт `Poller::start(2000, …)` с `live::gather` при входе на страницу и на каждом такте интерфейса передаёт `latest()` в `Page::replace`. Нажатие клавиши никогда не ждёт сбора."
+    },
+    {
+      "id": "C.D1",
+      "direction": "C",
+      "title": "Выгружать диагностику без секретов, путей пользователя и аргументов программ.",
+      "size": "M",
+      "level": "L1",
+      "deps": [
+        "C.M1"
+      ],
+      "files": [
+        "src/diag/mod.rs",
+        "src/diag/export.rs",
+        "src/diag/redact.rs",
+        "src/lib.rs",
+        "src/main.rs",
+        "src/i18n_table.rs"
+      ],
+      "covers": [
+        "I17.T03.a"
+      ],
+      "external": [],
+      "spec": "```\ncm diag export [--out ФАЙЛ|-]\n```\n\n```rust\n#[derive(Clone, Debug, Serialize)]\npub struct Export {\n    pub version: String, pub at_unix_ms: i64, pub live: LiveView,\n    pub instances: Vec<InstanceDiag>, pub units: BTreeMap<String, String>,\n    pub kernel: BTreeMap<String, String>, pub checks: Vec<String>, pub notes: Vec<String>,\n}\n#[derive(Clone, Debug, Serialize)]\npub struct InstanceDiag {\n    pub instance: String, pub generations: Vec<u64>, pub policy: Option<TunnelPolicy>,\n    pub region: Option<RegionRecord>, pub shape: Option<Shape>,\n}\n#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize)]\npub struct Shape { pub proxies: usize, pub groups: usize, pub rules: usize, pub protocols: BTreeMap<String, usize> }\n\npub fn shape(document: &serde_json::Value) -> Shape;\npub fn scrub(text: &str, home: &str, user: &str) -> String;\npub fn find_secrets(text: &str) -> Vec<&'static str>;     // имена сработавших правил; пусто — чисто\n```\n\nЧто входит:\n- `live` — как в `cm tunnel list --json`;\n- по каждому экземпляру владельца: номера файлов `gen-N.json`, политика, запись региона, **форма** последнего конфига (число узлов, групп, правил, узлов по протоколам). Содержимое конфига не выгружается;\n- `units` — состояние служб `cm-controller.socket`, `cm-controller.service`, `cm-reconcile.service` и службы VPN хоста;\n- `kernel` — вывод `ip -j rule`, `ip -j -6 rule`, `ip -j route show table 90`, `ip -j route show table 91`, `ip -br link`; запросы без привилегий через `SystemQuery`; ошибка запроса → строка `error`;\n- `checks` — строки `cm host check`;\n- аргументы, окружение и пути исполняемых файлов процессов не выгружаются — только их число.\n\n`scrub`, правила по порядку:\n\n| Правило | Что заменяется | На что |\n|---|---|---|\n| `home_path` | префикс `home` | `~` |\n| `user_name` | имя пользователя отдельным словом или частью пути | `<user>` |\n| `url` | `схема://…` до пробела или кавычки | `<схема>://<redacted>` |\n| `key_value` | значение после ключа `password`, `passwd`, `uuid`, `token`, `secret`, `private-key`, `private_key`, `psk`, `auth`, `authorization`, `cookie` (без учёта регистра; разделители `=`, `:`, `\": \"`) | `<redacted>` |\n| `uuid` | 8-4-4-4-12 шестнадцатеричных знаков | `<redacted>` |\n| `long_token` | 32 и более знаков из `A-Za-z0-9+/=_-` подряд | `<redacted>` |\n| `public_ip` | IPv4 вне `10/8`, `127/8`, `169.254/16`, `172.16/12`, `192.168/16`, `198.18/15`, `100.64/10`; IPv6 вне `fe80::/10`, `fc00::/7`, `::1` | `<ip>` |\n\n`find_secrets` проверяет те же классы, кроме `user_name` и `home_path` при пустых значениях. Разбор — ручной, без новых зависимостей.\n\nПорядок команды: сбор → сериализация → `scrub` → `find_secrets`. Непустой результат → `[export_not_clean]`, код 3, файл не пишется. Иначе файл с правами 0600; по умолчанию `$XDG_STATE_HOME/cm/diag-<секунды>.json` (нет переменной — `~/.local/state`); путь печатается в stdout. `--out -` — документ в stdout.\n\nКоды: 0; 2 — использование или ошибка записи; 3 — экспорт не чист."
+    },
+    {
+      "id": "C.A1",
+      "direction": "C",
+      "title": "Показать туннели и нагрузку ядер в апплете.",
+      "size": "M",
+      "level": "L3",
+      "deps": [
+        "C.M1"
+      ],
+      "files": [
+        "src/status/panel.rs",
+        "src/status.rs",
+        "cosmic/src/tunnels.rs",
+        "cosmic/src/main.rs",
+        "cosmic/src/applet.rs",
+        "cosmic/src/panel.rs",
+        "cosmic/src/jobs.rs",
+        "cosmic/src/model.rs"
+      ],
+      "covers": [
+        "I17.T04.a"
+      ],
+      "external": [],
+      "spec": "Содержимое строк — в библиотеке, отрисовка — в `cosmic/`.\n\n```rust\n// src/status/panel.rs\n#[derive(Clone, Debug, PartialEq, Eq)]\npub struct PanelRow { pub title: String, pub axes: String, pub detail: String, pub problem: bool }\npub fn rows(view: &LiveView) -> Vec<PanelRow>;\npub fn headline(view: &LiveView) -> String;\n```\n\n- `headline`: «туннели: N работают, M с ошибкой» (N — состояния up и degraded; M — blocked и failed); контроллер недоступен → «контроллер недоступен»; туннелей нет → «туннелей нет».\n- `rows`: первая — хост (`title` «Хост», `axes` — режим и состояние, `detail` — внешние интерфейсы и нагрузка ядра); далее по строке на туннель:\n  - `title` — идентификатор;\n  - `axes` — четыре оси символами в порядке net, region, state, app, через пробел;\n  - `detail` — «процессов N · cpu X% · Y МБ», причина ошибки в конце, если есть;\n  - `problem` — состояние blocked или failed либо любая ось blocked или error.\n- Трафик туннелей не складывается и общий итог не показывается.\n\n`cosmic/`:\n- вид задания `Kind::Tunnels` в существующей очереди `Jobs`: `cm::status::live::gather` выполняется вне потока интерфейса, период 5 с, пока открыта панель; ошибки — в существующем списке ошибок панели;\n- раздел «Туннели» в панели: `headline`, строки, кнопка «Открыть в консоли» — существующий запуск TUI;\n- значок панели — существующая функция `tunnel_icons::badge_for` по `view` строк.\n\nДействий, меняющих состояние, в апплете нет: управление — в TUI."
+    },
+    {
+      "id": "X.Q0",
+      "direction": "X",
+      "title": "Дать общий исполнитель шагов очереди хоста с планом, защитой и откатом.",
+      "size": "M",
+      "level": "L2",
+      "deps": [
+        "I.H1",
+        "I.T1",
+        "C.D1"
+      ],
+      "files": [
+        "tests/hostq/run.py",
+        "tests/hostq/lib.py",
+        "tests/hostq/steps/__init__.py"
+      ],
+      "covers": [
+        "X.07"
+      ],
+      "external": [],
+      "spec": "```\npython3 tests/hostq/run.py list\npython3 tests/hostq/run.py plan ШАГ\npython3 tests/hostq/run.py snapshot\npython3 tests/hostq/run.py run ШАГ --yes [--no-snapshot --backup-dir КАТАЛОГ] [флаги шага]\npython3 tests/hostq/run.py all --yes\n```\n\n```python\n# tests/hostq/lib.py\n@dataclass\nclass Meta:\n    id: str                 # hq-<имя>\n    title: str\n    covers: list[str]       # подзадачи общего плана\n    mandatory: bool         # без PASS приёмка не «готово»\n    mutates: list[str]      # подмножество {\"network\", \"services\", \"packages\", \"store\"}; пусто — только чтение\n    needs_root: bool\n    requires: list[str]     # шаги, которые должны иметь PASS раньше\n    timeout_s: int\n\n@dataclass\nclass Check:\n    name: str               # a-z0-9_\n    status: str             # PASS | FAIL | UNKNOWN | SKIP\n    detail: str = \"\"        # только знаки [a-z0-9_ =.,:%/<>-], до 200\n    p0: bool = False        # утечка мимо туннеля, потеря сети, потеря данных\n    stand_ref: str | None = None   # значение ребра (вид \"IT03.3\"), которое шаг повторяет на машине\n    reason: str | None = None      # почему нет stand_ref\n\nclass Ctx:\n    cm: str                                   # путь к установленному cm\n    evidence: Path\n    def sh(self, argv: list[str], root: bool = False, timeout: int = 30) -> Result   # Result: code, out, err\n    def ask(self, question: str) -> str        # \"y\" | \"n\" | \"skip\"\n\n# модуль шага: tests/hostq/steps/<имя>.py\nMETA: Meta\ndef plan() -> list[str]                        # строки плана; команды, меняющие систему, начинаются с \"! \"\ndef preflight(ctx) -> list[Check]              # только чтение\ndef run(ctx) -> list[Check]\ndef rollback(ctx) -> list[Check]\n```\n\nПравила исполнителя:\n1. `plan` и `list` ничего не выполняют, кроме чтения evidence.\n2. `run` без `--yes` → `[needs_yes]`, код 3.\n3. Шаг с непустым `mutates` требует записи о снимке за сегодня (`x-evidence/<дата>/session.json`, её создаёт `snapshot`: `snapper -c root create …`). Нет записи → `[no_snapshot]`, код 3. `--no-snapshot` допустим только вместе с `--backup-dir` существующего каталога.\n4. Шаг из `requires` без PASS → `[requires <id>]`, код 3.\n5. Порядок: `preflight` → (любой FAIL → шаг SKIP, `run` не вызывается) → `run` → `rollback`. `rollback` вызывается всегда, когда `mutates` не пуст: и при исключении, и при `SIGINT`/`SIGTERM`, и при превышении `timeout_s`.\n6. Шаг с `\"network\"` в `mutates`: до `run` проверяется связь (`curl -m 5` к `https://www.gstatic.com/generate_204` и `https://cp.cloudflare.com/generate_204`, нужен ответ 204 с обоих). Нет связи → `[no_network]`, код 3. После `rollback` проверка повторяется. Не прошла → исполнитель выполняет `cm controller teardown` (через `sudo`), проверяет ещё раз, и при неудаче печатает блок «как вернуть сеть»: `sudo cm controller teardown --offline`, номер снимка и команду его отката. Проверка `network_restored` в этом случае — FAIL с `p0`.\n7. Команды с `root=True` выполняются через `sudo`. Исполнитель сам от root не запускается (uid 0 → код 2).\n8. Статус шага: FAIL — есть проверка FAIL; иначе UNKNOWN — есть UNKNOWN; иначе SKIP — все SKIP; иначе PASS. Код выхода: 0 — PASS или UNKNOWN; 1 — FAIL; 3 — шаг не начат.\n9. `all` идёт по шагам в порядке `requires` и останавливается на первой проверке FAIL с `p0`.\n10. `ask` при закрытом stdin возвращает `skip`. Ответ `skip` даёт проверку UNKNOWN, а не PASS.\n11. Команды `cm` шаг выполняет от пользователя. Запрос пароля для операций сети и хоста показывает агент polkit сессии — это ожидаемо.\n12. Шагу нужен источник в хранилище пользователя, а его нет → в плане и в `detail` — `no_sources`, в выводе — подсказка: `cm source import --url-stdin` (адрес подписки вводится в stdin, в аргументы и в evidence не попадает).\n\nEvidence: `docs/design/cm-network-manager/x-evidence/<дата>/<шаг>.json` — `{step, rev, binary_sha256, started, finished, status, checks[], rollback}`. В `detail` попадают только слова из набора шага и числа. Вывод команд, адреса, имена узлов и источников не сохраняются; строка с недопустимыми знаками заменяется на `detail_rejected`.\n\nРежимы для проверки ролью 2:\n- `CM_HOSTQ_FAKE=<каталог>`: `ctx.sh` ничего не выполняет, берёт ответы по очереди из `<каталог>/answers.json` и пишет команды в `<каталог>/log`; `ask` берёт ответы оттуда же;\n- `CM_HOSTQ_STAND=1`: шаг выполняется по-настоящему внутри пространства имён стенда; снимок и `sudo` не требуются, каталог evidence — из `CM_HOSTQ_EVIDENCE`."
+    },
+    {
+      "id": "X.Q1",
+      "direction": "X",
+      "title": "Проверить установку, миграцию, хранилище, источники и пакетные сценарии на машине.",
+      "size": "M",
+      "level": "L4",
+      "deps": [
+        "X.Q0"
+      ],
+      "files": [
+        "tests/hostq/steps/install.py",
+        "tests/hostq/steps/migrate.py",
+        "tests/hostq/steps/store.py",
+        "tests/hostq/steps/source.py",
+        "tests/hostq/steps/packages.py"
+      ],
+      "covers": [
+        "X.02",
+        "X.03",
+        "X.04",
+        "X.06"
+      ],
+      "external": [],
+      "spec": "| Шаг | Обязателен | Меняет | Что делает |\n|---|---|---|---|\n| `hq-install` | да | packages, services | `sh build.sh`; запись sha256 бинарника; `! sudo <бинарник> install`; проверки ниже |\n| `hq-migrate` | да | store | `tests/check_i01_regressions.py --run --installed-binary <cm>`; на машине со следами UPD — `cm migration plan` и сверка, что `apply` не нужен или уже выполнен |\n| `hq-store` | нет | — | `tests/check_i02_regressions.py --run --installed-binary <cm>` |\n| `hq-source` | нет | — | `tests/check_i03_regressions.py --run …`; для каждого источника хранилища — `cm source show` и `cm source import --dry-run` |\n| `hq-packages` | да | — | `tests/verify_real_packages.py`; состояние и проверка единиц systemd |\n\nПроверки `hq-install`:\n- `binary_matches_manifest` — sha256 установленного `cm` равен записанному;\n- `controller_socket_enabled`, `reconcile_enabled` — `systemctl is-enabled` → `enabled`;\n- `units_verify` — `systemd-analyze verify` для `cm-controller.socket`, `cm-controller.service`, `cm-reconcile.service` без ошибок;\n- `polkit_actions` — в файле политики четыре действия контроллера, включая `io.github.cm.host`;\n- `host_check_runs` — `cm host check` завершился с кодом 0 или 1 и напечатал 10 строк;\n- `legacy_vpn_untouched` — состояние службы VPN хоста до и после установки одинаково (p0).\n\n`rollback` у `hq-install` ничего не удаляет: печатает номер снимка. Удаление — решение пользователя.\n\n`hq-source`: нет ни одного источника → все проверки UNKNOWN с `detail` `no_sources`. Проверка `ua_class_recorded` пишет класс User-Agent, а не строку. Адреса и имена источников в evidence не попадают.\n\n`hq-packages`: `uninstall_leaves_no_net` выполняется только с флагом `--with-uninstall` (иначе UNKNOWN): `! sudo cm uninstall`, затем `ip rule`, `ip link`, `nft list tables` без объектов CM, затем `! sudo <бинарник> install`."
+    },
+    {
+      "id": "X.Q2",
+      "direction": "X",
+      "title": "Сравнить прежний и новый путь на одном узле по схеме A/B/A.",
+      "size": "M",
+      "level": "L4",
+      "deps": [
+        "X.Q0"
+      ],
+      "files": [
+        "tests/hostq/steps/parity.py"
+      ],
+      "covers": [
+        "X.05",
+        "X.08",
+        "V.05"
+      ],
+      "external": [],
+      "spec": "Шаг `hq-parity`, не обязателен, меняет `network` и `services`. Требует активную подписку прежнего VPN хоста и её же источник в хранилище (иначе все проверки UNKNOWN, `detail` — `no_legacy_subscription` или `no_store_source`).\n\nИзмерение одной фазы (`measure`), всё с предельным временем 10 с:\n- `reach` — сколько из трёх адресов `…/generate_204` ответили 204;\n- `dns` — разрешилось ли имя через системный резолвер;\n- `country` — страна выхода по источникам `cm env probe` (две буквы или `unknown`);\n- `stage` — при неудаче первая отказавшая стадия: `dns`, `tcp`, `tls`, `http`.\n\nТри сравнения:\n\n| Проверка | A | B | Закрывает |\n|---|---|---|---|\n| `store_vs_legacy` | прежний путь, подписка из прежнего файла | тот же VPN, источник из хранилища (`cm vpn use source:ID`) | `V.05` |\n| `adapter_vs_legacy` | прежний запуск ядра | ядро через адаптер на том же конфиге | `X.08` |\n| `flclash_vs_cm` | CM | FlClash на том же узле | `X.05` |\n\nПорядок каждого: A → B → A. Результат:\n- PASS — обе фазы A совпали между собой и B совпала с ними по `reach`, `dns`, `country`;\n- FAIL — фазы A совпали, B отличается; `detail` — `stage=<стадия>`;\n- UNKNOWN — фазы A не совпали между собой (среда нестабильна) либо FlClash не установлен (`flclash_absent`).\n\n`rollback`: вернуть активную подписку и режим прежнего VPN, какими они были до шага; проверка `legacy_restored`.\n\nФормулировки «VPN исправлен» в выводе и evidence нет: шаг сообщает только совпадение или первую отличающуюся стадию."
+    },
+    {
+      "id": "X.Q3",
+      "direction": "X",
+      "title": "Проверить туннель хоста на настоящей машине и вернуть её в исходное состояние.",
+      "size": "L",
+      "level": "L4",
+      "deps": [
+        "X.Q0",
+        "R.Z",
+        "I.S1"
+      ],
+      "files": [
+        "tests/hostq/steps/host.py"
+      ],
+      "covers": [
+        "I07.T05.a",
+        "I09.T05.a",
+        "I10.T05.a"
+      ],
+      "external": [],
+      "spec": "Шаг `hq-host`, обязателен, меняет `network` и `services`, требует `hq-install`. Нужен профиль хоста (`cm host define`); нет → SKIP, `detail` `no_host_profile`.\n\n`preflight`: `cm host check`. `Block` только из-за `legacy_vpn_active` допустим: шаг сам остановит прежний VPN и запомнит это. Любой другой `Block` → SKIP с токеном в `detail`.\n\n`run`, по порядку (в скобках — что повторяется со стенда):\n1. `direct_baseline` — связь есть; страна выхода напрямую запомнена только как хеш.\n2. Прежний VPN активен → `! sudo cm vpn stop`; `legacy_stopped`.\n3. `! cm host set tunnel --stored` → `host_tunnel_on` (код 0, `cm host status` → `mode=tunnel`).\n4. `host_http_via_tunnel` — три адреса отвечают 204 (стенд).\n5. `exit_differs` — хеш страны или адреса выхода отличается от шага 1; совпал → UNKNOWN (узел в той же стране), не FAIL.\n6. `dns_redirected` — после запроса к DNS из `resolv.conf` счётчик правила `dnat` таблицы `ip cm_host` вырос (стенд); `reason` при отсутствии метки — `needs_real_dns`.\n7. `ipv6_blocked` — `curl -6 -m 5` к адресу с IPv6 завершается ошибкой (стенд). p0.\n8. `core_kill_blocks` — `kill -9` ядра хоста; в следующие 2 с запрос завершается тайм-аутом, а не ответом напрямую (стенд). p0.\n9. `core_restarts` — не позже чем через 15 с запрос снова проходит; `cm tunnel list` показывает у хоста `restarts` не меньше 1 (стенд).\n10. `drift_repaired` — `! sudo ip rule del priority 2001`; не позже чем через 5 с правило снова есть (стенд, ребро `RW03`).\n11. `app_tunnel_independent` — есть хотя бы один определённый туннель приложения: `cm tunnel up`, запрос из его сети проходит, число соединений ядра хоста за это время не выросло (стенд); нет туннелей → UNKNOWN.\n12. `uplink_flap` — только с `--with-link-flap`: выключить и включить соединение; не позже чем через 30 с запрос проходит. Иначе UNKNOWN, `reason` `needs_real_uplink`.\n13. `suspend_resume` — только с `--manual-suspend`: вопрос пользователю после пробуждения. Иначе UNKNOWN, `reason` `needs_suspend`.\n14. `! cm host set off` → `host_off_clean`: правил 1900–2001, `cmtunh`, `cmsink`, таблицы `ip cm_host` нет; связь напрямую есть.\n\n`rollback`: `cm host set off` (ошибка не прерывает), остановить поднятый в шаге 11 туннель, запустить прежний VPN, если шаг его останавливал; проверки `host_off`, `legacy_restored`.\n\nУ проверок 4, 7, 8, 9, 10, 11, 14 задан `stand_ref` — номер значения ребра уровня L2 (`AB-DAG.json` или `FIN-DAG.json`), которое проверяет то же на стенде: например `IS02.1` для проверки 4, `RW03.2` для 10, `IT03.3` для 14. Метки стенда совпадают с номерами значений, поэтому их можно назвать до того, как стенд написан."
+    },
+    {
+      "id": "X.Q4",
+      "direction": "X",
+      "title": "Пройти критерии A01–A20 на настоящих приложениях и проверить интерфейс глазами.",
+      "size": "L",
+      "level": "L4",
+      "deps": [
+        "X.Q0",
+        "R.Z",
+        "C.C1"
+      ],
+      "files": [
+        "tests/hostq/steps/apps.py"
+      ],
+      "covers": [
+        "I13.T05.a",
+        "I15.T05.a",
+        "I17.T04.a",
+        "I17.T05.a",
+        "I18.T02.a",
+        "I18.T03.a"
+      ],
+      "external": [],
+      "spec": "Шаг `hq-apps`, обязателен, меняет `network` и `store`, требует `hq-install`. Флаги: `--source ID` (источник для временных описаний; без него — первый источник хранилища; нет источников → SKIP `no_sources`), `--browser ПУТЬ`, `--appimage ПУТЬ`.\n\nШаг сам создаёт временные описания (`cm group define hq-g`, `cm app define hq-a …`, `hq-b …`) и в `rollback` останавливает туннели и удаляет описания.\n\n```python\nACCEPTANCE: dict[str, dict]   # \"A01\" → {\"stand\": [метки], \"host\": [имена проверок]}\n```\n\n| Критерий | На машине (`host`) | На стенде (`stand`) |\n|---|---|---|\n| A01 хост напрямую, приложение в туннеле | `a01_app_exit_differs`: страна выхода приложения отличается от прямой (совпала → UNKNOWN) | Z01, Z03 |\n| A02 хост и приложение в разных туннелях | `a02_independent` — из `hq-host`, проверка 11 | Z01 |\n| A03 прокси хоста не влияет на приложение | — | H12, Z01 |\n| A04 два приложения в общем туннеле, первое закрыто | `a04_second_keeps_route` | T12 |\n| A05 два приложения в разных туннелях | `a05_two_tunnels` | Z02 |\n| A06 VPN хоста выключен | `a06_app_survives_host_off` | Z01 |\n| A07 `kill -9` ядра и контроллера | `a07_no_direct_after_kill`: после `kill -9` ядра (pid из `cm tunnel list`), а затем после `! sudo systemctl kill -s KILL cm-controller.service` запрос из сети приложения — тайм-аут. p0 | F03, F05 |\n| A08 узел недоступен | — | F05 |\n| A09 DNS, IPv6, UDP | `a09_dns_tcp`, `a09_aaaa_empty`, `a09_ipv6_blocked` | D04 |\n| A10 смена сети, сон | из `hq-host`: `uplink_flap`, `suspend_resume` | — |\n| A11 потомки и фоновые процессы | `a11_children_in_netns`: через 5 с после запуска у всех потомков запущенного процесса та же сеть | T01 |\n| A12 уже работающий экземпляр | `a12_running_elsewhere`: при открытом вне туннеля браузере `cm app run` → код 5 (нужен `--browser`, иначе UNKNOWN) | T14 |\n| A13 обновление источника при живой сессии | — | Z06 |\n| A14 разные пояс и локаль при одном туннеле | `a14_two_zones`: два приложения группы печатают разный `date +%Z` | Z05 |\n| A15 несогласие источников страны | `a15_verify_reports`: `cm tunnel verify` печатает один из исходов и не `verified` без `--country` | R03 |\n| A16 произвольная программа и упаковка | `a16_native_runs`; `a16_appimage_partial` (нужен `--appimage`, иначе UNKNOWN); `a16_flatpak_refused`: описание с `flatpak` → `[unsupported_not_verified]` | U01, U02 |\n| A17 чужой uid | — | Z02 |\n| A18 обновление и откат | из `hq-migrate`, `hq-packages` | — |\n| A19 старые правила, обновления системы | `a19_cm_check_ok`: `cm check` завершается как до установки | Z04 |\n| A20 интерфейс и экспорт | `a20_export_clean`: `cm diag export --out -` → код 0; `a20_no_verified_state_app`: в `cm tunnel list` оси `data` и `app` не равны `verified` | CD01, CM02 |\n\nМатрица исполнителя (`I13.T05.a`): для каждой проверенной упаковки в evidence — `packaging`, `executor_in_netns` (да/нет), `children_in_netns`.\n\nРучные разделы — вопросы `ask` (ответ `skip` → UNKNOWN):\n- `account`: после входа в аккаунт в приложении с отделёнными данными и перезапуска — вход сохранился? в приложении с существующими данными — прежний профиль на месте?\n- `applet`: в панели есть раздел «Туннели»; строки совпадают с `cm tunnel list`; при остановленном контроллере — «контроллер недоступен»; панель не замирает при открытии;\n- `tui`: страница туннелей открывается; вопрос при остановке называет последствие; после `u` и `x` состояние меняется без перезапуска TUI; узкое окно (60 колонок) читается.\n\n`rollback`: `cm tunnel down --force` для созданных туннелей, `cm app remove`, `cm group remove`; проверка `store_restored` — ревизия хранилища выросла, но описаний `hq-*` нет."
+    },
+    {
+      "id": "X.Q5",
+      "direction": "X",
+      "title": "Измерить разброс качества на настоящем узле и вывести из него размер выборки и допуск.",
+      "size": "M",
+      "level": "L4",
+      "deps": [
+        "X.Q0"
+      ],
+      "files": [
+        "tests/hostq/steps/pilot.py"
+      ],
+      "covers": [
+        "I16.T03.a"
+      ],
+      "external": [],
+      "spec": "Шаг `hq-pilot`, не обязателен, меняет `network`. Флаги: `--tunnel ID` (обязателен), `--tunnel-b ID` (второй туннель на другом узле), `--probes N` (по умолчанию 30).\n\nОдна проба — запрос `…/generate_204` из сети туннеля (`cm app run ЭКЗЕМПЛЯР -- /usr/bin/curl -m 5 -o /dev/null -w '%{time_total}'`), пауза 1 с. Показатели серии: медиана, p90, доля потерь, коэффициент вариации.\n\n- Без `--tunnel-b`: три серии на одном узле (A, A, A).\n- С `--tunnel-b`: A, B, A.\n\nВывод в `i16-evidence/pilot/summary.json`:\n- показатели каждой серии;\n- `noise` — (наибольшая медиана серий A − наименьшая) / наименьшая;\n- `min_margin` = 2 × `noise` — меньший разрыв между узлами считать шумом;\n- `min_probes` — наименьшее N из {10, 20, 30, 60}, при котором расхождение медиан первых N проб серий A (та же формула) не больше 0.10; нет такого N → наибольшее из набора, не превышающее `--probes`;\n- при `--tunnel-b`: `b_differs` — |медиана B − m| / m больше `min_margin`, где m — медиана из медиан серий A.\n\nПроверки: `series_complete` (все пробы выполнены), `noise_measured`. Расхождение серий A больше 50 % → `noise_measured` UNKNOWN, `detail` `unstable`.\n\nШаг не меняет константы в коде: рекомендованные значения записываются в evidence. Автоматический выбор узла в выпуск не входит (решение D-Q1), поэтому шаг необязателен."
+    },
+    {
+      "id": "P.D1",
+      "direction": "P",
+      "title": "Записать принятые решения: отпечаток, адаптер приложений, границы выпуска и порядок возврата.",
+      "size": "M",
+      "level": "D",
+      "deps": [],
+      "files": [
+        "docs/design/cm-network-manager/ADR-FINGERPRINT.md",
+        "docs/design/cm-network-manager/I15R-CATALOG.md",
+        "docs/design/cm-network-manager/ADR-APP-ADAPTER.md",
+        "docs/design/cm-network-manager/RELEASE-SCOPE.md",
+        "docs/design/cm-network-manager/QUESTIONS.md"
+      ],
+      "covers": [
+        "I15-R.T04.a",
+        "I15-R.T05.a",
+        "I15.T01.a",
+        "I18.T04.a",
+        "I05.T02.b",
+        "I05.T05.a",
+        "I10.T02.b"
+      ],
+      "external": [],
+      "spec": "Документы оформляют решения из раздела «Решения координатора» в `FIN-DAG.md`. Новых решений исполнитель не принимает. Каждый документ начинается со строки статуса: «Принято координатором 2026-10-11; пользователь может отменить».\n\n**`I15R-CATALOG.md`** (`I15-R.T04.a`): каталог устройств не создаётся. Основание — замеры `I15R-LAB.md`: подмена движка и устройства увеличивает уникальность. Таблица «что предлагалось в Q26/Q27 → что принято → источник в лаборатории».\n\n**`ADR-FINGERPRINT.md`** (`I15-R.T05.a`): таблица свойств. Для каждого — статус `go`, `conditional` или `no-go`, механизм, evidence, признак регресса. Строки: UA и Client Hints (no-go: не подменяются), часовой пояс, язык и локаль, `Accept-Language`, Canvas, WebGL, шрифты, WebRTC, экран, история личности (go: 5 записей, смена только командой). Статусы берутся из `ADR-BROWSER-IDENTITY.md` и `bi-evidence`; свойства без замера — `conditional` с указанием, какой замер нужен.\n\n**`ADR-APP-ADAPTER.md`** (`I15.T01.a`): три состояния данных (`existing`, `isolated`, `fresh`), что CM создаёт и чего никогда не удаляет (домашний каталог и существующие профили — никогда), политика сокетов, что остаётся за программой. Источник — `src/env/private.rs` и вершины `I15.E1`, `I15.E2` пакета AB.\n\n**`RELEASE-SCOPE.md`** (`I18.T04.a`), разделы в этом порядке:\n1. «Входит»: ядро mihomo закреплённой версии; туннели приложений; группы; туннель хоста командой `cm host`; регион (пояс, локаль); личность браузера (стратегии `local` и `crowd`); TUI, апплет, экспорт.\n2. «Не входит»: каждая строка — что, почему, какая подзадача общего плана. Обязательные строки: Xray как ядро туннеля приложения (`I05.T02.b`, `I05.T05.a`, `I10.T02.b`); IPv6 через туннель; Flatpak и Snap; systemd-resolved для туннеля хоста; автоматический выбор узла по качеству; замена прежнего VPN хоста по умолчанию; подтверждённые оси STATE и APP.\n3. «Ограничения»: режим хоста — не граница изоляции; AppImage — частично; шина сессии при общих сокетах; каталоги данных сессий `fresh` и `isolated` CM не удаляет — их убирает пользователь; хранилище туннелей — у каждого пользователя своё, подписку прежнего VPN в него нужно импортировать отдельно.\n4. «Как вернуть»: три порядка действий — выключить туннель хоста (`cm host set off`); снять всё (`sudo cm controller teardown`, при неработающем контроллере — с `--offline`); откатить снимок. Для каждого — когда применять и как проверить результат.\n5. «Не проверено на машине»: заполняется программой приёмки (`P.T1`) из шагов со статусом UNKNOWN; в исходном тексте — метка-заполнитель `<!-- accept:unknown -->`.\n\n**`QUESTIONS.md`**: в разделах Q26 и Q27 первая строка заменяется на «Решено координатором 2026-10-11: …» со ссылкой на `I15R-CATALOG.md`; остальной текст разделов не меняется."
+    },
+    {
+      "id": "P.T1",
+      "direction": "P",
+      "title": "Выводить трассировку требований, отчёт по машине и итог приёмки из evidence.",
+      "size": "M",
+      "level": "L0",
+      "deps": [
+        "P.D1",
+        "X.Q1",
+        "X.Q2",
+        "X.Q3",
+        "X.Q4",
+        "X.Q5"
+      ],
+      "files": [
+        "docs/design/cm-network-manager/tools/accept.py",
+        "docs/design/cm-network-manager/I18-TRACE.md",
+        "docs/design/cm-network-manager/X-RUNTIME-REPORT.md",
+        "docs/design/cm-network-manager/I18-ACCEPTANCE.md"
+      ],
+      "covers": [
+        "X.07",
+        "I18.T01.a",
+        "I18.T05.a"
+      ],
+      "external": [],
+      "spec": "```\npython3 docs/design/cm-network-manager/tools/accept.py [--date ГГГГ-ММ-ДД] [--check]\n```\n\nВходы (только чтение):\n- `REMAINING-DAG-PLAN.json` — подзадачи и список закрытых;\n- все `*-DAG.json` — вершины, рёбра, `covers`;\n- `fin-evidence/<дата>/summary.json` — gate, результат `test_lint.py`, рёбра PASS/FAIL, дефекты;\n- `x-evidence/<дата>/*.json` — шаги очереди хоста (берётся последний файл каждого шага);\n- `tests/fixtures/ab/blocked.json`, `tests/fixtures/fin/blocked.json`.\n\n```python\nW_TO_MILESTONES = {\n    \"W01\": [\"I04\", \"I05\"], \"W02\": [\"I16\"], \"W03\": [\"I11\", \"I13\"], \"W04\": [\"I12\"], \"W05\": [\"I03\", \"I12\"],\n    \"W06\": [\"I07\"], \"W07\": [\"I08\", \"I09\"], \"W08\": [\"I07\", \"I08\"], \"W09\": [\"I14\", \"BI\"], \"W10\": [\"I15\", \"BI\"], \"W11\": [\"I17\"],\n}\nMANDATORY_STEPS = [\"hq-install\", \"hq-migrate\", \"hq-packages\", \"hq-host\", \"hq-apps\"]\nDECIDED = {\"V.02\": \"D-V1\", \"I08.T01.a\": \"D-V1\", \"H.10\": \"D-C1\", \"I05.T02.a\": \"D-X1\"}   # закрыты решением координатора\n\ndef task_status(task_id) -> str      # closed | covered | covered_unverified | open | out_of_scope\ndef verdict(inputs) -> tuple[str, list[Blocker]]   # \"ready\" | \"blocked\"\n@dataclass\nclass Blocker: what: str; kind: str; next_action: str; who: str   # who: coder | tester | user | coordinator\n```\n\n`task_status`:\n- `closed` — в списке закрытых общего плана или в `DECIDED`;\n- `out_of_scope` — названа в разделе «Не входит» `RELEASE-SCOPE.md`;\n- `covered` — есть в `covers` хотя бы одной вершины, и у каждой такой вершины все исходящие рёбра PASS; если вершина — шаг очереди хоста (направление X, кроме `X.Q0`), её шаги ещё и имеют PASS;\n- `covered_unverified` — то же, но шаг очереди хоста не запускался или дал UNKNOWN. На итог влияет только через условие 5 (обязательные шаги);\n- иначе `open`.\n\n`verdict` — `ready`, только если выполнено всё:\n1. gate: EXIT 0, строк SKIPPED нет;\n2. `test_lint.py --dags AB,FIN`: EXIT 0;\n3. дефектов с `severity` P0 и P1 нет;\n4. все рёбра AB и FIN — PASS; заблокированные значения — в пределах лимита, и шаг очереди хоста, названный у каждого, имеет PASS;\n5. каждый шаг из `MANDATORY_STEPS` — PASS; ни в одном шаге нет проверки FAIL с `p0`;\n6. подзадач со статусом `open` нет.\n\nИначе `blocked`, и на каждое невыполненное условие — `Blocker`:\n\n| Причина | `who` | `next_action` |\n|---|---|---|\n| красный gate, дефект P0/P1 | coder | исправить по записи дефекта |\n| ребро не PASS, замечание `test_lint` | tester | дописать проверку значения |\n| шаг очереди хоста не запускался, SKIP или UNKNOWN у обязательного | user | `python3 tests/hostq/run.py run <шаг> --yes` |\n| шаг FAIL | coordinator | разбор evidence шага |\n| подзадача `open` | coordinator | назначить вершину или вывести из выпуска |\n\nВыходы:\n- `I18-TRACE.md` — по строке на W01–W11: этапы, подзадачи по статусам, рёбра, шаги очереди хоста; отдельная таблица открытых P0;\n- `X-RUNTIME-REPORT.md` — по строке на шаг: статус, дата, число проверок по статусам, проверки UNKNOWN с причиной; статус не повышается (UNKNOWN не становится PASS);\n- `I18-ACCEPTANCE.md` — `ready` или `blocked`, условия 1–6 с отметками, таблица `Blocker`. Последний раздел — «Решение пользователя: выпуск — отдельным поручением»; программа его не заполняет;\n- в `RELEASE-SCOPE.md` текст между метками `<!-- accept:unknown -->` и `<!-- /accept:unknown -->` заменяется списком проверок UNKNOWN.\n\n`--check` ничего не пишет: печатает итог и возвращает 0 при `ready`, 1 при `blocked`. Программа не запускает ни gate, ни шаги: она только читает их результаты."
+    },
+    {
+      "id": "FIN.Z",
+      "direction": "Z",
+      "title": "Принять пакет: сквозной путь на стенде, чистый gate, evidence.",
+      "size": "L",
+      "level": "L2",
+      "deps": [
+        "R.Z",
+        "I.T1",
+        "C.C1",
+        "C.T1",
+        "C.D1",
+        "C.A1",
+        "P.T1"
+      ],
+      "files": [
+        "tests/fin_stand.py",
+        "tests/audit_fin_e2e.rs",
+        "docs/design/cm-network-manager/fin-evidence/<дата>/summary.json"
+      ],
+      "spec": "Вершина роли 2: кода продукта нет. Закрывается, когда выполнены условия раздела «Пакет принят».",
+      "external": [],
+      "covers": [
+        "I17.T05.a",
+        "I18.T03.a"
+      ]
+    }
+  ],
+  "edges": [
+    {
+      "id": "RP01",
+      "source": "R.P1",
+      "target": "R.Z",
+      "level": "L1",
+      "contract": "Политика читается только из объекта JSON ограниченного размера.",
+      "check": "`tests/audit_ab_policy.rs`.",
+      "values": [
+        "`parse(b\"[]\")`, `parse(b\"null\")`, `parse(b\"1\")`, `parse(b\"\\\"x\\\"\")` → `Err(NetError::Unsupported)`",
+        "`parse(b\"{}\")` → политика по умолчанию: ipv6 Block, fake_ip Forbidden, lifetime Pinned, failure Block",
+        "объект длиной `MAX_POLICY_BYTES + 1` (допустимый JSON, дополненный пробелами) → `Err`",
+        "`{\"lifetime\":\"refcount\",\"extra\":1}` → `Err`: неизвестное поле"
+      ]
+    },
+    {
+      "id": "RW01",
+      "source": "R.W1",
+      "target": "R.Z",
+      "level": "L1",
+      "contract": "Автоматическая остановка срабатывает каждый раз, а не только первый.",
+      "check": "`tests/audit_ab_watch.rs`: подменные ядро, `NetExec`, `NetQuery`; время задаёт тест; держатели — дерево-фикстура `/proc` и каталог `netns` в тестовом режиме.",
+      "values": [
+        "политика refcount: запуск, держатели ушли, прошло 5000 мс → ядро остановлено, в записи исполнителя есть команды снятия сети, состояние stopped",
+        "тот же экземпляр поднят снова, держатели ушли, прошло 5000 мс → остановлен второй раз; в журнале владельца две завершённые операции с разными ключами вида `auto-stop-<число>-<число>`",
+        "`auto_txn(\"revert\", i64::MAX, u32::MAX)` — длина 42, только `a-z0-9-`; `auto_txn(\"stop\", -5, 1)` = `auto-stop-0-1`",
+        "подменное ядро отвечает ошибкой на остановку → команд снятия сети в записи нет, состояние blocked",
+        "политика pinned при тех же событиях → ни одной команды, состояние up"
+      ]
+    },
+    {
+      "id": "RW02",
+      "source": "R.W2",
+      "target": "R.Z",
+      "level": "L1",
+      "contract": "Перезапуски ядра идут по расписанию до лимита, затем туннель объявляется отказавшим.",
+      "check": "`tests/audit_ab_watch.rs`: подменное ядро считает запуски; проходы — вызовы `tick` с заданным временем.",
+      "values": [
+        "ядро не запускается, проходы каждые 2000 мс от 0 до 160000: попытки запуска ровно на проходах 2000, 4000, 10000, 40000, 160000 — всего 5",
+        "после прохода 160000: `tunnel_state` → state failed, restarts 5; на проходах 162000 и 164000 попыток нет",
+        "между проходами 0 и 160000 состояние blocked; команд `ip` и `nft` от шага «ядра» в записи исполнителя нет",
+        "ядро запускается с третьей попытки (проход 10000) → на проходе 12000 состояние up, restarts 3",
+        "`worker_start` после failed → состояние starting, restarts 0"
+      ]
+    },
+    {
+      "id": "RW03",
+      "source": "R.W3",
+      "target": "R.Z",
+      "level": "L1",
+      "contract": "Каждое недостающее звено сети хоста находится и чинится своими командами, приёмник — раньше туннеля.",
+      "check": "`tests/audit_ab_host.rs` (чистые функции), `tests/audit_ab_watch.rs` (проход сторожа с подменным `NetQuery`).",
+      "values": [
+        "полное состояние при одном внешнем интерфейсе с одним адресом → `host_audit` пуст",
+        "нет правила IPv4 2001 → `[MissingRule{v6:false, priority:2001}]`; починка — одна команда `ip rule add priority 2001 lookup 91`",
+        "нет правила IPv6 2001 → `[MissingRule{v6:true, priority:2001}]`; починка — `ip -6 rule add priority 2001 lookup 91`",
+        "нет `cmtunh` → `[MissingTun, MissingTunRoute]`; починка — четыре команды: tuntap add, addr add, link set mtu up, `ip route replace default dev cmtunh table 90`",
+        "нет `cmsink` и правила 2000 → в командах починки создание приёмника стоит раньше `ip rule add priority 2000 lookup 90`",
+        "`firewall_present = false` → `[MissingFirewall]`; починка — одна команда `nft -f -` с текстом `render_host_table`",
+        "проход сторожа при `MissingTun`: после починки ядру `host` назначен перезапуск на этот же момент времени",
+        "режим хоста `proxy` или `host.json` нет → запросов наблюдения хоста и команд нет",
+        "экземпляр `host` занят операцией клиента → шаг хоста пропущен: запросов наблюдения и команд нет, смена внешних интерфейсов тоже не выполняется"
+      ]
+    },
+    {
+      "id": "CO01",
+      "source": "C.O1",
+      "target": "R.T1",
+      "level": "L1",
+      "contract": "Обзор отдаёт клиенту поколения ядра и сети отдельно.",
+      "check": "`tests/audit_fin_overview.rs`.",
+      "values": [
+        "после `net_apply` с поколением 1 и `worker_start` с поколением 2: строка экземпляра — worker_generation 2, net_generation 1",
+        "после `worker_stop`: worker_generation пусто, net_generation 1",
+        "после `net_revert`: каталог экземпляра остаётся, оба поколения пусты, netns пусто"
+      ]
+    },
+    {
+      "id": "RT01",
+      "source": "R.T1",
+      "target": "R.Z",
+      "level": "L2",
+      "contract": "`cm tunnel down` всегда снимает то, что поднял `up`, и повторяется без ошибки.",
+      "check": "`tests/ab_stand.py`, раздел `tunnel`.",
+      "values": [
+        "`up t1` → `down t1 --keep-net` → `up t1` → `down t1`: все четыре — код 0; после последней нет `cm-<i>` в `ip netns list`, нет правила `iif cmv<i>h`, нет ядра",
+        "`down t1` второй раз → код 0, в журнале контроллера новых операций нет",
+        "`down t1` при живом процессе в сети → `[in_use]`, код 5; с `--force` → код 0",
+        "`kill -9` ядра, затем `up t1` до восстановления → `[busy]`, код 3",
+        "`up` для экземпляра, у которого сеть создана другим клиентом того же владельца (`net_generation` задано) → код 0; для экземпляра без сети при ответе conflict → `[conflict]`, код 3"
+      ]
+    },
+    {
+      "id": "RA01",
+      "source": "R.A9",
+      "target": "R.Z",
+      "level": "L2",
+      "contract": "`cm app run` выполняет проверки по порядку и останавливается на первом отказе.",
+      "check": "`tests/audit_ab_cli.rs` (отказы до контроллера), `tests/ab_stand.py`, разделы `apps` и `private`.",
+      "values": [
+        "`cm app run t1 -- /usr/bin/systemd-run --user x` без контроллера → `[unsupported_executor_outside]`, код 2 (не 4)",
+        "описание с Flatpak → `[unsupported_not_verified]`, код 2",
+        "пояс региона отсутствует в `/usr/share/zoneinfo` → `[zone_missing]`, код 2; локаль не установлена → `[locale_not_installed]`, код 2, с `--allow-missing-locale` запуск идёт",
+        "программа уже работает вне сети туннеля → `[running_elsewhere]`, код 5; с `--allow-running` → код 0",
+        "программа-фикстура `tests/brokers/single_instance.py`, завершившаяся сразу, без новых процессов в сети → `[handed_off]`, код 6",
+        "обычный запуск → в stdout pid, код 0; через 1 с процесс с этим pid в сети туннеля (`readlink /proc/<pid>/ns/net` совпадает с netns туннеля)",
+        "`--data isolated --ipc private` → файл `config/session-s<12 шестнадцатеричных>.json` с правами 0600; у процесса `XDG_RUNTIME_DIR` — каталог сессии, `DBUS_SESSION_BUS_ADDRESS` не задан"
+      ]
+    },
+    {
+      "id": "RZ01",
+      "source": "R.Z",
+      "target": "FIN.Z",
+      "level": "L2",
+      "contract": "У каждого значения каждого ребра AB есть проверка, и ни одна проверка не пройдёт на сломанном коде по построению.",
+      "check": "`tools/test_lint.py --dags AB`; `tests/check_audit.sh`.",
+      "values": [
+        "`python3 docs/design/cm-network-manager/tools/test_lint.py --dags AB` → EXIT 0; «без проверки 0», «замечаний 0»",
+        "в `tests/audit_ab_*.rs` нет `#[ignore]`: D01, U02 сняты после `R.P1` и `R.A9`; F01 и F02 — ошибка фикстуры (каталог `leases` не создан до `LeaseRegistry::create`), исправляется в тесте",
+        "в `tests/ab_stand.py` нет циклов ожидания без `sleep`: функция `app()` опрашивает файл каждые 100 мс до срока",
+        "стенд — 5 прогонов подряд, каждый EXIT 0; gate — 3 прогона подряд, каждый EXIT 0 без строк SKIPPED",
+        "`tests/fixtures/ab/blocked.json` — не больше 12 значений, все уровня L2, у каждого названы причина и шаг очереди хоста"
+      ]
+    },
+    {
+      "id": "RZ02",
+      "source": "R.Z",
+      "target": "X.Q3",
+      "level": "L2",
+      "contract": "Шаг очереди хоста повторяет на машине то, что уже прошло на стенде, а не проверяет впервые.",
+      "check": "`tests/ab_stand.py`, раздел `host`; сверка списков в `tests/audit_fin_hostq.rs`.",
+      "values": [
+        "каждый `stand_ref` проверок шага `hq-host` — номер значения ребра уровня L2 из `AB-DAG.json` или `FIN-DAG.json` (вид `IT03.3`), и проверка с этой меткой есть в `tests/ab_stand.py` или `tests/fin_stand.py`",
+        "проверок шага `hq-host` без `stand_ref` не больше трёх, и у каждой указана причина (`needs_real_uplink`, `needs_real_dns`, `needs_suspend`)"
+      ]
+    },
+    {
+      "id": "RZ03",
+      "source": "R.Z",
+      "target": "X.Q4",
+      "level": "L2",
+      "contract": "Каждый критерий A01–A20 привязан либо к проверке стенда, либо к проверке шага на машине.",
+      "check": "`tests/audit_fin_hostq.rs`: таблица `ACCEPTANCE` шага `hq-apps`.",
+      "values": [
+        "в таблице 20 строк A01–A20; у каждой — `stand` (метки рёбер) или `host` (имена проверок шага), либо оба",
+        "строк только со `stand` не больше восьми; A01, A02, A06, A07, A11, A12, A16, A20 имеют `host`",
+        "каждое ребро из `stand` есть в `AB-DAG.json` или `FIN-DAG.json` и имеет хотя бы одну проверку с меткой в `tests/ab_stand.py` или `tests/fin_stand.py`"
+      ]
+    },
+    {
+      "id": "IH01",
+      "source": "I.H1",
+      "target": "X.Q0",
+      "level": "L1",
+      "contract": "Проверка готовности хоста — чистая функция от наблюдений с фиксированным порядком строк.",
+      "check": "`tests/audit_fin_install.rs`.",
+      "values": [
+        "чистая машина (nft есть, один внешний интерфейс, сокет есть, режим off) → 10 строк, все `ok`, код 0",
+        "интерфейс `cm-vpn` → строка 2: `check=legacy_vpn result=block [legacy_vpn_active]`, код 1",
+        "правило с таблицей 2022 → строка 3 block `[foreign_autoroute]`; resolved → строка 4 block `[resolved_unsupported]`",
+        "firewalld и NetworkManager → строки 5 и 6 `warn`, код 0",
+        "нет маршрута по умолчанию → строка 7 block `[no_uplink]`; 9 внешних интерфейсов → block `[too_many_uplinks]`",
+        "режим off и существует `cmsink` → строка 9 block `[stale_host_net]`",
+        "строка 10: `check=rp_filter result=ok all=0 default=2` при таких значениях в фактах",
+        "команда не обращается к сокету контроллера и не выполняет `ip … add|del|set|replace`, `nft -f` (запись подменного исполнителя пуста)"
+      ]
+    },
+    {
+      "id": "IS01",
+      "source": "I.S1",
+      "target": "C.T1",
+      "level": "L1",
+      "contract": "Профиль туннеля хоста разрешается из хранилища до обращения к контроллеру.",
+      "check": "`tests/audit_ab_assign.rs`, `tests/audit_fin_install.rs`.",
+      "values": [
+        "снимок с политикой хоста, профилем и источником → `assign::host` возвращает источник и выбор узла этого профиля",
+        "политики хоста нет → `Err(UnknownProfile)`; профиль ссылается на отсутствующий источник → `Err(UnknownSource)`",
+        "`cm host set tunnel` без источника конфига, с обоими источниками, `cm host set proxy --stored` → код 2, обращений к контроллеру нет"
+      ]
+    },
+    {
+      "id": "IS02",
+      "source": "I.S1",
+      "target": "X.Q3",
+      "level": "L2",
+      "contract": "`cm host set tunnel --stored` поднимает туннель хоста на узле из хранилища.",
+      "check": "`tests/fin_stand.py`, раздел `host`: хранилище с источником, узлы — подставные прокси.",
+      "values": [
+        "`cm host define --source s1`, затем `cm host set tunnel --stored` → код 0; `cm host status` → `mode=tunnel`; запрос хоста — HTTP 200, счётчик соединений подставного узла вырос",
+        "в файле поколения экземпляра `host` нет ключа `dns`; права файла 0600",
+        "без `cm host define` → `[unknown_profile]`, код 2; режим остался off"
+      ]
+    },
+    {
+      "id": "IT01",
+      "source": "R.W3",
+      "target": "I.T1",
+      "level": "L1",
+      "contract": "Снятие удаляет ровно те объекты, которые сверяет сторож хоста.",
+      "check": "`tests/audit_fin_install.rs`: подменные `NetExec` и `NetQuery`.",
+      "values": [
+        "`host.json` с одним внешним интерфейсом → команды: `host_firewall_commands(None)`, затем `host_destroy_commands`; файл удалён; запись `net:host` очищена",
+        "`host.json` нет, наблюдаются `cmsink` и правила 1990, 2000, 2001 → те же команды плюс по одной `ip rule del priority N` на каждое наблюдаемое правило схемы",
+        "чужое правило с приоритетом 1990 и таблицей 200 и правило с приоритетом 3000 → не удаляются",
+        "две аренды сетей приложений → для каждой команды снятия, аренда освобождена, каталог `etc_root/cm-<i>` удалён; отчёт `nets = 2`",
+        "повтор на чистом состоянии → отчёт `{cores:0, nets:0, host:false, errors:0}`"
+      ]
+    },
+    {
+      "id": "IT02",
+      "source": "I.T1",
+      "target": "X.Q0",
+      "level": "L2",
+      "contract": "Кадр снятия доступен только суперпользователю и не пересекается с проходом сторожа.",
+      "check": "`tests/audit_fin_install.rs` (кадр), `tests/fin_stand.py`, раздел `teardown`.",
+      "values": [
+        "кадр `teardown` от uid 1000 → `denied`; состояние не изменилось",
+        "кадр от uid 0 → ответ `ReplyData::Teardown`; следующий `overview` → host mode off, список туннелей без поколений",
+        "`cm controller teardown --offline` вне тестового режима не от uid 0 → код 4; при `--base` вне тестового режима → код 2",
+        "после снятия проход сторожа не выполняет ни одной команды (запись исполнителя пуста два прохода подряд)"
+      ]
+    },
+    {
+      "id": "IT03",
+      "source": "I.T1",
+      "target": "FIN.Z",
+      "level": "L2",
+      "contract": "После снятия на стенде не остаётся ни одного объекта CM, и сеть хоста работает напрямую.",
+      "check": "`tests/fin_stand.py`, раздел `teardown`.",
+      "values": [
+        "до снятия: туннель хоста включён, два туннеля приложений двух владельцев работают",
+        "`cm controller teardown` → код 0, отчёт `cores=3 nets=2 host=true errors=0`",
+        "после: `ip rule` без приоритетов 1000–2001; `ip link` без `cmtunh`, `cmsink`, `cmv*`, `cmtun*`; `ip netns list` без `cm-*`; `nft list tables` без `cm_host`; таблица `inet cm` без правил для интерфейсов",
+        "запрос хоста — HTTP 200 напрямую; процессов ядра нет",
+        "повтор команды → код 0, отчёт из нулей"
+      ]
+    },
+    {
+      "id": "CO02",
+      "source": "C.O1",
+      "target": "C.M1",
+      "level": "L1",
+      "contract": "Обзор перечисляет только экземпляры владельца, с состоянием сторожа и без данных запроса.",
+      "check": "`tests/audit_fin_overview.rs`: контроллер с подменными исполнителями.",
+      "values": [
+        "владелец с экземплярами `b`, `a` и `host` → `tunnels` из двух строк в порядке `a`, `b`; `host` в списке нет",
+        "экземпляры другого uid в ответ не попадают; чужой владелец туннеля хоста видит `host.mode = off`",
+        "каталог с именем, не проходящим `InstanceId::new`, пропускается; при 70 экземплярах в ответе 64 строки",
+        "экземпляр без запусков → state stopped, restarts 0, holders 0, оба поколения и netns пусты",
+        "класс операции — Status; подменный `Authorizer` с отказом → `denied`"
+      ]
+    },
+    {
+      "id": "CS01",
+      "source": "C.S1",
+      "target": "C.E1",
+      "level": "L1",
+      "contract": "Путь хранилища зависит только от uid и окружения, и пользователь не пишет в системное хранилище.",
+      "check": "`tests/audit_fin_define.rs`.",
+      "values": [
+        "`store_root_for(1000, …)` при `HOME=/home/u` без других переменных → `/home/u/.local/share/cm/profiles`",
+        "при `XDG_DATA_HOME=/d` → `/d/cm/profiles`; при `CM_PROFILE_STORE=/x` → `/x` для любого uid",
+        "`store_root_for(0, …)` при `state_dir=/var/lib/cm` и заданном `HOME` → `/var/lib/cm/profiles`",
+        "`store_writes_allowed(1000, false)` → true; `(0, false)` → false; `(0, true)` → true",
+        "`cm app define` во временном `HOME` без `CM_PROFILE_STORE` создаёт `<HOME>/.local/share/cm/profiles` с правами 0700"
+      ]
+    },
+    {
+      "id": "CE01",
+      "source": "C.E1",
+      "target": "C.M1",
+      "level": "L1",
+      "contract": "Команды описания создают граф, который проходит проверку модели и разрешается назначением.",
+      "check": "`tests/audit_fin_define.rs`: чистые функции `profiles::edit` на снимках теста.",
+      "values": [
+        "`define_app` с собственным туннелем на снимке с источником `s1` → в кандидате приложение `web`, туннель `t-web`, профиль `p-web`, профиль данных `d-web`, пресет `e-web`; `validate()` → Ok; `assign::application` → instance `t-web`, shared false",
+        "`define_group g1`, затем два `define_app` с `Group(g1)` → `assign::application` обоих даёт instance `t-g1`, shared true",
+        "без `--node` → выбор `Policy{name:\"auto\"}`; с узлом другого источника → `Err(UnknownNode)`",
+        "идентификатор длиной 31 → `Err(BadId)`; повтор `define_app web` → `Err(Exists)`; `define_app` после `remove_app` с тем же ID → `Err(Exists)`",
+        "`remove_group` при живом приложении группы → `Err(InUse)`; `remove_app` убирает `t-`, `p-`, `d-`, `e-` и оставляет источник",
+        "`--exec relative/path` → `Err(BadValue)`; пояс `../x` → `Err(BadValue)`; снимок не изменён",
+        "`define_host` дважды с разными источниками → одна политика `host-policy`, профиль `p-host` указывает на второй источник"
+      ]
+    },
+    {
+      "id": "CE02",
+      "source": "C.E1",
+      "target": "I.S1",
+      "level": "L2",
+      "contract": "Команды пишут хранилище одной записью и не трогают работающий туннель.",
+      "check": "`tests/audit_fin_define.rs` (команды во временном хранилище), `tests/fin_stand.py`, раздел `define`.",
+      "values": [
+        "`cm app define web --exec /usr/bin/true --source s1` → `ok web`, код 0; ревизия хранилища выросла ровно на 1",
+        "`cm app list` → строка `id=web tunnel=t-web shared=no exec=/usr/bin/true`",
+        "неизвестный источник → `[unknown_source]`, код 2; ревизия не изменилась",
+        "стенд: `cm tunnel up t-web`, затем `cm app remove web` → `[in_use]`, код 5; после `cm tunnel down t-web` → `ok web`",
+        "в выводе команд нет адресов узлов и URL источника"
+      ]
+    },
+    {
+      "id": "CM01",
+      "source": "C.M2",
+      "target": "C.M1",
+      "level": "L1",
+      "contract": "Нагрузка считается по двум выборкам и не падает на необычных строках `/proc`.",
+      "check": "`tests/audit_fin_live.rs`.",
+      "values": [
+        "строка stat с именем процесса `(a b) c)` → поля берутся после последней `)`; utime 150, stime 50 → 200",
+        "выборки (ticks 100, 0 мс) и (ticks 300, 2000 мс) при 100 тиках в секунду → cpu_pct 100",
+        "Δмс = 0 или ticks уменьшились → cpu_pct 0",
+        "statm `1000 2560 …` при странице 4 КБ → rss_kb 10240; `usage_text` → `cpu 0% · 10 МБ`",
+        "нет каталога процесса → `sample` возвращает None"
+      ]
+    },
+    {
+      "id": "CM02",
+      "source": "C.M1",
+      "target": "C.C1",
+      "level": "L1",
+      "contract": "Каждая ось получает значение только из своего источника; без источника — unknown.",
+      "check": "`tests/audit_fin_live.rs`: чистая функция `live::build`.",
+      "values": [
+        "state up, записи региона нет, держателей нет → net verified, region unknown, state unknown, app unknown; actions [Down, Verify, Run]",
+        "запись региона Agreed DE с expected DE и поколением, равным поколению ядра → region verified, country DE; возраст = (now − at)/1000",
+        "та же запись с другим поколением → region unknown, country пусто",
+        "expected US при Agreed DE → region blocked, failure region-mismatch, condition blocked",
+        "state failed → net error, failure core-failed, actions [Up]; state blocked → failure core-restarting, actions [Down]",
+        "2 держателя и запись сессии → state partial, app partial, sessions 2; ни в одном наборе входов `state` и `app` не равны verified",
+        "контроллер Unavailable → все оси unknown, возраста нет, actions пуст, строки туннелей хранилища присутствуют",
+        "экземпляр из обзора без туннеля в хранилище → строка с id \"\" после строк хранилища"
+      ]
+    },
+    {
+      "id": "CM03",
+      "source": "C.M1",
+      "target": "C.T1",
+      "level": "L1",
+      "contract": "Клавиши страницы дают только разрешённые действия; остановка и режим хоста — через вопрос.",
+      "check": "`tests/audit_fin_page.rs`: `status::page::Page` на собранных `LiveView`.",
+      "values": [
+        "строка stopped: `u` → `Run([\"tunnel\",\"up\",\"t-web\"])`; `x` → `Message`, вопрос не открыт",
+        "строка up: `x` → открыт `Confirm::Down`; `Tab` → вопрос остаётся; `n` → `Message`, вопрос закрыт; `x`, `y` → `Run([\"tunnel\",\"down\",\"t-web\"])`",
+        "строка up со страной DE: `v` → `Run([\"tunnel\",\"verify\",\"t-web\",\"--country\",\"DE\"])`",
+        "хост off без профиля: `h` → `Message`; с профилем и `legacy_vpn` → `Message`, вопрос не открыт; с профилем без него → `HostOn`, `Enter` → `Run([\"host\",\"set\",\"tunnel\",\"--stored\"])`",
+        "хост tunnel: `h`, `y` → `Run([\"host\",\"set\",\"off\"])`",
+        "`replace` с новым порядком строк сохраняет выбор по instance; `↓` на последней строке выбор не меняет",
+        "`q`, `Esc`, `Backspace` вне вопроса → `Back`; `Esc` в вопросе → отмена, не `Back`"
+      ]
+    },
+    {
+      "id": "CM04",
+      "source": "C.M1",
+      "target": "C.D1",
+      "level": "L1",
+      "contract": "Очистка убирает каждый класс секретов, а выгрузка с остатком не пишется.",
+      "check": "`tests/audit_fin_diag.rs`.",
+      "values": [
+        "`scrub` строки с `/home/alice/x`, `alice`, `vless://id@host:443?x=1`, `password=abc`, uuid, 40-символьным токеном, `8.8.4.4` при home `/home/alice` и user `alice` → `find_secrets` результата пуст; исходных значений в результате нет",
+        "адреса `10.213.0.1`, `198.18.64.2`, `192.168.1.1`, `fe80::1` остаются как есть",
+        "`find_secrets` на исходной строке возвращает `url`, `key_value`, `uuid`, `long_token`, `public_ip`",
+        "`shape` документа с 3 узлами (2 vless, 1 trojan), 1 группой, 5 правилами → `{proxies:3, groups:1, rules:5, protocols:{trojan:1, vless:2}}`",
+        "свойство, 10 000 случаев: для случайной строки из алфавита секретов `find_secrets(scrub(s))` пуст"
+      ]
+    },
+    {
+      "id": "CM05",
+      "source": "C.M1",
+      "target": "C.A1",
+      "level": "L1",
+      "contract": "Строки апплета повторяют оси живой модели и не складывают туннели в один статус.",
+      "check": "`tests/audit_fin_page.rs`: `status::panel`.",
+      "values": [
+        "два туннеля up и один failed → headline «туннели: 2 работают, 1 с ошибкой»",
+        "контроллер Unavailable → headline «контроллер недоступен»; пустой список → «туннелей нет»",
+        "строка туннеля: axes — четыре символа через пробел в порядке net, region, state, app; problem true при failed и при оси region blocked",
+        "первая строка — хост; при режиме off её axes содержит «выкл»"
+      ]
+    },
+    {
+      "id": "CC01",
+      "source": "C.C1",
+      "target": "X.Q4",
+      "level": "L2",
+      "contract": "Вывод `cm tunnel list` разбирается построчно и одинаков по содержанию с JSON.",
+      "check": "`tests/fin_stand.py`, раздел `list`.",
+      "values": [
+        "до запуска: строка `host mode=off state=stopped uplinks=- defined=no legacy_vpn=no core_pid=-`; строка туннеля оканчивается на `state=stopped net=unknown region=unknown data=unknown app=unknown holders=0 restarts=0 generation=- country=- core_pid=-`",
+        "после `cm tunnel up t-web`: `state=up net=verified`, `generation=1`, `core_pid` — pid живого процесса ядра",
+        "после `cm tunnel verify t-web --country ZZ` с источниками стенда, отвечающими DE → `region=blocked`",
+        "`--json` разбирается в объект с ключами `at_unix_ms`, `controller`, `host`, `tunnels`; число туннелей равно числу строк текста минус одна",
+        "контроллер остановлен → код 4, строки туннелей хранилища напечатаны с unknown"
+      ]
+    },
+    {
+      "id": "CC02",
+      "source": "C.C1",
+      "target": "FIN.Z",
+      "level": "L2",
+      "contract": "Состояние в выводе меняется вслед за событиями стенда не позже одного прохода сторожа.",
+      "check": "`tests/fin_stand.py`, раздел `list`.",
+      "values": [
+        "`kill -9` ядра → не позже чем через 3 с `state=blocked net=blocked`; не позже чем через 8 с снова `state=up`, `restarts=1`",
+        "процесс в сети туннеля запущен → не позже чем через 3 с `holders=1 app=partial`; завершён → `holders=0 app=unknown`",
+        "`cm host set tunnel --stored` → строка хоста `mode=tunnel state=up`"
+      ]
+    },
+    {
+      "id": "CT01",
+      "source": "C.T1",
+      "target": "FIN.Z",
+      "level": "L2",
+      "contract": "Страница рисуется на узком и широком терминале, на двух языках, и нигде не объявляет общий «зелёный» статус.",
+      "check": "`tests/audit_fin_page.rs`: `ratatui::backend::TestBackend`, состояния из `tests/fixtures/i17/states.json` и из `live::build`.",
+      "values": [
+        "размеры 60×20, 80×24, 120×40: отрисовка без паники; при 60 колонках оси — одним символом, при 120 — символ и слово",
+        "в тексте экрана есть четыре заголовка осей; нет слов «защищено», «безопасно», «анонимно», «ok» как итога строки",
+        "возраст 3601 с → в ячейке есть `⚠`; возраст 59 с → нет",
+        "языки ru и en: подписи значений осей разные, символы одинаковые; токены команд не переведены",
+        "открытый вопрос остановки содержит имя туннеля и слова о том, что VPN хоста не меняется",
+        "состояние `контроллер недоступен` — отдельная строка; строки туннелей при этом есть",
+        "`Poller` с функцией сбора, которая спит 3 с: 100 вызовов `latest` и 100 вызовов `Page::key` подряд завершаются быстрее 100 мс; первое значение приходит не позже чем через 4 с; после уничтожения `Poller` функция сбора больше не вызывается (счётчик вызовов не растёт 3 с)"
+      ]
+    },
+    {
+      "id": "CD01",
+      "source": "C.D1",
+      "target": "X.Q0",
+      "level": "L2",
+      "contract": "Выгрузка содержит состояние, достаточное для разбора, и ни одного значения из конфигов и запросов.",
+      "check": "`tests/fin_stand.py`, раздел `diag`: источник стенда с узлами, у которых известны пароль и uuid.",
+      "values": [
+        "`cm diag export --out -` → код 0; JSON с ключами `version`, `live`, `instances`, `units`, `kernel`, `checks`",
+        "в выводе нет пароля, uuid и адреса узла стенда, нет пути домашнего каталога и имени пользователя",
+        "`instances[].shape.proxies` равно числу узлов источника; `generations` перечисляет файлы поколений",
+        "файл по умолчанию создан с правами 0600, путь напечатан",
+        "`kernel` содержит ключи для пяти запросов; при включённом туннеле хоста в `ip -j rule` есть приоритет 2000"
+      ]
+    },
+    {
+      "id": "CD02",
+      "source": "C.D1",
+      "target": "FIN.Z",
+      "level": "L1",
+      "contract": "Выгрузка, в которой после очистки найден секрет, не записывается.",
+      "check": "`tests/audit_fin_diag.rs`.",
+      "values": [
+        "экспорт, в чьё поле `notes` тест подставил строку с uuid в обход `scrub` → запись отклонена, результат `export_not_clean`, файла нет",
+        "`cm diag export --out /нет/каталога/x` → код 2",
+        "в структуре `Export` нет полей с аргументами и окружением процессов (сериализованный документ не содержит ключей `argv`, `args`, `env`, `cmdline`)"
+      ]
+    },
+    {
+      "id": "CA01",
+      "source": "C.A1",
+      "target": "FIN.Z",
+      "level": "L3",
+      "contract": "Апплет собирается, не блокирует панель сбором и не содержит действий над туннелями.",
+      "check": "gate (сборка и тесты `cosmic/`); ручная проверка — шаг `hq-apps`, раздел `applet`.",
+      "values": [
+        "`tests/check_audit.sh` собирает и тестирует `cosmic/` с `--locked --offline` (строка есть в файле); `cosmic/src/main.rs` содержит `mod tunnels`",
+        "в `cosmic/src/tunnels.rs` нет вызовов `cm host set`, `cm tunnel up|down`, `controller::client::call` с операциями, кроме `Overview` (проверка поиском по исходнику)",
+        "`live::gather` вызывается только из задания `Kind::Tunnels` (поиск по `cosmic/src`: одно место вызова)"
+      ]
+    },
+    {
+      "id": "XQ01",
+      "source": "X.Q0",
+      "target": "X.Q1",
+      "level": "L2",
+      "contract": "План ничего не меняет, а запуск невозможен без согласия и точки возврата.",
+      "check": "`tests/audit_fin_hostq.rs` запускает `tests/hostq/run.py` с `CM_HOSTQ_FAKE`.",
+      "values": [
+        "`run.py plan hq-install` → код 0; журнал команд пуст; в выводе строки с `! ` перед `sudo`",
+        "`run.py run hq-install` без `--yes` → `[needs_yes]`, код 3; журнал пуст",
+        "`run.py run hq-install --yes` без записи о снимке → `[no_snapshot]`, код 3; с `--no-snapshot` без `--backup-dir` → код 2",
+        "`run.py run hq-host --yes` без PASS у `hq-install` → `[requires hq-install]`, код 3",
+        "`run.py list` → по строке на каждый шаг из `tests/hostq/steps/`; у шага без evidence статус `-`",
+        "запуск от uid 0 (подменённый `os.geteuid`) → код 2"
+      ]
+    },
+    {
+      "id": "XQ02",
+      "source": "X.Q0",
+      "target": "X.Q2",
+      "level": "L2",
+      "contract": "В evidence попадают только статусы и слова из набора шага.",
+      "check": "`tests/audit_fin_hostq.rs`.",
+      "values": [
+        "проверка с `detail`, содержащим URL или заглавные буквы → в файле `detail_rejected`",
+        "файл evidence содержит ключи `step`, `rev`, `binary_sha256`, `started`, `finished`, `status`, `checks`, `rollback` и ни одной строки из подменных ответов команд",
+        "две фазы A с разным `reach` → проверка сравнения UNKNOWN, не FAIL и не PASS",
+        "фазы A равны, B отличается на стадии `tls` → FAIL, `detail` `stage=tls`"
+      ]
+    },
+    {
+      "id": "XQ03",
+      "source": "X.Q0",
+      "target": "X.Q3",
+      "level": "L2",
+      "contract": "Откат выполняется при любом исходе шага, а потеря сети после него — отдельная тревога.",
+      "check": "`tests/audit_fin_hostq.rs` (подменные ответы); `tests/fin_stand.py`, раздел `hostq`, с `CM_HOSTQ_STAND=1`.",
+      "values": [
+        "`run` шага бросает исключение → `rollback` вызван, в evidence `rollback` заполнен, статус шага FAIL",
+        "подменные ответы: связь до шага есть, после отката нет → в журнале есть `cm controller teardown`; проверка `network_restored` FAIL с p0; в выводе блок «как вернуть сеть» с номером снимка",
+        "связи нет до шага → `[no_network]`, код 3; `run` не вызывался",
+        "стенд: `run.py run hq-host --yes` внутри пространства имён → статус PASS или UNKNOWN; проверки 3, 4, 7, 8, 9, 10, 14 — PASS; после шага `ip rule` без приоритетов 1900–2001",
+        "стенд: шаг прерван `SIGTERM` после включения туннеля → не позже чем через 20 с правил 1900–2001 нет"
+      ]
+    },
+    {
+      "id": "XQ04",
+      "source": "X.Q0",
+      "target": "X.Q4",
+      "level": "L2",
+      "contract": "Ручная проверка без ответа — UNKNOWN, и шаг убирает за собой всё, что создал.",
+      "check": "`tests/audit_fin_hostq.rs`; `tests/fin_stand.py`, раздел `hostq`.",
+      "values": [
+        "`ask` при закрытом stdin → `skip`; все проверки разделов `account`, `applet`, `tui` — UNKNOWN",
+        "ответ `n` на вопрос → проверка FAIL",
+        "стенд: `run.py run hq-apps --yes --source s1` → проверки a04, a05, a06, a07, a11, a14, a16_native_runs, a20_export_clean, a20_no_verified_state_app — PASS",
+        "стенд: после шага в `cm app list` и `cm group list` нет идентификаторов `hq-*`; `cm tunnel list` без экземпляров `t-hq-*` с поколениями"
+      ]
+    },
+    {
+      "id": "XQ05",
+      "source": "X.Q0",
+      "target": "X.Q5",
+      "level": "L1",
+      "contract": "Статус шага выводится из проверок одним правилом, код выхода — из статуса.",
+      "check": "`tests/audit_fin_hostq.rs`.",
+      "values": [
+        "проверки [PASS, UNKNOWN] → шаг UNKNOWN, код 0",
+        "проверки [PASS, FAIL, UNKNOWN] → шаг FAIL, код 1",
+        "проверки [SKIP, SKIP] → шаг SKIP; `preflight` с FAIL → `run` не вызывался, шаг SKIP, код 3",
+        "`run.py all --yes`: шаг с FAIL p0 → следующие шаги не запускались"
+      ]
+    },
+    {
+      "id": "XQ06",
+      "source": "X.Q1",
+      "target": "P.T1",
+      "level": "L2",
+      "contract": "Шаги установки и миграции проверяют состояние, а не только код возврата команд.",
+      "check": "`tests/audit_fin_hostq.rs` (подменные ответы).",
+      "values": [
+        "`hq-install`: подменный `systemctl is-enabled cm-controller.socket` → `disabled` → проверка `controller_socket_enabled` FAIL",
+        "sha256 бинарника отличается от записанного → `binary_matches_manifest` FAIL",
+        "состояние службы VPN хоста до и после разное → `legacy_vpn_untouched` FAIL с p0",
+        "`hq-source` при пустом хранилище → все проверки UNKNOWN, `detail` `no_sources`",
+        "`hq-packages` без `--with-uninstall` → `uninstall_leaves_no_net` UNKNOWN; в журнале нет `cm uninstall`",
+        "план `hq-install`: `rollback` не содержит команд удаления"
+      ]
+    },
+    {
+      "id": "XQ07",
+      "source": "X.Q2",
+      "target": "P.T1",
+      "level": "L2",
+      "contract": "Сравнение путей называет первую отличающуюся стадию и не делает выводов сверх измеренного.",
+      "check": "`tests/audit_fin_hostq.rs` (подменные ответы).",
+      "values": [
+        "FlClash не найден → `flclash_vs_cm` UNKNOWN, `detail` `flclash_absent`; остальные сравнения выполняются",
+        "нет активной подписки прежнего VPN → все три проверки UNKNOWN, `detail` `no_legacy_subscription`; команд, меняющих систему, в журнале нет",
+        "после шага в журнале есть возврат прежней подписки и режима; проверка `legacy_restored` PASS",
+        "в выводе и evidence нет слов «исправлен», «fixed»"
+      ]
+    },
+    {
+      "id": "XQ08",
+      "source": "X.Q3",
+      "target": "P.T1",
+      "level": "L2",
+      "contract": "Шаг туннеля хоста отличает утечку от недоступности и не объявляет успех по косвенным признакам.",
+      "check": "`tests/audit_fin_hostq.rs` (подменные ответы); настоящий прогон — `tests/fin_stand.py` (ребро `XQ03`).",
+      "values": [
+        "подменный ответ: после `kill -9` ядра запрос вернул 204 → `core_kill_blocks` FAIL с p0",
+        "хеш выхода совпал с прямым → `exit_differs` UNKNOWN, не FAIL",
+        "`cm host check` с `Block` `resolved_unsupported` → шаг SKIP, `detail` содержит токен; команд, меняющих систему, нет",
+        "`Block` только `legacy_vpn_active` → шаг идёт; в журнале `cm vpn stop` раньше `cm host set tunnel`, в откате — запуск прежнего VPN",
+        "без `--with-link-flap` и `--manual-suspend` → `uplink_flap` и `suspend_resume` UNKNOWN с причинами `needs_real_uplink`, `needs_suspend`"
+      ]
+    },
+    {
+      "id": "XQ09",
+      "source": "X.Q4",
+      "target": "P.T1",
+      "level": "L2",
+      "contract": "Каждый критерий приёмки имеет проверку и статус; непроверенное не выдаётся за проверенное.",
+      "check": "`tests/audit_fin_hostq.rs`.",
+      "values": [
+        "без `--browser` → `a12_running_elsewhere` UNKNOWN; без `--appimage` → `a16_appimage_partial` UNKNOWN",
+        "подменный ответ: запрос из сети приложения после `kill -9` ядра вернул 204 → `a07_no_direct_after_kill` FAIL с p0",
+        "подменный ответ: `cm tunnel list` с `app=verified` → `a20_no_verified_state_app` FAIL",
+        "`a16_flatpak_refused` — PASS, только если вывод содержит `[unsupported_not_verified]` и код равен 2",
+        "в evidence есть раздел матрицы исполнителя со строкой на каждую проверенную упаковку"
+      ]
+    },
+    {
+      "id": "XQ10",
+      "source": "X.Q5",
+      "target": "P.T1",
+      "level": "L1",
+      "contract": "Размер выборки и допуск выводятся из измеренного разброса по записанной формуле.",
+      "check": "`tests/audit_fin_hostq.rs`: функции расчёта шага на заданных сериях.",
+      "values": [
+        "серии A с медианами 100, 110, 104 мс → `noise` = 0.10; `min_margin` = 0.20",
+        "серия B с медианой 150 мс при этих A → `b_differs` true; с медианой 115 мс → false",
+        "серии, чьи медианы первых 10 проб расходятся на 0.30, а первых 20 — на 0.08 → `min_probes` = 20",
+        "расхождение серий A 0.6 → `noise_measured` UNKNOWN, `detail` `unstable`",
+        "шаг не пишет ни в один файл под `src/`"
+      ]
+    },
+    {
+      "id": "PD01",
+      "source": "P.D1",
+      "target": "P.T1",
+      "level": "L0",
+      "contract": "Каждое решение записано со статусом, а каждая подзадача вне выпуска названа поимённо.",
+      "check": "`tests/audit_fin_docs.rs`: разбор текста документов.",
+      "values": [
+        "`ADR-FINGERPRINT.md`: таблица не короче 10 строк; в каждой строке статус из набора go, conditional, no-go; строка UA — no-go",
+        "`RELEASE-SCOPE.md`: пять разделов в заданном порядке; в разделе «Не входит» есть `I05.T02.b`, `I05.T05.a`, `I10.T02.b`; есть обе метки `accept:unknown`",
+        "раздел «Как вернуть» содержит `cm host set off`, `cm controller teardown`, `--offline` и слово «снимок»",
+        "`QUESTIONS.md`: разделы Q26 и Q27 начинаются словами «Решено координатором 2026-10-11»; число строк файла изменилось не больше чем на 4",
+        "ни в одном из четырёх новых документов нет слов «анонимно», «гарантирует анонимность»"
+      ]
+    },
+    {
+      "id": "PT01",
+      "source": "P.T1",
+      "target": "FIN.Z",
+      "level": "L0",
+      "contract": "Итог приёмки — функция от evidence: одно невыполненное условие даёт «blocked» и называет, кто действует дальше.",
+      "check": "`tests/audit_fin_docs.rs` запускает `accept.py` на наборах входов из `tests/fixtures/fin/accept/`.",
+      "values": [
+        "набор «всё выполнено» → `--check` код 0, `ready`",
+        "тот же набор без evidence шага `hq-host` → `blocked`; один `Blocker` с `who` user и командой `run.py run hq-host --yes`",
+        "шаг `hq-apps` со статусом UNKNOWN → `blocked` (обязательный шаг); шаг `hq-pilot` UNKNOWN → на итог не влияет, проверка попадает в список «Не проверено на машине»",
+        "дефект P1 в summary → `blocked`, `who` coder; замечание `test_lint` → `who` tester",
+        "подзадача без вершины и вне «Не входит» → `open`, `blocked`, `who` coordinator; `V.02` и `H.10` → `closed` (решения D-V1, D-C1)",
+        "подзадача `X.05` при шаге `hq-parity` со статусом UNKNOWN → `covered_unverified`; итог от неё не зависит",
+        "`X-RUNTIME-REPORT.md`: шаг UNKNOWN остаётся UNKNOWN; число строк равно числу шагов",
+        "`I18-TRACE.md`: 11 строк W01–W11; у W01 в подзадачах вне выпуска есть `I05.T05.a`",
+        "`--check` не создаёт и не меняет файлов (времена изменения прежние)"
+      ]
+    },
+    {
+      "id": "ZZ01",
+      "source": "C.E1",
+      "target": "FIN.Z",
+      "contract": "Пользователь проходит весь путь командами продукта, без файлов, написанных руками, и без прямых кадров контроллеру.",
+      "check": "`tests/fin_stand.py`, раздел `journey`: хранилище с источником стенда, узлы — подставные прокси, источники страны — HTTP стенда.",
+      "values": [
+        "`cm app define web --exec <программа-фикстура> --source s1 --zone Europe/Berlin --locale C.UTF-8` → `ok web`",
+        "`cm tunnel up t-web` → код 0; `cm tunnel list` → `state=up net=verified`",
+        "`cm app run web` → pid, код 0; процесс в сети туннеля; его запрос — HTTP 200 через подставной узел; счётчик прямых пакетов с адресов `10.213.0.0/16` на интерфейсе «интернета» равен 0",
+        "процесс видит пояс `Europe/Berlin` (`date +%Z` → `CET` или `CEST`), хост — свой",
+        "`cm tunnel verify t-web --country DE` при источниках, отвечающих DE → код 0; `cm tunnel list` → `region=verified country=DE`",
+        "`cm diag export --out -` → код 0, без адреса и пароля узла",
+        "`cm tunnel down t-web` при живом процессе → `[in_use]`, код 5; после завершения процесса → код 0",
+        "`cm app remove web` → `ok web`; `cm tunnel list` без строки `t-web`; на стенде нет `cm-*` в `ip netns list`"
+      ],
+      "level": "L2"
+    },
+    {
+      "id": "ZZ02",
+      "source": "C.O1",
+      "target": "FIN.Z",
+      "contract": "Новые операции контроллера не ломают принятое раньше.",
+      "check": "`tests/check_audit.sh` целиком; `tests/audit_fin_e2e.rs`.",
+      "values": [
+        "gate: EXIT 0, строк SKIPPED нет, три прогона подряд",
+        "число тестов в gate не меньше, чем до пакета, плюс тесты `audit_fin_*`",
+        "стенд `tests/fin_stand.py`: 5 прогонов подряд, каждый EXIT 0",
+        "`python3 docs/design/cm-network-manager/tools/test_lint.py --dags AB,FIN --strict` → EXIT 0"
+      ],
+      "level": "L2"
+    }
+  ]
+}

@@ -2,16 +2,19 @@
 
 use std::collections::BTreeMap;
 
+use serde::{Deserialize, Serialize};
+
 use crate::profiles::VerificationValue;
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Observation {
     pub source: String,
     pub country: String,
     pub at_unix_ms: i64,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case", tag = "kind")]
 pub enum RegionDecision {
     Agreed { country: String, sources: usize },
     Disagree { countries: Vec<String> },

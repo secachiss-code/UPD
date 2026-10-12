@@ -42,6 +42,13 @@ impl Generations {
         self.map.get(instance).copied()
     }
 
+    pub fn entries(&self) -> Vec<(String, u64)> {
+        self.map
+            .iter()
+            .map(|(key, value)| (key.clone(), *value))
+            .collect()
+    }
+
     pub fn set(&mut self, instance: &str, generation: u64) -> Result<(), ControlError> {
         let _guard = file_lock();
         self.reload_locked()?;
